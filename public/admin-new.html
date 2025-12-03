@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>添加管理员</title>
+<link rel="stylesheet" href="assets/style.css">
+
+</head><body>
+<div class="container">
+  <h1>添加管理员</h1>
+  <div class="card">
+    <p><a class="btn" href="index.html">仪表盘</a><a class="btn" href="admins.html">管理员列表</a><a class="btn" href="logout.html">退出</a></p>
+    <form id="frm">
+      <label>用户名<input id="u" required></label>
+      <label>密码<input id="p" type="password" required></label>
+      <button type="submit">添加</button>
+    </form>
+  </div>
+</div>
+<script>
+document.getElementById('frm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  if(!requireLogin()) return;
+  const u = document.getElementById('u').value.trim();
+  const p = document.getElementById('p').value;
+  if(!u || !p) return alert('请填写用户名和密码');
+  const h = await sha256Hex(p);
+  const users = await getUsers();
+  if(users.find(x=>x.username===u)) return alert('用户名已存在');
+  users.push({username:u, passwordHash:h});
+  await saveUsers(users);
+  alert('添加成功');
+  location.href='admins.html';
+});
+</script>
+<!-- 统一加载登录验证 -->
+<script>requireLogin();</script>
+<!-- 统一加载 API 封装 -->
+<script src="nexbit-api.js"></script>
+
+</body></html>

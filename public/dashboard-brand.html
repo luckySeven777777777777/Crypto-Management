@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXBIT 管理后台 — 最终版</title>
+<style>
+:root{--top-blue:#1976d2;--deep-blue:#0f2655;--bg:#f4f7fb;--card:#fff;
+--red:#ff4444;--black:#000;--green:#00c851;--yellow:#ffbb33;--purple:#9933ff;}
+*{box-sizing:border-box}
+body{margin:0;font-family:Segoe UI,Roboto,Arial;background:var(--bg);min-height:100vh}
+.top-header{position:fixed;top:0;left:0;width:100%;height:64px;background:var(--top-blue);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:1000;}
+.top-header .brand{font-weight:700;font-size:18px}
+.top-header .user{font-size:14px}
+.app{display:flex;padding-top:64px}
+.sidebar{width:88px;background:var(--deep-blue);color:#fff;min-height:calc(100vh - 64px);padding-top:20px;position:fixed;top:64px;left:0}
+.sidebar .icon{display:block;padding:16px;text-align:center;color:#cdd6f4;cursor:pointer}
+.sidebar .icon.active{background:var(--top-blue);color:#fff;border-radius:8px;margin:4px}
+.main{margin-left:88px;flex:1;padding:22px 26px}
+.container{background:var(--card);border-radius:8px;padding:18px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+.page-title{font-size:20px;font-weight:700;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px}
+.card{background:#fff;border-radius:8px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+input,select,button{padding:8px;border:1px solid #ddd;border-radius:6px}
+button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
+.table{width:100%;border-collapse:collapse;margin-top:8px}
+.table th,.table td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.member-label{display:inline-block;padding:4px 8px;border-radius:4px;color:#fff;font-weight:600;margin-left:8px;font-size:12px}
+.label-attention{background:var(--red)} .label-observe{background:var(--black)} .label-first-recharge{background:var(--green)} .label-first-withdraw{background:var(--yellow);color:#111} .label-vip{background:var(--purple)}
+.small{font-size:12px;color:#666}
+.actions button{margin-right:6px}
+.footer-note{margin-top:10px;color:#888;font-size:12px}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<div class="top-header">
+  <div class="brand">NEXBIT 管理后台（代理）</div>
+  <div class="user">已登录：admin</div>
+</div>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="icon active" data-page="dashboard" title="控制台">🏠</div>
+    <div class="icon" data-page="recharge" title="充值管理">💳</div>
+    <div class="icon" data-page="withdraw" title="提款管理">💸</div>
+    <div class="icon" data-page="members" title="会员管理">👥</div>
+    <div class="icon" data-page="settings" title="系统设置">⚙️</div>
+  </div>
+
+  <div class="main">
+    <!-- Dashboard -->
+    <div id="page-dashboard" class="container">
+      <div class="page-title">控制台</div>
+      <div class="grid">
+        <div class="card">今日充值<br><strong id="todayRecharge">--</strong></div>
+        <div class="card">今日提款<br><strong id="todayWithdraw">--</strong></div>
+        <div class="card">今日订单<br><strong id="todayOrders">--</strong></div>
+        <div class="card">风控预警<br><strong id="alertsCount">--</strong></div>
+      </div>
+      <div class="container card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="small">会员等级统计</div>
+          <div class="small">更新于 <span id="statTime"></span></div>
+        </div>
+        <div style="margin-top:12px" id="memberStats"></div>
+      </div>
+    </div>
+
+    <!-- Recharge page -->
+    <div id="page-recharge" class="container" style="display:none">
+      <div class="page-title">充值管理</div>
+      <div class="filters">
+        <label>开始 <input type="date" id="r_start"></label>
+        <label>结束 <input type="date" id="r_end"></label>
+        <input id="r_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+        <select id="r_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
+        <input id="r_minCount" placeholder="钱包充值次数 >=" type="number" min="1" style="width:140px">
+        <select id="r_status"><option value="">全部状态</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <button class="primary" onclick="r_search()">搜索</button>
+        <button onclick="openRechargeModal()">在线充值</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="r_table"><tr><td colspan="8" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Withdraw page -->
+    <div id="page-withdraw" class="container" style="display:none">
+      <div class="page-title">提款管理</div>
+      <div class="filters">
+        <label>开始 <input type="date" id="w_start"></label>
+        <label>结束 <input type="date" id="w_end"></label>
+        <input id="w_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+        <select id="w_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
+        <input id="w_minCount" placeholder="钱包提款次数 >=" type="number" min="1" style="width:140px">
+        <select id="w_status"><option value="">全部状态</option><option value="success">成功</option><option value="processing">处理中</option><option value="failed">失败</option></select>
+        <button class="primary" onclick="w_search()">搜索</button>
+        <button onclick="openWithdrawModal()">在线提款</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="w_table"><tr><td colspan="8" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Members page -->
+    <div id="page-members" class="container" style="display:none">
+      <div class="page-title">会员管理</div>
+      <div class="filters"><input id="m_search" placeholder="搜索会员ID / 钱包" style="width:360px"><button onclick="loadMembers()">搜索</button></div>
+      <table class="table"><thead><tr><th>会员ID</th><th>钱包</th><th>等级</th><th>最近活动</th></tr></thead><tbody id="m_table"><tr><td colspan="4" class="small">暂无会员数据</td></tr></tbody></table>
+    </div>
+
+    <!-- Settings page -->
+    <div id="page-settings" class="container" style="display:none">
+      <div class="page-title">系统设置</div>
+      <div style="max-width:900px">
+        <div style="margin-bottom:8px">Telegram Bot Token <input id="s_tg_token" style="width:560px"></div>
+        <div style="margin-bottom:8px">Telegram Chat ID <input id="s_tg_chat" style="width:200px"></div>
+        <div style="margin-bottom:8px">报警阈值(次) <input id="s_tg_thresh" type="number" style="width:120px"> 窗口(s) <input id="s_tg_window" type="number" style="width:120px"></div>
+        <div style="margin-bottom:8px">提款密码（当前） 修改: <input id="s_withdraw_old" placeholder="旧密码" type="password" style="width:200px"> <input id="s_withdraw_new" placeholder="新密码" type="password" style="width:200px"> <button onclick="changeWithdrawPassword()">修改提款密码</button></div>
+        <div style="margin-bottom:8px">登录密码 修改: <button onclick="changeLoginPassword()">修改登录密码</button></div>
+        <div style="margin-bottom:8px"><button onclick="setup2FA()">设置 2FA</button> <button onclick="disable2FA()">禁用 2FA</button></div>
+        <div style="margin-top:12px"><button class="primary" onclick="saveSettings()">保存设置</button></div>
+        <div id="settingsStatus" class="small"></div>
+      </div>
+    </div>
+
+    <div class="footer-note">系统生成：2025-11-21T17:08:12.970774</div>
+  </div>
+</div>
+
+<script>
+const PROXY_TRANSACTIONS = "/proxy/transactions";
+const PROXY_RECHARGE = "/proxy/recharge";
+const PROXY_WITHDRAW = "/proxy/withdraw";
+const API_SETTINGS = "/api/settings";
+const API_2FA_SETUP = "/api/2fa/setup";
+const API_2FA_ENABLE = "/api/2fa/enable";
+const API_2FA_DISABLE = "/api/2fa/disable";
+const API_CHANGE_LOGIN = "/api/change-login-password";
+const API_CHANGE_WITHDRAW = "/api/change-withdraw-password";
+const API_LOGIN = "/api/login";
+
+function $(s){return document.querySelector(s)}
+
+// sidebar click handling
+document.querySelectorAll('.sidebar .icon').forEach(ic=>ic.addEventListener('click',()=>{
+  document.querySelectorAll('.sidebar .icon').forEach(x=>x.classList.remove('active'));
+  ic.classList.add('active');
+  const page = ic.getAttribute('data-page');
+  document.querySelectorAll('.container').forEach(c=>c.style.display='none');
+  document.getElementById('page-'+page).style.display='block';
+  if(page==='dashboard') loadDashboard();
+  if(page==='recharge') r_search();
+  if(page==='withdraw') w_search();
+  if(page==='members') loadMembers();
+  if(page==='settings') loadSettings();
+}));
+
+// Dashboard metrics (derived from transactions)
+async function loadDashboard(){
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS);
+    const list = await res.json();
+    if(!Array.isArray(list)) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    let todayRecharge=0, todayWithdraw=0, orders=0, alerts=0;
+    const memberMap = {};
+    list.forEach(it=>{
+      const t = Date.parse(it.timestamp||it.time||it.date||'');
+      if(isNaN(t)) return;
+      if(t>=today.getTime()){
+        if((it.type||it.txType||'').toString().toLowerCase().indexOf('recharge')!==-1) todayRecharge += Number(it.amount||it.value||0);
+        if((it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1) todayWithdraw += Number(it.amount||it.value||0);
+        orders++;
+      }
+      const user = it.user||it.member||it.account||'unknown';
+      const wallet = (it.wallet||it.address||it.to||it.from||'').toString();
+      memberMap[user] = memberMap[user] || {user, wallets:new Set(), last:t, flags:[]};
+      if(wallet) memberMap[user].wallets.add(wallet);
+      if(t && (!memberMap[user].last || t>memberMap[user].last)) memberMap[user].last = t;
+      // simplistic alert count: failed count per wallet in hour
+      if((it.status||'').toString().toLowerCase()==='failed'){
+        alerts++;
+      }
+    });
+    document.getElementById('todayRecharge').innerText = todayRecharge;
+    document.getElementById('todayWithdraw').innerText = todayWithdraw;
+    document.getElementById('todayOrders').innerText = orders;
+    document.getElementById('alertsCount').innerText = alerts;
+    // member stats
+    const stats = {attention:0,observe:0,firstRecharge:0,firstWithdraw:0,vip:0};
+    Object.values(memberMap).forEach(m=>{
+      // heuristics - not exact, adjust as per your backend fields
+      // here just count unique wallets as indicator
+      if(m.wallets.size>5) stats.vip++;
+    });
+    const statEl = document.getElementById('memberStats');
+    statEl.innerHTML = `<div>VIP: ${stats.vip}</div><div>注意会员: ${stats.attention}</div><div>观察会员: ${stats.observe}</div><div>首次充值: ${stats.firstRecharge}</div><div>首次提款: ${stats.firstWithdraw}</div>`;
+    document.getElementById('statTime').innerText = new Date().toLocaleString();
+  }catch(e){console.error(e)}
+}
+
+// Recharge search and render
+async function r_search(){
+  const params = new URLSearchParams();
+  const s = $('#r_start').value; const e = $('#r_end').value;
+  const w = $('#r_wallet').value.trim(); const c = $('#r_currency').value;
+  const min = $('#r_minCount').value; const status = $('#r_status').value;
+  if(s) params.append('start', s); if(e) params.append('end', e); if(w) params.append('wallet', w);
+  if(c) params.append('currency', c); if(min) params.append('minCount', min); if(status) params.append('status', status);
+  const tbody = $('#r_table'); tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS + '?' + params.toString());
+    const list = await res.json();
+    if(!Array.isArray(list)){ tbody.innerHTML='<tr><td colspan="8" class="small">返回异常</td></tr>'; return; }
+    if(list.length===0){ tbody.innerHTML='<tr><td colspan="8" class="small">没有记录</td></tr>'; return; }
+    const rows = list.filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('recharge')!==-1).map(it=>renderRow(it));
+    tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
+  }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
+}
+
+function renderRow(it){
+  const order = it.orderId||it.oid||it.id||''; const user = it.user||it.member||it.account||'';
+  const wallet = it.wallet||it.address||''; const time = it.timestamp||it.time||it.date||'';
+  const amount = it.amount||it.value||0; const currency = it.currency||it.coin||'BRL';
+  const ip = it.ip||it.ipAddr||''; const status = (it.status||'').toString().toLowerCase();
+  const label = memberLabel(it);
+  return `<tr><td><div class="small">${order}</div><div>${user}</div><div style="color:var(--top-blue)">${wallet}</div>${label}</td><td>${time}</td><td>${it.type||'充值'}</td><td>${amount}</td><td>${currency}</td><td>${ip}</td><td>${status}</td><td class="actions"><button onclick="viewDetail('${order}')">查看</button></td></tr>`;
+}
+
+function memberLabel(item){
+  const lvl = (item.memberLevel||item.level||'').toString().toLowerCase();
+  const isFirstRecharge = item.firstRecharge||false; const isFirstWithdraw = item.firstWithdraw||false; const isVip = lvl.indexOf('vip')!==-1;
+  if(item.flag==='attention') return '<span class="member-label label-attention">注意会员</span>';
+  if(item.flag==='observe') return '<span class="member-label label-observe">观察会员</span>';
+  if(isFirstRecharge) return '<span class="member-label label-first-recharge">首次充值</span>';
+  if(isFirstWithdraw) return '<span class="member-label label-first-withdraw">首次提款</span>';
+  if(isVip) return '<span class="member-label label-vip">VIP</span>';
+  return '';
+}
+
+async function openRechargeModal(){
+  const member = prompt('会员ID (可留空):'); const wallet = prompt('钱包地址 (可留空):'); const amount = prompt('充值金额:'); const currency = prompt('币种 (BRL/USDT/BTC):','BRL');
+  if(!amount) return; const payload = { member, wallet, amount, currency };
+  try{ const r = await fetch(PROXY_RECHARGE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(!r.ok) throw new Error(r.status); alert('充值请求已发送'); r_search(); }catch(e){ alert('充值失败:'+e.message) }
+}
+
+async function w_search(){
+  const params = new URLSearchParams();
+  const s = $('#w_start').value; const e = $('#w_end').value;
+  const w = $('#w_wallet').value.trim(); const c = $('#w_currency').value; const min = $('#w_minCount').value; const status = $('#w_status').value;
+  if(s) params.append('start', s); if(e) params.append('end', e); if(w) params.append('wallet', w);
+  if(c) params.append('currency', c); if(min) params.append('minCount', min); if(status) params.append('status', status);
+  const tbody = $('#w_table'); tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS + '?' + params.toString());
+    const list = await res.json();
+    if(!Array.isArray(list)){ tbody.innerHTML='<tr><td colspan="8" class="small">返回异常</td></tr>'; return; }
+    const rows = list.filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1).map(it=>renderRow(it));
+    tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
+  }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
+}
+
+async function openWithdrawModal(){
+  const member = prompt('会员ID (可留空):'); const wallet = prompt('提款钱包地址:'); const amount = prompt('提款金额:'); const note = prompt('备注 (可选):'); if(!amount) return;
+  const payload = { member, wallet, amount, note };
+  try{ const r = await fetch(PROXY_WITHDRAW,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(!r.ok) throw new Error(r.status); alert('提款请求已发送'); w_search(); }catch(e){ alert('提款失败:'+e.message) }
+}
+
+async function loadMembers(){
+  const q = $('#m_search').value.trim(); const tbody = $('#m_table'); tbody.innerHTML='<tr><td colspan="4" class="small">加载中...</td></tr>';
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS); const list = await res.json();
+    const map = {};
+    list.forEach(it=>{ const user = it.user||it.member||it.account||''; const wallet = it.wallet||it.address||''; if(!map[user]) map[user]={user:user,wallets:new Set(),last:it.timestamp||it.time||it.date}; if(wallet) map[user].wallets.add(wallet); if(it.timestamp && (!map[user].last || it.timestamp>map[user].last)) map[user].last=it.timestamp; });
+    const items = Object.values(map).map(m=>({user:m.user,wallets:Array.from(m.wallets),last:m.last}));
+    const filtered = q?items.filter(i=>(i.user+''+i.wallets.join('')).indexOf(q)!==-1):items;
+    if(filtered.length===0){ tbody.innerHTML='<tr><td colspan="4" class="small">没有会员</td></tr>'; return; }
+    tbody.innerHTML = filtered.map(m=>`<tr><td>${m.user}</td><td>${m.wallets.join(', ')}</td><td><span class="member-label label-observe">观察会员</span></td><td>${m.last||''}</td></tr>`).join('');
+  }catch(e){ tbody.innerHTML='<tr><td colspan="4" class="small">加载失败</td></tr>'; console.error(e) }
+}
+
+// Settings: load/save, change withdraw/login password, 2FA controls
+async function loadSettings(){ try{ const res = await fetch(API_SETTINGS); const s = await res.json(); $('#s_tg_token').value = s.telegramBotToken||''; $('#s_tg_chat').value = s.telegramChatId||''; $('#s_tg_thresh').value = s.tgThresholdCount||5; $('#s_tg_window').value = s.tgWindowSeconds||3600; $('#settingsStatus').innerText=''; }catch(e){ $('#settingsStatus').innerText='加载失败'; } }
+
+async function saveSettings(){ const body = { telegramBotToken:$('#s_tg_token').value.trim(), telegramChatId:$('#s_tg_chat').value.trim(), tgThresholdCount:parseInt($('#s_tg_thresh').value||'5',10), tgWindowSeconds:parseInt($('#s_tg_window').value||'3600',10) }; const res = await fetch(API_SETTINGS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const j = await res.json(); if(j.ok) $('#settingsStatus').innerText='保存成功'; else $('#settingsStatus').innerText='保存失败'; }
+
+async function changeWithdrawPassword(){ const oldP = $('#s_withdraw_old').value; const newP = $('#s_withdraw_new').value; if(!oldP||!newP) return alert('请输入旧密码和新密码'); const res = await fetch(API_CHANGE_WITHDRAW,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oldPassword:oldP,newPassword:newP})}); const j = await res.json(); if(j.ok) alert('提款密码已修改'); else alert('修改失败:'+ (j.message||'')); $('#s_withdraw_old').value=''; $('#s_withdraw_new').value=''; }
+
+async function changeLoginPassword(){ const oldP = prompt('旧登录密码:'); const newP = prompt('新登录密码:'); if(!oldP||!newP) return alert('取消'); const res = await fetch(API_CHANGE_LOGIN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oldPassword:oldP,newPassword:newP})}); const j = await res.json(); if(j.ok) alert('登录密码已修改'); else alert('修改失败:'+ (j.message||'')); }
+
+async function setup2FA(){ try{ const res = await fetch(API_2FA_SETUP); const j = await res.json(); if(!j.ok) return alert('2FA setup failed'); // display QR in new window and ask to confirm
+  const w = window.open('', '_blank'); w.document.write('<img src="'+j.qr+'" /><p>密钥: '+j.secret+'</p>'); const token = prompt('扫描二维码后请输入一次性验证码以启用 2FA:'); if(!token) return; const enableRes = await fetch(API_2FA_ENABLE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:j.secret,token:token})}); const je = await enableRes.json(); if(je.ok) alert('2FA 已启用'); else alert('启用失败: '+(je.message||'')); loadSettings(); }catch(e){alert('2FA setup error')} }
+
+async function disable2FA(){ try{ const token = prompt('请输入当前 2FA 验证码以确认禁用:'); const res = await fetch(API_2FA_DISABLE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})}); const j = await res.json(); if(j.ok) alert('2FA 已禁用'); else alert('禁用失败: '+(j.message||'')); loadSettings(); }catch(e){alert('disable error')} }
+
+function viewDetail(id){ alert('查看订单: '+id) }
+
+// Auto show dashboard on load
+document.addEventListener('DOMContentLoaded',()=>{
+  document.querySelector('.sidebar .icon.active').click();
+});
+
+</script>
+<!-- 统一加载登录验证 -->
+<script>requireLogin();</script>
+<!-- 统一加载 API 封装 -->
+<script src="nexbit-api.js"></script>
+
+</body>
+</html>
