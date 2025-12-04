@@ -1,146 +1,79 @@
-// ================== 必要模块 ==================
-const express = require("express");
-const bodyParser = require("body-parser");
-const admin = require("firebase-admin");
-require("dotenv").config();
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
+import { initializeApp } from "firebase/app";
+import { getDatabase, ref, get, set, update, child } from "firebase/database";
 
 const app = express();
-app.use(bodyParser.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors());
+app.use(express.json());
 
-// ================== Firebase 初始化 ==================
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+// ----------------------
+// Firebase RTDB 连接
+// ----------------------
+const firebaseConfig = {
   databaseURL: "https://cryptonexbitsafe-default-rtdb.firebaseio.com"
-});
+};
 
-const db = admin.database();
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
 
-// ================== Telegram ==================
-const axios = require("axios");
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const GROUP_ID = process.env.GROUP_ID;
-
-// Telegram 发送消息
-async function sendTelegramMessage(text) {
+// ----------------------
+// 获取所有用户 （后台会员管理用）
+// ----------------------
+app.get("/api/admin/users", async (req, res) => {
   try {
-    await axios.post(
-      `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-      {
-        chat_id: GROUP_ID,
-        text: text,
-        parse_mode: "HTML"
-      }
-    );
-  } catch (error) {
-    console.error("Telegram 错误:", error.message);
-  }
-}
+    const snapshot = await get(ref(db, "users"));
+    if (!snapshot.exists()) return res.json([]);
 
-// ================== API: 获取用户余额 ==================
-app.get("/balance", async (req, res) => {
-  const userId = req.query.userid;
-  if (!userId) return res.json({ error: "缺少 userid" });
+    const obj = snapshot.val();
+    const arr = Object.keys(obj).map(uid => ({
+      userid: uid,
+      wallet: obj[uid].wallet || "",
+      level: obj[uid].level || "",
+      lastActivity: obj[uid].lastActivity || "",
+      balance: obj[uid].balance || 0
+    }));
 
-  try {
-    const snap = await db.ref(`users/${userId}/balance`).once("value");
-    const balance = snap.val() || 0;
-
-    return res.json({ userid: userId, balance });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "服务器错误" });
+    res.json(arr);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed" });
   }
 });
 
-// ================== API: 更新余额 ==================
-app.post("/update", async (req, res) => {
-  const { userid, amount } = req.body;
-
-  if (!userid || amount === undefined)
-    return res.json({ error: "缺少参数" });
-
+// ----------------------
+// 修改余额（后台 → 用户余额）
+// ----------------------
+app.post("/api/admin/balance", async (req, res) => {
   try {
-    await db.ref(`users/${userid}/balance`).set(Number(amount));
+    const { user, amount } = req.body;
 
-    await sendTelegramMessage(
-      `🔔 <b>余额更新</b>\n用户ID: <b>${userid}</b>\n新余额: <b>${amount}</b>`
-    );
+    if (!user) return res.json({ success: false });
 
-    return res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "服务器错误" });
+    await update(ref(db, `users/${user}`), { balance: amount });
+
+    res.json({ success: true, balance: amount });
+  } catch (e) {
+    console.error(e);
+    res.json({ success: false });
   }
 });
 
-// ================== API: 创建订单（提款/充值） ==================
-app.post("/order", async (req, res) => {
-  const { userid, type, amount } = req.body;
-
-  if (!userid || !type || !amount)
-    return res.json({ error: "缺少参数" });
-
-  const orderId = Date.now().toString();
-
+// ----------------------
+// Strikingly 前台获取用户余额
+// ----------------------
+app.get("/api/user/balance", async (req, res) => {
   try {
-    await db.ref(`orders/${orderId}`).set({
-      userid,
-      type,
-      amount,
-      time: new Date().toISOString()
-    });
+    const userid = req.query.userid;
+    if (!userid) return res.json({ balance: 0 });
 
-    await sendTelegramMessage(
-      `🧾 <b>新订单</b>\n类型: <b>${type}</b>\n金额: <b>${amount}</b>\n用户: <b>${userid}</b>\n订单号: <b>${orderId}</b>`
-    );
-
-    return res.json({ success: true, orderId });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "服务器错误" });
+    const snapshot = await get(ref(db, `users/${userid}/balance`));
+    res.json({ balance: snapshot.exists() ? snapshot.val() : 0 });
+  } catch (e) {
+    res.json({ balance: 0 });
   }
 });
 
-// ================== 后台统计 API ==================
-app.get("/dashboard", async (req, res) => {
-  try {
-    const ordersSnap = await db.ref("orders").once("value");
-    const orders = ordersSnap.val() || {};
-
-    let todayDeposit = 0;
-    let todayWithdraw = 0;
-    let todayOrder = 0;
-
-    const today = new Date().toISOString().slice(0, 10);
-
-    Object.values(orders).forEach((o) => {
-      if (o.time.slice(0, 10) === today) {
-        todayOrder++;
-        if (o.type === "deposit") todayDeposit += Number(o.amount);
-        if (o.type === "withdraw") todayWithdraw += Number(o.amount);
-      }
-    });
-
-    return res.json({
-      todayDeposit,
-      todayWithdraw,
-      todayOrder
-    });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "服务器错误" });
-  }
-});
-
-// ================== 静态页面 ==================
-app.use(express.static("public"));
-
-// ================== 启动服务器 ==================
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log("服务器已启动，端口:", PORT);
-});
+app.listen(PORT, () => console.log("Server running on " + PORT));
