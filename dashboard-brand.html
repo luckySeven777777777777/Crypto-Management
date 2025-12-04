@@ -78,8 +78,6 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
   
   <div class="user">
     已登录：admin
-
-    <!-- 只保留退出按钮（右上角 admin 旁边） -->
     <a class="logout-btn" href="logout.html">退出</a>
   </div>
 </div>
@@ -187,10 +185,10 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
       </div>
       <table class="table">
         <thead>
-          <tr><th>会员ID</th><th>钱包</th><th>等级</th><th>最近活动</th></tr>
+          <tr><th>会员ID</th><th>钱包</th><th>等级</th><th>最近活动</th><th>余额（可编辑）</th><th>操作</th></tr>
         </thead>
         <tbody id="m_table">
-          <tr><td colspan="4" class="small">暂无会员数据</td></tr>
+          <tr><td colspan="6" class="small">暂无会员数据</td></tr>
         </tbody>
       </table>
     </div>
@@ -328,18 +326,68 @@ async function w_search(){
 // Members
 async function loadMembers(){
   const tbody = $('#m_table');
-  tbody.innerHTML='<tr><td colspan="4" class="small">加载中...</td></tr>';
+  tbody.innerHTML='<tr><td colspan="6" class="small">加载中...</td></tr>';
   try{
-    const res = await fetch(PROXY_TRANSACTIONS);
+    // 从新的 Firestore 后端读取会员列表
+    const res = await fetch('/api/admin/users');
     const list = await res.json();
-    const rows = list.map(it=>{
-      return `<tr><td>${it.member||''}</td>
-      <td>${it.wallet||''}</td>
-      <td>${it.level||''}</td>
-      <td>${it.time||''}</td></tr>`;
+
+    if(!Array.isArray(list) || list.length===0){
+      tbody.innerHTML='<tr><td colspan="6" class="small">暂无会员数据</td></tr>';
+      return;
+    }
+
+    const rows = list.map(u=>{
+      const wallet = u.wallet||'';
+      const level = u.level||'';
+      const last = u.lastActivity||'';
+      const bal = (typeof u.balance === 'number') ? u.balance.toFixed(2) : (u.balance||0);
+
+      return `<tr>
+        <td>${u.userid}</td>
+        <td>${wallet}</td>
+        <td>${level}</td>
+        <td>${last}</td>
+        <td>
+          <input id="bal_input_${u.userid}" type="number" value="${bal}" style="width:110px;padding:6px;border-radius:6px;border:1px solid #ddd">
+        </td>
+        <td>
+          <button onclick="saveMemberBalance('${u.userid}')">保存</button>
+        </td>
+      </tr>`;
     });
+
     tbody.innerHTML = rows.join('');
-  }catch(e){}
+  }catch(e){
+    console.error("loadMembers error", e);
+    tbody.innerHTML='<tr><td colspan="6" class="small">加载失败</td></tr>';
+  }
+}
+
+// 保存会员余额（会写入 Firestore via /api/admin/balance）
+async function saveMemberBalance(userid){
+  const el = document.getElementById(`bal_input_${userid}`);
+  if(!el) return alert("找不到输入框");
+  const v = Number(el.value);
+  if (isNaN(v)) return alert("请输入有效金额");
+
+  try{
+    const res = await fetch('/api/admin/balance', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ user: userid, amount: v })
+    });
+    const j = await res.json();
+    if (j.success) {
+      alert('保存成功，新余额：' + (j.balance ?? v));
+      loadMembers();
+    } else {
+      alert('保存失败');
+    }
+  }catch(e){
+    console.error("saveMemberBalance error", e);
+    alert('保存错误');
+  }
 }
 
 // Settings
