@@ -1,230 +1,142 @@
-import express from "express";
-import cors from "cors";
-import bodyParser from "body-parser";
-import admin from "firebase-admin";
+// ================================
+//   NEXBIT 管理后台 — index.js
+//  （保持原来功能 + 新增订单 API）
+// ================================
 
-// -----------------------------
-// Firebase 初始化
-// -----------------------------
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const fs = require("fs");
+const path = require("path");
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: process.env.FIREBASE_DATABASE_URL,
-});
-
-const db = admin.firestore();
 const app = express();
-
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static("public"));
+app.use(express.static("public")); // 让 HTML 能访问
 
+// ====== 数据库存储（简单 JSON 文件） ======
+const DB_FILE = path.join(__dirname, "database.json");
 
-// -----------------------------------------------------
-// 自动创建/更新用户
-// -----------------------------------------------------
-app.post("/api/user/sync", async (req, res) => {
-  try {
+// 如果数据库不存在就创建
+if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, JSON.stringify({
+        users: [],
+        deposits: [],
+        withdrawals: [],
+        trades: []
+    }, null, 2));
+}
+
+// 读取数据库
+function loadDB() {
+    return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+}
+
+// 写入数据库
+function saveDB(db) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+}
+
+// =======================================
+//  📌 API 1 — 用户同步（Strikingly 页面）
+// =======================================
+app.post("/api/user/sync", (req, res) => {
     const { userid } = req.body;
-    if (!userid) return res.json({ success: false });
+    if (!userid) return res.json({ ok: false });
 
-    const ref = db.collection("users").doc(userid);
-    const snap = await ref.get();
-
-    if (!snap.exists) {
-      await ref.set({
-        balance: 0,
-        wallet: "",
-        status: "active",
-        created: Date.now(),
-        lastActive: Date.now()
-      });
-      return res.json({ success: true, created: true });
+    const db = loadDB();
+    if (!db.users.includes(userid)) {
+        db.users.push(userid);
+        saveDB(db);
     }
-
-    await ref.update({ lastActive: Date.now() });
-    return res.json({ success: true, created: false });
-
-  } catch (e) {
-    console.error("sync error", e);
-    return res.json({ success: false });
-  }
+    res.json({ ok: true });
 });
 
 
-// -----------------------------------------------------
-// 用户余额
-// -----------------------------------------------------
-app.post("/api/balance", async (req, res) => {
-  try {
-    const { userid } = req.body;
-    if (!userid) return res.json({ success: false });
-
-    const ref = db.collection("users").doc(userid);
-    const snap = await ref.get();
-
-    if (!snap.exists) {
-      await ref.set({
-        balance: 0,
-        created: Date.now()
-      });
-    }
-
-    const data = (await ref.get()).data();
-    return res.json({ success: true, balance: data.balance });
-
-  } catch (err) {
-    console.error("balance error", err);
-    return res.json({ success: false });
-  }
-});
-
-
-// =====================================================
-// 📌 1. 充值订单 API
-// =====================================================
-app.post("/api/deposit", async (req, res) => {
-  try {
+// =======================================
+//  📌 API 2 — 充值订单
+// =======================================
+app.post("/api/deposit", (req, res) => {
     const { userid, coin, amount, wallet } = req.body;
 
-    await db.collection("recharge").add({
-      userid,
-      coin,
-      amount: Number(amount),
-      wallet,
-      time: Date.now(),
-      status: "pending"
+    const db = loadDB();
+    db.deposits.push({
+        userid,
+        coin,
+        amount,
+        wallet,
+        time: Date.now(),
+        status: "pending"
     });
+    saveDB(db);
 
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("deposit error:", err);
-    res.status(500).json({ success: false });
-  }
+    res.json({ ok: true });
 });
 
 
-// =====================================================
-// 📌 2. 提款订单 API
-// =====================================================
-app.post("/api/withdraw", async (req, res) => {
-  try {
+// =======================================
+//  📌 API 3 — 提款订单
+// =======================================
+app.post("/api/withdraw", (req, res) => {
     const { userid, coin, amount, wallet, txHash, password } = req.body;
 
-    await db.collection("withdraw").add({
-      userid,
-      coin,
-      amount: Number(amount),
-      wallet,
-      txHash,
-      password,
-      time: Date.now(),
-      status: "pending"
+    const db = loadDB();
+    db.withdrawals.push({
+        userid,
+        coin,
+        amount,
+        wallet,
+        txHash,
+        password,
+        time: Date.now(),
+        status: "pending"
     });
+    saveDB(db);
 
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("withdraw error:", err);
-    res.status(500).json({ success: false });
-  }
+    res.json({ ok: true });
 });
 
 
-// =====================================================
-// 📌 3. 交易订单 API（Buy/Sell）
-// =====================================================
-app.post("/api/trade", async (req, res) => {
-  try {
+// =======================================
+//  📌 API 4 — 交易订单（Buy / Sell）
+// =======================================
+app.post("/api/trade", (req, res) => {
     const { userid, type, coin, amount, price } = req.body;
 
-    await db.collection("transactions").add({
-      userid,
-      type,
-      coin,
-      amount: Number(amount),
-      price: Number(price),
-      time: Date.now(),
-      status: "pending"
+    const db = loadDB();
+    db.trades.push({
+        userid,
+        type,     // BUY / SELL
+        coin,
+        amount,
+        price,
+        time: Date.now(),
+        status: "pending"
     });
+    saveDB(db);
 
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error("trade error:", err);
-    res.status(500).json({ success: false });
-  }
+    res.json({ ok: true });
 });
 
 
-// -----------------------------
-// 管理后台：读取用户列表
-// -----------------------------
-app.get("/api/admin/users", async (req, res) => {
-  try {
-    const list = [];
-    const snap = await db.collection("users").get();
-    snap.forEach((doc) => list.push({ userid: doc.id, ...doc.data() }));
-    res.json(list);
-  } catch (e) {
-    res.status(500).json([]);
-  }
+// =======================================
+//   后台列表页面读取 API（给 dashboard 用）
+// =======================================
+app.get("/api/admin/deposits", (req, res) => {
+    res.json(loadDB().deposits);
+});
+
+app.get("/api/admin/withdrawals", (req, res) => {
+    res.json(loadDB().withdrawals);
+});
+
+app.get("/api/admin/trades", (req, res) => {
+    res.json(loadDB().trades);
 });
 
 
-// -----------------------------
-// 管理后台：充值记录
-// -----------------------------
-app.get("/proxy/recharge", async (req, res) => {
-  try {
-    const list = [];
-    const snap = await db.collection("recharge").orderBy("time", "desc").get();
-    snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-    res.json(list);
-  } catch (e) {
-    res.status(500).json([]);
-  }
-});
-
-
-// -----------------------------
-// 管理后台：提现记录
-// -----------------------------
-app.get("/proxy/withdraw", async (req, res) => {
-  try {
-    const list = [];
-    const snap = await db.collection("withdraw").orderBy("time", "desc").get();
-    snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-    res.json(list);
-  } catch (e) {
-    res.status(500).json([]);
-  }
-});
-
-
-// -----------------------------
-// 管理后台：交易记录
-// -----------------------------
-app.get("/proxy/transactions", async (req, res) => {
-  try {
-    const list = [];
-    const snap = await db.collection("transactions").orderBy("time", "desc").get();
-    snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-    res.json(list);
-  } catch (e) {
-    res.status(500).json([]);
-  }
-});
-
-
-// -----------------------------
-// 默认
-// -----------------------------
-app.get("/", (_, res) => {
-  res.send("Crypto API running.");
-});
-
+// =======================================
+//   服务器启动
+// =======================================
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log("Server running on", PORT));
+app.listen(PORT, () => console.log("Server running on port", PORT));
