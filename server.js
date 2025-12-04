@@ -1,18 +1,21 @@
-// ======================== 基础模块 ========================
-const express = require("express");
-const admin = require("firebase-admin");
-const fetch = require("node-fetch");
-const dotenv = require("dotenv");
-const cors = require("cors");
-const path = require("path");
+// ==========================
+//      Crypto Management
+//   Fully Fixed server.js
+// ==========================
 
-dotenv.config();
+const express = require("express");
+const cors = require("cors");
+const admin = require("firebase-admin");
+require("dotenv").config();
 
 const app = express();
+app.use(cors());
 app.use(express.json());
-app.use(cors({ origin: "*" }));
 
-// ======================== Firebase 初始化 ========================
+// ------------------------
+// Firebase Init
+// ------------------------
+
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
@@ -22,143 +25,185 @@ admin.initializeApp({
 
 const db = admin.database();
 
-// ======================== 静态文件（管理后台必须） ========================
-app.use(express.static(path.join(__dirname, "public")));
+// ------------------------
+// Helper
+// ------------------------
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-// ======================== Balance API ========================
-app.post("/api/balance", async (req, res) => {
-  try {
-    const { userid } = req.body;
-    if (!userid) return res.status(400).json({ error: "Missing userid" });
-
-    const snapshot = await db.ref(`balances/${userid}`).once("value");
-    const balance = snapshot.val() || { usdt: 0 };
-
-    res.json({ success: true, balance });
-  } catch (err) {
-    res.status(500).json({ error: "Server Error" });
-  }
-});
-
-// ======================== 生成订单号 ========================
 function generateOrderId() {
-  return "OD" + Date.now();
+  return "TX-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
-// ======================== 充值 ========================
-app.post("/api/order/recharge", async (req, res) => {
-  const { userid, coin, amount, wallet } = req.body;
-  const orderId = generateOrderId();
+function getUserId(req) {
+  // 前端没传 userid 的情况下，不会报错
+  return req.headers["x-user-id"] || req.body.userid || "unknown";
+}
 
-  const data = {
-    userid,
-    coin,
-    amount,
-    wallet,
-    orderId,
-    type: "recharge",
-    status: "processing",
-    timestamp: Date.now()
-  };
+// Telegram 通知（支持三类 bot）
+async function sendToTelegram(type, text) {
+  try {
+    let token = "";
+    let groupId = "";
+    let userId = "";
 
-  await db.ref("transactions").push(data);
+    if (type === "recharge") {
+      token = process.env.RECHARGE_BOT_TOKEN;
+      groupId = process.env.RECHARGE_GROUP_CHAT_ID;
+      userId = process.env.RECHARGE_USER_CHAT_ID;
+    } else if (type === "withdraw") {
+      token = process.env.WITHDRAW_BOT_TOKEN;
+      groupId = process.env.WITHDRAW_GROUP_CHAT_ID;
+      userId = process.env.WITHDRAW_USER_CHAT_ID;
+    } else if (type === "trade") {
+      token = process.env.TRADE_BOT_TOKEN;
+      groupId = process.env.TRADE_GROUP_CHAT_ID;
+      userId = process.env.TRADE_USER_CHAT_ID;
+    }
 
-  sendToTelegram("recharge",
-    `🔔 *充值申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
-  );
+    if (!token || !groupId) return;
 
-  res.json({ success: true, orderId });
-});
-
-// ======================== 提款 ========================
-app.post("/api/order/withdraw", async (req, res) => {
-  const { userid, coin, amount, wallet } = req.body;
-  const orderId = generateOrderId();
-
-  const data = {
-    userid,
-    coin,
-    amount,
-    wallet,
-    orderId,
-    type: "withdraw",
-    status: "processing",
-    timestamp: Date.now()
-  };
-
-  await db.ref("transactions").push(data);
-
-  sendToTelegram("withdraw",
-    `💸 *提款申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
-  );
-
-  res.json({ success: true, orderId });
-});
-
-// ======================== BuySell ========================
-app.post("/api/order/trade", async (req, res) => {
-  const { userid, coin, amount, tradeType } = req.body;
-  const orderId = generateOrderId();
-
-  const data = {
-    userid,
-    coin,
-    amount,
-    tradeType,
-    orderId,
-    type: "trade",
-    status: "processing",
-    timestamp: Date.now()
-  };
-
-  await db.ref("transactions").push(data);
-
-  sendToTelegram("trade",
-    `📘 *交易申请*\n用户: ${userid}\n类型: ${tradeType}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
-  );
-
-  res.json({ success: true, orderId });
-});
-
-// ======================== Telegram 通知模块 ========================
-async function sendToTelegram(type, message) {
-  let botToken = "";
-  let chatIds = [];
-
-  if (type === "recharge") {
-    botToken = process.env.RECHARGE_BOT_TOKEN;
-    chatIds = [process.env.RECHARGE_GROUP_CHAT_ID, process.env.RECHARGE_USER_CHAT_ID];
-  }
-
-  if (type === "withdraw") {
-    botToken = process.env.WITHDRAW_BOT_TOKEN;
-    chatIds = [process.env.WITHDRAW_GROUP_CHAT_ID, process.env.WITHDRAW_USER_CHAT_ID];
-  }
-
-  if (type === "trade") {
-    botToken = process.env.TRADE_BOT_TOKEN;
-    chatIds = [process.env.TRADE_GROUP_CHAT_ID, process.env.TRADE_USER_CHAT_ID];
-  }
-
-  for (const chatId of chatIds) {
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: "Markdown",
+        chat_id: groupId,
+        text: text,
+        parse_mode: "Markdown"
       })
     });
+
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: userId,
+        text: text,
+        parse_mode: "Markdown"
+      })
+    });
+
+  } catch (err) {
+    console.log("Telegram Error:", err);
   }
 }
 
-// ======================== 启动服务器 ========================
+// ------------------------
+// API SECTION
+// ------------------------
+
+// ✔ 余额查询
+app.post("/api/balance", async (req, res) => {
+  try {
+    const userid = getUserId(req);
+
+    const snapshot = await db.ref(`users/${userid}/balance`).once("value");
+    const balance = snapshot.val() || 0;
+
+    res.json({ success: true, balance });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ✔ 充值
+app.post("/api/order/recharge", async (req, res) => {
+  try {
+    const userid = getUserId(req);
+    const { coin, amount, wallet } = req.body;
+
+    const orderId = generateOrderId();
+
+    const data = {
+      userid,
+      coin,
+      amount,
+      wallet,
+      orderId,
+      type: "recharge",
+      status: "processing",
+      timestamp: Date.now()
+    };
+
+    await db.ref("transactions").push(data);
+
+    sendToTelegram("recharge",
+      `🔔 *充值申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
+    );
+
+    res.json({ success: true, orderId });
+
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ✔ 提款
+app.post("/api/order/withdraw", async (req, res) => {
+  try {
+    const userid = getUserId(req);
+    const { coin, amount, wallet } = req.body;
+
+    const orderId = generateOrderId();
+
+    const data = {
+      userid,
+      coin,
+      amount,
+      wallet,
+      orderId,
+      type: "withdraw",
+      status: "processing",
+      timestamp: Date.now()
+    };
+
+    await db.ref("transactions").push(data);
+
+    sendToTelegram("withdraw",
+      `📤 *提款申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
+    );
+
+    res.json({ success: true, orderId });
+
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ✔ 买卖 Buy/Sell
+app.post("/api/order/buysell", async (req, res) => {
+  try {
+    const userid = getUserId(req);
+    const { coin, amount, side } = req.body; // side = buy / sell
+
+    const orderId = generateOrderId();
+
+    const data = {
+      userid,
+      coin,
+      amount,
+      side,
+      orderId,
+      type: "trade",
+      status: "processing",
+      timestamp: Date.now()
+    };
+
+    await db.ref("transactions").push(data);
+
+    sendToTelegram("trade",
+      `💱 *买卖订单*\n用户: ${userid}\n方向: ${side}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
+    );
+
+    res.json({ success: true, orderId });
+
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ------------------------
+// RUN SERVER
+// ------------------------
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+  console.log("Server running on port", PORT);
 });
