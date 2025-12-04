@@ -1,2 +1,9 @@
 [build]
-nodeVersion = "18.20.4"
+builder = "NIXPACKS"
+buildCommand = "npm install"
+
+[deploy]
+startCommand = "node server.js"
+
+[env]
+NODE_VERSION = "18"

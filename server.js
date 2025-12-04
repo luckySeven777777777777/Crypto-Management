@@ -1,19 +1,18 @@
+// ======================== 基础模块 ========================
 const express = require("express");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
 const dotenv = require("dotenv");
 const cors = require("cors");
+const path = require("path");
 
-// 加载环境变量
 dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: "*" }));  // 允许所有跨域请求
+app.use(cors({ origin: "*" }));
 
-// ========================== 初始化 Firebase ==========================
-
-// 从 Railway 的环境变量加载 JSON
+// ======================== Firebase 初始化 ========================
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
@@ -23,85 +22,123 @@ admin.initializeApp({
 
 const db = admin.database();
 
+// ======================== 静态文件（管理后台必须） ========================
+app.use(express.static(path.join(__dirname, "public")));
 
-// ========================== 充值 ==========================
-app.post("/api/order/recharge", (req, res) => {
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// ======================== Balance API ========================
+app.post("/api/balance", async (req, res) => {
+  try {
+    const { userid } = req.body;
+    if (!userid) return res.status(400).json({ error: "Missing userid" });
+
+    const snapshot = await db.ref(`balances/${userid}`).once("value");
+    const balance = snapshot.val() || { usdt: 0 };
+
+    res.json({ success: true, balance });
+  } catch (err) {
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+
+// ======================== 生成订单号 ========================
+function generateOrderId() {
+  return "OD" + Date.now();
+}
+
+// ======================== 充值 ========================
+app.post("/api/order/recharge", async (req, res) => {
   const { userid, coin, amount, wallet } = req.body;
+  const orderId = generateOrderId();
 
-  const recharge = {
+  const data = {
     userid,
     coin,
     amount,
     wallet,
-    status: "处理中",
-    timestamp: new Date().toISOString()
+    orderId,
+    type: "recharge",
+    status: "processing",
+    timestamp: Date.now()
   };
 
-  db.ref("transactions").push(recharge);
+  await db.ref("transactions").push(data);
 
-  const message = `🔔 *充值申请*\n\n用户: ${userid}\n金额: ${amount} ${coin}\n钱包地址: ${wallet}`;
-  sendToTelegram(message, "recharge");
+  sendToTelegram("recharge",
+    `🔔 *充值申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
+  );
 
-  res.json({ success: true, recharge });
+  res.json({ success: true, orderId });
 });
 
-
-// ========================== 提款 ==========================
-app.post("/api/order/withdraw", (req, res) => {
+// ======================== 提款 ========================
+app.post("/api/order/withdraw", async (req, res) => {
   const { userid, coin, amount, wallet } = req.body;
+  const orderId = generateOrderId();
 
-  const withdraw = {
+  const data = {
     userid,
     coin,
     amount,
     wallet,
-    status: "处理中",
-    timestamp: new Date().toISOString()
+    orderId,
+    type: "withdraw",
+    status: "processing",
+    timestamp: Date.now()
   };
 
-  db.ref("transactions").push(withdraw);
+  await db.ref("transactions").push(data);
 
-  const message = `💸 *提款申请*\n\n用户: ${userid}\n金额: ${amount} ${coin}\n钱包地址: ${wallet}`;
-  sendToTelegram(message, "withdraw");
+  sendToTelegram("withdraw",
+    `💸 *提款申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
+  );
 
-  res.json({ success: true, withdraw });
+  res.json({ success: true, orderId });
 });
 
-
-// ========================== 交易 ==========================
-app.post("/api/order/trade", (req, res) => {
+// ======================== BuySell ========================
+app.post("/api/order/trade", async (req, res) => {
   const { userid, coin, amount, tradeType } = req.body;
+  const orderId = generateOrderId();
 
-  const trade = {
+  const data = {
     userid,
     coin,
     amount,
     tradeType,
-    status: "处理中",
-    timestamp: new Date().toISOString()
+    orderId,
+    type: "trade",
+    status: "processing",
+    timestamp: Date.now()
   };
 
-  db.ref("transactions").push(trade);
+  await db.ref("transactions").push(data);
 
-  const message = `📘 *交易申请*\n\n用户: ${userid}\n金额: ${amount} ${coin}\n类型: ${tradeType}`;
-  sendToTelegram(message, "trade");
+  sendToTelegram("trade",
+    `📘 *交易申请*\n用户: ${userid}\n类型: ${tradeType}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
+  );
 
-  res.json({ success: true, trade });
+  res.json({ success: true, orderId });
 });
 
-
-// ========================== Telegram 通知 ==========================
-async function sendToTelegram(msg, type) {
-  let botToken, chatIds;
+// ======================== Telegram 通知模块 ========================
+async function sendToTelegram(type, message) {
+  let botToken = "";
+  let chatIds = [];
 
   if (type === "recharge") {
     botToken = process.env.RECHARGE_BOT_TOKEN;
     chatIds = [process.env.RECHARGE_GROUP_CHAT_ID, process.env.RECHARGE_USER_CHAT_ID];
   }
+
   if (type === "withdraw") {
     botToken = process.env.WITHDRAW_BOT_TOKEN;
     chatIds = [process.env.WITHDRAW_GROUP_CHAT_ID, process.env.WITHDRAW_USER_CHAT_ID];
   }
+
   if (type === "trade") {
     botToken = process.env.TRADE_BOT_TOKEN;
     chatIds = [process.env.TRADE_GROUP_CHAT_ID, process.env.TRADE_USER_CHAT_ID];
@@ -113,25 +150,15 @@ async function sendToTelegram(msg, type) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: msg,
+        text: message,
         parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "✅ 成功交易", callback_data: "trade_success" },
-              { text: "❌ 取消交易", callback_data: "trade_cancel" }
-            ]
-          ]
-        }
       })
     });
   }
 }
 
-
-// ========================== 启动服务器 ==========================
+// ======================== 启动服务器 ========================
 const PORT = process.env.PORT || 8080;
-
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log("Server running on port " + PORT);
 });
