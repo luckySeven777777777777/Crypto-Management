@@ -11,20 +11,22 @@ const app = express();
 app.use(express.json());
 app.use(cors({ origin: "*" }));  // 允许所有跨域请求
 
-// 初始化 Firebase
-const serviceAccount = require("./path/to/serviceAccountKey.json");  // 替换为您的 Firebase 服务账号文件路径
+// ========================== 初始化 Firebase ==========================
+
+// 从 Railway 的环境变量加载 JSON
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://cryptonexbitsafe-default-rtdb.firebaseio.com"  // 替换为您的 Firebase 数据库 URL
+  databaseURL: process.env.FIREBASE_DATABASE_URL
 });
 
 const db = admin.database();
 
+
 // ========================== 充值 ==========================
 app.post("/api/order/recharge", (req, res) => {
   const { userid, coin, amount, wallet } = req.body;
-  console.log(`Recharge request received for ${userid}, ${coin}, ${amount}, ${wallet}`);
 
   const recharge = {
     userid,
@@ -35,21 +37,18 @@ app.post("/api/order/recharge", (req, res) => {
     timestamp: new Date().toISOString()
   };
 
-  // 保存充值记录到 Firebase
-  const transactionsRef = db.ref("transactions");
-  transactionsRef.push(recharge);
+  db.ref("transactions").push(recharge);
 
-  // 发送充值通知
-  const message = `New Recharge Request:\nAmount: ${amount} ${coin}\nWallet: ${wallet}`;
+  const message = `🔔 *充值申请*\n\n用户: ${userid}\n金额: ${amount} ${coin}\n钱包地址: ${wallet}`;
   sendToTelegram(message, "recharge");
 
   res.json({ success: true, recharge });
 });
 
+
 // ========================== 提款 ==========================
 app.post("/api/order/withdraw", (req, res) => {
-  const { userid, coin, amount, wallet, password } = req.body;
-  console.log(`Withdrawal request received for ${userid}, ${coin}, ${amount}, ${wallet}`);
+  const { userid, coin, amount, wallet } = req.body;
 
   const withdraw = {
     userid,
@@ -60,21 +59,18 @@ app.post("/api/order/withdraw", (req, res) => {
     timestamp: new Date().toISOString()
   };
 
-  // 保存提款记录到 Firebase
-  const transactionsRef = db.ref("transactions");
-  transactionsRef.push(withdraw);
+  db.ref("transactions").push(withdraw);
 
-  // 发送提款通知
-  const message = `New Withdrawal Request:\nAmount: ${amount} ${coin}\nWallet: ${wallet}`;
+  const message = `💸 *提款申请*\n\n用户: ${userid}\n金额: ${amount} ${coin}\n钱包地址: ${wallet}`;
   sendToTelegram(message, "withdraw");
 
   res.json({ success: true, withdraw });
 });
 
+
 // ========================== 交易 ==========================
 app.post("/api/order/trade", (req, res) => {
   const { userid, coin, amount, tradeType } = req.body;
-  console.log(`Trade request received for ${userid}, ${coin}, ${amount}, ${tradeType}`);
 
   const trade = {
     userid,
@@ -85,61 +81,57 @@ app.post("/api/order/trade", (req, res) => {
     timestamp: new Date().toISOString()
   };
 
-  // 保存交易记录到 Firebase
-  const transactionsRef = db.ref("transactions");
-  transactionsRef.push(trade);
+  db.ref("transactions").push(trade);
 
-  // 发送交易通知
-  const message = `New Trade Request:\nAmount: ${amount} ${coin}\nType: ${tradeType}`;
+  const message = `📘 *交易申请*\n\n用户: ${userid}\n金额: ${amount} ${coin}\n类型: ${tradeType}`;
   sendToTelegram(message, "trade");
 
   res.json({ success: true, trade });
 });
 
+
 // ========================== Telegram 通知 ==========================
-async function sendToTelegram(msg, operationType) {
+async function sendToTelegram(msg, type) {
   let botToken, chatIds;
 
-  // 根据操作类型选择相应的 Bot Token 和 Chat ID
-  if (operationType === "recharge") {
+  if (type === "recharge") {
     botToken = process.env.RECHARGE_BOT_TOKEN;
     chatIds = [process.env.RECHARGE_GROUP_CHAT_ID, process.env.RECHARGE_USER_CHAT_ID];
-  } else if (operationType === "withdraw") {
+  }
+  if (type === "withdraw") {
     botToken = process.env.WITHDRAW_BOT_TOKEN;
     chatIds = [process.env.WITHDRAW_GROUP_CHAT_ID, process.env.WITHDRAW_USER_CHAT_ID];
-  } else if (operationType === "trade") {
+  }
+  if (type === "trade") {
     botToken = process.env.TRADE_BOT_TOKEN;
     chatIds = [process.env.TRADE_GROUP_CHAT_ID, process.env.TRADE_USER_CHAT_ID];
   }
 
-  // 发送通知
   for (const chatId of chatIds) {
-    try {
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: msg,
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "✅ 成功交易", callback_data: "trade_success" },
-                { text: "❌ 取消交易", callback_data: "trade_cancel" }
-              ]
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: msg,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✅ 成功交易", callback_data: "trade_success" },
+              { text: "❌ 取消交易", callback_data: "trade_cancel" }
             ]
-          }
-        })
-      });
-    } catch (e) {
-      console.error("Telegram notification error", e);
-    }
+          ]
+        }
+      })
+    });
   }
 }
 
-// 启动服务器
+
+// ========================== 启动服务器 ==========================
 const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
