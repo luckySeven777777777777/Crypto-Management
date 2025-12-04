@@ -21,6 +21,7 @@ app.use(express.static(path.join(__dirname, "public")));
 // ------------------------
 // Firebase Init
 // ------------------------
+
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
@@ -31,8 +32,9 @@ admin.initializeApp({
 const db = admin.database();
 
 // ------------------------
-// Helper Functions
+// Helper functions
 // ------------------------
+
 function generateOrderId() {
   return "TX-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
@@ -63,24 +65,24 @@ async function sendToTelegram(type, text) {
 
     if (!token || !groupId) return;
 
-    // group
+    // 推送到群
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: groupId,
-        text,
+        text: text,
         parse_mode: "Markdown"
       })
     });
 
-    // admin
+    // 推送到管理员
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: userId,
-        text,
+        text: text,
         parse_mode: "Markdown"
       })
     });
@@ -90,11 +92,34 @@ async function sendToTelegram(type, text) {
   }
 }
 
+// -----------------------------------------------------------
+//      ★★★★★ 关键新增 API：同步用户到 Firebase ★★★★★ 
+// -----------------------------------------------------------
+
+app.post("/api/user/sync", async (req, res) => {
+  try {
+    const userid = getUserId(req);
+
+    const userRef = db.ref(`users/${userid}`);
+
+    await userRef.update({
+      userid,
+      wallet: "",
+      level: "normal",
+      lastActive: Date.now(),
+      balance: 0
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // ------------------------
-// API SECTION
+// User Balance API
 // ------------------------
 
-// 🟢 Balance API
 app.post("/api/balance", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -108,7 +133,10 @@ app.post("/api/balance", async (req, res) => {
   }
 });
 
-// 🟡 Recharge API
+// ------------------------
+// Recharge Order
+// ------------------------
+
 app.post("/api/order/recharge", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -140,7 +168,10 @@ app.post("/api/order/recharge", async (req, res) => {
   }
 });
 
-// 🔵 Withdraw API
+// ------------------------
+// Withdraw Order
+// ------------------------
+
 app.post("/api/order/withdraw", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -172,7 +203,10 @@ app.post("/api/order/withdraw", async (req, res) => {
   }
 });
 
-// 🔴 Buy / Sell API
+// ------------------------
+// Buy/Sell Trade Order
+// ------------------------
+
 app.post("/api/order/buysell", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -204,9 +238,34 @@ app.post("/api/order/buysell", async (req, res) => {
   }
 });
 
+// -----------------------------------------------------------
+//      ★★★★★ 管理后台 API ★★★★★
+// -----------------------------------------------------------
+
+// 获取所有用户
+app.get("/api/admin/users", async (req, res) => {
+  try {
+    const users = (await db.ref("users").once("value")).val() || {};
+    res.json({ success: true, users });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// 获取所有交易
+app.get("/api/admin/transactions", async (req, res) => {
+  try {
+    const tx = (await db.ref("transactions").once("value")).val() || {};
+    res.json({ success: true, transactions: tx });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // ------------------------
 // RUN SERVER
 // ------------------------
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log("Server running on port", PORT);
