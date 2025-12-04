@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Withdrawal</title>
+
+<style>
+    * { box-sizing: border-box; /* 防止所有元素溢出 */ }
+    body { background-color: transparent; font-family: Arial, sans-serif; margin: 0; padding: 0; width: 100%; overflow-x: hidden; }
+    .withdraw-box { width: 100%; max-width: 450px; margin: 30px auto; padding: 25px; border-radius: 12px; background: transparent !important; color: white; }
+    select, input, button { width: 100%; max-width: 100%; padding: 12px; margin-top: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.6); background: transparent !important; color: white; font-size: 15px; display: block; }
+    select option { color: black; }
+    button { cursor: pointer; font-weight: bold; border: none; background: #0099cc; }
+    button:disabled { background: #444; }
+    .row { display: flex; justify-content: space-between; gap: 10px; width: 100%; }
+    #copyHashBtn, #submitBtn { display: none; width: 48%; }
+    #usdtText { text-align: right; color: #00ff00; font-size: 13px; }
+    #hashBox { color: #00ff00; margin-top: 10px; white-space: pre-line; font-size: 14px; overflow-wrap: break-word; }
+</style>
+</head>
+<body>
+
+<div class="withdraw-box">
+    <h2 style="text-align:center;"></h2>
+
+    <label>Select Cryptocurrency</label>
+    <select id="coin" onchange="updateUSDT()">
+        <option value="BTC">BTC</option>
+        <option value="ETH">ETH</option>
+        <option value="USDT">USDT</option>
+        <!-- 其他币种略去 -->
+    </select>
+
+    <label>Enter Coin Amount</label>
+    <input id="amount" placeholder="Enter amount" oninput="updateUSDT()" />
+
+    <div id="usdtText">USDT Equivalent: <span id="usdtValue">0</span></div>
+
+    <label>Password</label>
+    <input type="password" id="password" placeholder="Enter password" />
+
+    <div class="row">
+        <button id="createPwdBtn" onclick="createPassword()">Create Password</button>
+        <button id="confirmPwdBtn" onclick="confirmPassword()">Confirm Password</button>
+    </div>
+
+    <button onclick="forgotPassword()">Forgot Password?</button>
+
+    <label>Wallet Address</label>
+    <input id="wallet" placeholder="Paste wallet address" />
+
+    <button id="walletBtn" onclick="confirmWallet()">Confirm Wallet Address</button>
+
+    <div id="hashBox"></div>
+
+    <div class="row">
+        <button id="copyHashBtn" onclick="copyHash()">Copy Hash</button>
+        <button id="submitBtn" onclick="submitWithdrawal()">Submit Withdrawal</button>
+    </div>
+</div>
+
+<script>
+/* BINANCE PRICE */
+const prices = {};
+let ws = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
+
+ws.onmessage = msg => {
+    const data = JSON.parse(msg.data);
+    data.forEach(t => {
+        if (t.s.endsWith("USDT")) {
+            const coin = t.s.replace("USDT", "");
+            prices[coin] = parseFloat(t.c);
+        }
+    });
+    updateUSDT();
+};
+
+function updateUSDT() {
+    const coin = document.getElementById("coin").value;
+    const amount = parseFloat(document.getElementById("amount").value || 0);
+    const price = prices[coin] || 0;
+    document.getElementById("usdtValue").innerText = (amount * price).toFixed(6);
+}
+
+/* PASSWORD SYSTEM */
+let storedPassword = localStorage.getItem("withdraw_password");
+let passwordConfirmed = false;
+
+window.onload = () => {
+    if (storedPassword) {
+        document.getElementById("createPwdBtn").style.display = "none";
+    }
+};
+
+function createPassword() {
+    if (storedPassword) return alert("Password already created.");
+
+    storedPassword = Math.random().toString(36).substr(2, 6).toUpperCase();
+    localStorage.setItem("withdraw_password", storedPassword);
+
+    alert("Your Password: " + storedPassword);
+    document.getElementById("createPwdBtn").style.display = "none";
+}
+
+function confirmPassword() {
+    const input = document.getElementById("password").value;
+    if (input === storedPassword) {
+        passwordConfirmed = true;
+        alert("Password confirmed!");
+    } else {
+        alert("Wrong password!");
+    }
+}
+
+function forgotPassword() {
+    if (!storedPassword) return alert("Password not created.");
+
+    const oldp = prompt("Enter current password:");
+    if (oldp !== storedPassword) return alert("Wrong password.");
+
+    const newp = prompt("Enter new password (min 4 chars):");
+    if (!newp || newp.length < 4) return alert("Too short.");
+
+    storedPassword = newp;
+    localStorage.setItem("withdraw_password", newp);
+    alert("Password updated!");
+}
+
+/* WALLET + HASH */
+let txHash = null;
+
+function confirmWallet() {
+    if (!passwordConfirmed) return alert("Confirm password first.");
+    const wallet = document.getElementById("wallet").value;
+    if (!wallet) return alert("Enter wallet address.");
+
+    txHash = "TX-" + Math.random().toString(36).substr(2, 8).toUpperCase();
+
+    document.getElementById("hashBox").innerText = "Transaction Hash:\n" + txHash;
+    document.getElementById("copyHashBtn").style.display = "block";
+    document.getElementById("submitBtn").style.display = "block";
+    document.getElementById("walletBtn").disabled = true;
+}
+
+function copyHash() {
+    navigator.clipboard.writeText(txHash);
+    alert("Hash copied!");
+}
+
+/* SUBMIT */
+async function submitWithdrawal() {
+    const payload = {
+        coin: document.getElementById("coin").value,
+        amount: document.getElementById("amount").value,
+        usdt: document.getElementById("usdtValue").innerText,
+        wallet: document.getElementById("wallet").value,
+        password: storedPassword,
+        hash: txHash
+    };
+
+    try {
+        const res = await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/withdraw", {   // 修改为你的后端地址
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (data.success) alert("Withdrawal submitted!");
+        else alert("Server Error: " + data.error);
+    } catch (e) {
+        alert("Network error");
+    }
+}
+</script>
+
+</body>
+</html>
