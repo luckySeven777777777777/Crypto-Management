@@ -1,125 +1,145 @@
 const express = require("express");
-const fs = require("fs");
+const admin = require("firebase-admin");
+const fetch = require("node-fetch");
+const dotenv = require("dotenv");
 const cors = require("cors");
-const path = require("path");
+
+// 加载环境变量
+dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors());
-app.use(express.static("public"));
+app.use(cors({ origin: "*" }));  // 允许所有跨域请求
 
-// === Load DB ===
-const DB_FILE = "database.json";
-function loadDB() {
-    if (!fs.existsSync(DB_FILE)) {
-        fs.writeFileSync(DB_FILE, JSON.stringify({
-            admins: [{ username: "admin", passwordHash: "admin" }],
-            users: [],
-            settings: {},
-            transactions: [],
-            balances: {}   
-        }, null, 2));
-    }
-    return JSON.parse(fs.readFileSync(DB_FILE));
-}
+// 初始化 Firebase
+const serviceAccount = require("./path/to/serviceAccountKey.json");  // 替换为您的 Firebase 服务账号文件路径
 
-function saveDB(db) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-// ========================== AUTH ==========================
-app.post("/api/login", (req, res) => {
-    const { username, password } = req.body;
-    const db = loadDB();
-    const admin = db.admins.find(a => a.username === username && a.passwordHash === password);
-    if (!admin) {
-        return res.json({ success: false, message: "登录失败" });
-    }
-    return res.json({ success: true });
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://cryptonexbitsafe-default-rtdb.firebaseio.com"  // 替换为您的 Firebase 数据库 URL
 });
 
-// ========================== USER SYNC ==========================
-app.post("/api/user/sync", (req, res) => {
-  const { userid } = req.body;
-  const db = loadDB();
-  
-  if (!db.users.find(u => u.userid === userid)) {
-    db.users.push({ userid, balance: 0 });
-    saveDB(db);
-  }
-  
-  res.json({ success: true, message: `User ${userid} synced` });
-});
+const db = admin.database();
 
-// ========================== TRADE (BUY/SELL) ==========================
-app.post("/api/order/trade", (req, res) => {
-  const { userid, type, coin, amount, price, orderId } = req.body;
-  const db = loadDB();
-  
-  const transaction = {
-    type,
-    userid,
-    coin,
-    amount,
-    price,
-    orderId,
-    status: "处理中",
-    timestamp: new Date().toISOString()
-  };
-  
-  db.transactions.push(transaction);
-  saveDB(db);
-
-  res.json({ success: true, transaction });
-});
-
-// ========================== RECHARGE ==========================
+// ========================== 充值 ==========================
 app.post("/api/order/recharge", (req, res) => {
-  const { userid, coin, amount, wallet, status } = req.body;
-  const db = loadDB();
+  const { userid, coin, amount, wallet } = req.body;
+  console.log(`Recharge request received for ${userid}, ${coin}, ${amount}, ${wallet}`);
 
   const recharge = {
     userid,
     coin,
     amount,
     wallet,
-    status: status || "处理中",
+    status: "处理中",
     timestamp: new Date().toISOString()
   };
 
-  db.transactions.push(recharge);
-  saveDB(db);
+  // 保存充值记录到 Firebase
+  const transactionsRef = db.ref("transactions");
+  transactionsRef.push(recharge);
+
+  // 发送充值通知
+  const message = `New Recharge Request:\nAmount: ${amount} ${coin}\nWallet: ${wallet}`;
+  sendToTelegram(message, "recharge");
 
   res.json({ success: true, recharge });
 });
 
-// ========================== WITHDRAWAL ==========================
+// ========================== 提款 ==========================
 app.post("/api/order/withdraw", (req, res) => {
-  const { userid, coin, amount, wallet, txHash, password, status } = req.body;
-  const db = loadDB();
+  const { userid, coin, amount, wallet, password } = req.body;
+  console.log(`Withdrawal request received for ${userid}, ${coin}, ${amount}, ${wallet}`);
 
-  const withdrawal = {
+  const withdraw = {
     userid,
     coin,
     amount,
     wallet,
-    txHash,
-    password,
-    status: status || "处理中",
+    status: "处理中",
     timestamp: new Date().toISOString()
   };
 
-  db.transactions.push(withdrawal);
-  saveDB(db);
+  // 保存提款记录到 Firebase
+  const transactionsRef = db.ref("transactions");
+  transactionsRef.push(withdraw);
 
-  res.json({ success: true, withdrawal });
+  // 发送提款通知
+  const message = `New Withdrawal Request:\nAmount: ${amount} ${coin}\nWallet: ${wallet}`;
+  sendToTelegram(message, "withdraw");
+
+  res.json({ success: true, withdraw });
 });
 
-// ========================== Serve Frontend ==========================
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "dashboard-brand.html"));
+// ========================== 交易 ==========================
+app.post("/api/order/trade", (req, res) => {
+  const { userid, coin, amount, tradeType } = req.body;
+  console.log(`Trade request received for ${userid}, ${coin}, ${amount}, ${tradeType}`);
+
+  const trade = {
+    userid,
+    coin,
+    amount,
+    tradeType,
+    status: "处理中",
+    timestamp: new Date().toISOString()
+  };
+
+  // 保存交易记录到 Firebase
+  const transactionsRef = db.ref("transactions");
+  transactionsRef.push(trade);
+
+  // 发送交易通知
+  const message = `New Trade Request:\nAmount: ${amount} ${coin}\nType: ${tradeType}`;
+  sendToTelegram(message, "trade");
+
+  res.json({ success: true, trade });
 });
 
-// ========================== LISTEN ==========================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running on port " + PORT));
+// ========================== Telegram 通知 ==========================
+async function sendToTelegram(msg, operationType) {
+  let botToken, chatIds;
+
+  // 根据操作类型选择相应的 Bot Token 和 Chat ID
+  if (operationType === "recharge") {
+    botToken = process.env.RECHARGE_BOT_TOKEN;
+    chatIds = [process.env.RECHARGE_GROUP_CHAT_ID, process.env.RECHARGE_USER_CHAT_ID];
+  } else if (operationType === "withdraw") {
+    botToken = process.env.WITHDRAW_BOT_TOKEN;
+    chatIds = [process.env.WITHDRAW_GROUP_CHAT_ID, process.env.WITHDRAW_USER_CHAT_ID];
+  } else if (operationType === "trade") {
+    botToken = process.env.TRADE_BOT_TOKEN;
+    chatIds = [process.env.TRADE_GROUP_CHAT_ID, process.env.TRADE_USER_CHAT_ID];
+  }
+
+  // 发送通知
+  for (const chatId of chatIds) {
+    try {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: msg,
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ 成功交易", callback_data: "trade_success" },
+                { text: "❌ 取消交易", callback_data: "trade_cancel" }
+              ]
+            ]
+          }
+        })
+      });
+    } catch (e) {
+      console.error("Telegram notification error", e);
+    }
+  }
+}
+
+// 启动服务器
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
