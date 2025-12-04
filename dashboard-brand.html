@@ -26,6 +26,8 @@ body{margin:0;font-family:Segoe UI,Roboto,Arial;background:var(--bg);min-height:
 }
 .top-header .brand{font-weight:700;font-size:18px}
 .top-header .user{font-size:14px;display:flex;align-items:center;gap:16px}
+
+/* 右上退出按钮样式 */
 .top-header .user a.logout-btn{
   color:white;text-decoration:none;font-size:14px;
   background: rgba(255,255,255,0.12);
@@ -85,7 +87,6 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
     <div class="icon active" data-page="dashboard" title="控制台">🏠</div>
     <div class="icon" data-page="recharge" title="充值管理">💳</div>
     <div class="icon" data-page="withdraw" title="提款管理">💸</div>
-    <div class="icon" data-page="orders" title="订单记录">🧾</div>
     <div class="icon" data-page="members" title="会员管理">👥</div>
     <div class="icon" data-page="settings" title="系统设置">⚙️</div>
   </div>
@@ -175,181 +176,253 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
       </table>
     </div>
 
-    <!-- Orders page -->
-    <div id="page-orders" class="container" style="display:none">
-      <div class="page-title">订单记录</div>
-
+    <!-- Members page -->
+    <div id="page-members" class="container" style="display:none">
+      <div class="page-title">会员管理</div>
       <div class="filters">
-        <select id="o_type">
-          <option value="">全部类型</option>
-          <option value="deposit">充值</option>
-          <option value="withdraw">提款</option>
-          <option value="trade">买卖交易</option>
-        </select>
-
-        <select id="o_status">
-          <option value="">全部状态</option>
-          <option value="processing">处理中</option>
-          <option value="success">完成</option>
-          <option value="rejected">拒绝</option>
-        </select>
-
-        <input id="o_userid" placeholder="会员ID" style="width:120px">
-        <input id="o_wallet" placeholder="钱包地址 / TX Hash" style="width:180px">
-
-        <label>开始 <input type="date" id="o_start"></label>
-        <label>结束 <input type="date" id="o_end"></label>
-
-        <button class="primary" onclick="loadOrders()">搜索</button>
+        <input id="m_search" placeholder="搜索会员ID / 钱包" style="width:360px">
+        <button onclick="loadMembers()">搜索</button>
       </div>
-
       <table class="table">
         <thead>
-          <tr>
-            <th>订单号</th>
-            <th>会员</th>
-            <th>类型</th>
-            <th>币种</th>
-            <th>金额</th>
-            <th>钱包 / 交易哈希</th>
-            <th>时间</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
+          <tr><th>会员ID</th><th>钱包</th><th>等级</th><th>最近活动</th><th>余额（可编辑）</th><th>操作</th></tr>
         </thead>
-        <tbody id="orders_table">
-          <tr><td colspan="9" class="small">暂无订单，点击搜索加载</td></tr>
+        <tbody id="m_table">
+          <tr><td colspan="6" class="small">暂无会员数据</td></tr>
         </tbody>
       </table>
+    </div>
 
-      <div style="display:flex;justify-content:center;margin-top:12px;gap:10px">
-        <button onclick="prevOrdersPage()" id="orders_prev">上一页</button>
-        <button onclick="nextOrdersPage()" id="orders_next">下一页</button>
+    <!-- Settings page -->
+    <div id="page-settings" class="container" style="display:none">
+      <div class="page-title">系统设置</div>
+      <div style="max-width:900px">
+        <div style="margin-bottom:8px">Telegram Bot Token <input id="s_tg_token" style="width:560px"></div>
+        <div style="margin-bottom:8px">Telegram Chat ID <input id="s_tg_chat" style="width:200px"></div>
+        <div style="margin-bottom:8px">报警阈值(次) <input id="s_tg_thresh" type="number" style="width:120px">
+          窗口(s) <input id="s_tg_window" type="number" style="width:120px">
+        </div>
+        <div style="margin-bottom:8px">提款密码（旧） <input id="s_withdraw_old" type="password" style="width:200px">
+          新 <input id="s_withdraw_new" type="password" style="width:200px">
+          <button onclick="changeWithdrawPassword()">修改提款密码</button>
+        </div>
+        <div style="margin-bottom:8px"><button onclick="changeLoginPassword()">修改登录密码</button></div>
+        <div style="margin-bottom:8px"><button onclick="setup2FA()">设置 2FA</button>
+          <button onclick="disable2FA()">禁用 2FA</button></div>
+        <div style="margin-top:12px"><button class="primary" onclick="saveSettings()">保存设置</button></div>
+        <div id="settingsStatus" class="small"></div>
       </div>
     </div>
-    
+
   </div><!-- main -->
 </div><!-- app -->
 
-<!-- JS -->
+<!-- JS：保持原来逻辑（删除了 admin balance 相关脚本） -->
 <script>
-// 你之前已有的 JS 和我提供的分步 JS 已经包含在这里
-// 将 Part 3 和 Part 4 中的 JavaScript 逻辑继续合并即可
-</script>
-<script>
-(function(){
-  // 1. 点击菜单项，切换页面
-  const sidebar = document.querySelector(".sidebar");
-  const icons = Array.from(document.querySelectorAll('.sidebar .icon'));
-  
-  icons.forEach(icon => {
-    icon.addEventListener('click', () => {
-      // 切换激活状态
-      icons.forEach(ic => ic.classList.remove('active'));
-      icon.classList.add('active');
-      
-      // 隐藏所有页面，显示选中的页面
-      const page = icon.getAttribute('data-page');
-      document.querySelectorAll('.container').forEach(c => c.style.display = 'none');
-      const targetPage = document.getElementById(`page-${page}`);
-      if (targetPage) targetPage.style.display = 'block';
+const PROXY_TRANSACTIONS = "/proxy/transactions";
+const PROXY_RECHARGE = "/proxy/recharge";
+const PROXY_WITHDRAW = "/proxy/withdraw";
+const API_SETTINGS = "/api/settings";
+const API_2FA_SETUP = "/api/2fa/setup";
+const API_2FA_ENABLE = "/api/2fa/enable";
+const API_2FA_DISABLE = "/api/2fa/disable";
+const API_CHANGE_LOGIN = "/api/change-login-password";
+const API_CHANGE_WITHDRAW = "/api/change-withdraw-password";
 
-      // 如果页面是“订单记录”页面，加载订单数据
-      if (page === 'orders') loadOrders();
-      if (page === 'dashboard') loadDashboard();
-      if (page === 'recharge') r_search();
-      if (page === 'withdraw') w_search();
-      if (page === 'members') loadMembers();
-      if (page === 'settings') loadSettings();
+function $(s){return document.querySelector(s)}
+
+// sidebar click handling
+document.querySelectorAll('.sidebar .icon').forEach(ic=>ic.addEventListener('click',()=>{
+  document.querySelectorAll('.sidebar .icon').forEach(x=>x.classList.remove('active'));
+  ic.classList.add('active');
+  const page = ic.getAttribute('data-page');
+  document.querySelectorAll('.container').forEach(c=>c.style.display='none');
+  document.getElementById('page-'+page).style.display='block';
+
+  if(page==='dashboard') loadDashboard();
+  if(page==='recharge') r_search();
+  if(page==='withdraw') w_search();
+  if(page==='members') loadMembers();
+  if(page==='settings') loadSettings();
+}));
+
+// Dashboard metrics
+async function loadDashboard(){
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS);
+    const list = await res.json();
+    if(!Array.isArray(list)) return;
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    let todayRecharge=0, todayWithdraw=0, orders=0, alerts=0;
+    const memberMap = {};
+
+    list.forEach(it=>{
+      const t = Date.parse(it.timestamp||it.time||it.date||'');
+      if(isNaN(t)) return;
+      if(t>=today.getTime()) orders++;
     });
-  });
 
-  // 2. 默认激活控制台页面（如果没有其他激活菜单）
-  if (!document.querySelector('.sidebar .icon.active')) {
-    const defaultIcon = document.querySelector('.sidebar .icon[data-page="dashboard"]');
-    if (defaultIcon) defaultIcon.classList.add('active');
-    document.getElementById('page-dashboard').style.display = 'block';
-  }
+    document.getElementById('todayOrders').innerText=orders;
+    document.getElementById('statTime').innerText=new Date().toLocaleString();
+  }catch(e){}
+}
 
-  // 3. 加载数据（示例：控制台）
-  async function loadDashboard() {
-    try {
-      const res = await fetch("/api/dashboard");
-      const data = await res.json();
-      // 填充数据
-      document.getElementById('todayRecharge').innerText = data.todayRecharge || '--';
-      document.getElementById('todayWithdraw').innerText = data.todayWithdraw || '--';
-      document.getElementById('todayOrders').innerText = data.todayOrders || '--';
-      document.getElementById('alertsCount').innerText = data.alertsCount || '--';
-      document.getElementById('statTime').innerText = new Date().toLocaleString();
-    } catch (e) {
-      console.error('Failed to load dashboard data', e);
+// Recharge search
+async function r_search(){
+  const params = new URLSearchParams();
+  const s = $('#r_start').value; const e = $('#r_end').value;
+  const w = $('#r_wallet').value.trim();
+  const c = $('#r_currency').value;
+  const min = $('#r_minCount').value;
+  const st = $('#r_status').value;
+
+  if(s) params.append('start', s);
+  if(e) params.append('end', e);
+  if(w) params.append('wallet', w);
+  if(c) params.append('currency', c);
+  if(min) params.append('minCount', min);
+  if(st) params.append('status', st);
+
+  const tbody = $('#r_table');
+  tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
+
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS + '?' + params.toString());
+    const list = await res.json();
+    if(!Array.isArray(list)){ tbody.innerHTML='<tr><td colspan="8" class="small">返回异常</td></tr>'; return; }
+
+    const rows = list.filter(it=>String(it.type).includes("充值")).map(it=>{
+      const order = it.orderId||it.oid||'';
+      return `<tr><td>${order}</td><td>${it.time||''}</td>
+      <td>${it.type}</td><td>${it.amount}</td><td>${it.currency}</td>
+      <td>${it.ip||''}</td><td>${it.status||''}</td>
+      <td><button>查看</button></td></tr>`;
+    });
+
+    tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
+  }catch(e){}
+}
+
+// Withdraw search
+async function w_search(){
+  const tbody = $('#w_table');
+  tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
+
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS);
+    const list = await res.json();
+    const rows = list.map(it=>{
+      const order = it.orderId||'';
+      return `<tr><td>${order}</td><td>${it.time||''}</td>
+      <td>${it.type}</td><td>${it.amount}</td><td>${it.currency}</td>
+      <td>${it.ip||''}</td><td>${it.status||''}</td>
+      <td><button>查看</button></td></tr>`;
+    });
+    tbody.innerHTML = rows.join('');
+  }catch(e){}
+}
+
+// Members
+async function loadMembers(){
+  const tbody = $('#m_table');
+  tbody.innerHTML='<tr><td colspan="6" class="small">加载中...</td></tr>';
+  try{
+    // 从新的 Firestore 后端读取会员列表
+    const res = await fetch('/api/admin/users');
+    const list = await res.json();
+
+    if(!Array.isArray(list) || list.length===0){
+      tbody.innerHTML='<tr><td colspan="6" class="small">暂无会员数据</td></tr>';
+      return;
     }
+
+    const rows = list.map(u=>{
+      const wallet = u.wallet||'';
+      const level = u.level||'';
+      const last = u.lastActivity||'';
+      const bal = (typeof u.balance === 'number') ? u.balance.toFixed(2) : (u.balance||0);
+
+      return `<tr>
+        <td>${u.userid}</td>
+        <td>${wallet}</td>
+        <td>${level}</td>
+        <td>${last}</td>
+        <td>
+          <input id="bal_input_${u.userid}" type="number" value="${bal}" style="width:110px;padding:6px;border-radius:6px;border:1px solid #ddd">
+        </td>
+        <td>
+          <button onclick="saveMemberBalance('${u.userid}')">保存</button>
+        </td>
+      </tr>`;
+    });
+
+    tbody.innerHTML = rows.join('');
+  }catch(e){
+    console.error("loadMembers error", e);
+    tbody.innerHTML='<tr><td colspan="6" class="small">加载失败</td></tr>';
   }
+}
 
-  // 4. 加载订单记录
-  async function loadOrders() {
-    const tbody = document.getElementById('orders_table');
-    tbody.innerHTML = '<tr><td colspan="9" class="small">加载中...</td></tr>';
+// 保存会员余额（会写入 Firestore via /api/admin/balance）
+async function saveMemberBalance(userid){
+  const el = document.getElementById(`bal_input_${userid}`);
+  if(!el) return alert("找不到输入框");
+  const v = Number(el.value);
+  if (isNaN(v)) return alert("请输入有效金额");
 
-    try {
-      const res = await fetch("/api/orders");
-      const data = await res.json();
-      if (!data || !Array.isArray(data.list)) {
-        tbody.innerHTML = '<tr><td colspan="9" class="small">没有订单记录</td></tr>';
-        return;
-      }
-
-      const rows = data.list.map(order => {
-        return `
-          <tr>
-            <td>${order.orderId}</td>
-            <td>${order.userid}</td>
-            <td>${order.type}</td>
-            <td>${order.coin}</td>
-            <td>${order.amount}</td>
-            <td>${order.wallet || order.txHash}</td>
-            <td>${new Date(order.time).toLocaleString()}</td>
-            <td>${order.status}</td>
-            <td>
-              <button onclick="updateOrderStatus('${order.id}', 'success')">完成</button>
-              <button onclick="updateOrderStatus('${order.id}', 'processing')">处理中</button>
-              <button onclick="updateOrderStatus('${order.id}', 'rejected')">拒绝</button>
-            </td>
-          </tr>
-        `;
-      });
-
-      tbody.innerHTML = rows.join('');
-    } catch (e) {
-      console.error('Failed to load orders', e);
+  try{
+    const res = await fetch('/api/admin/balance', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ user: userid, amount: v })
+    });
+    const j = await res.json();
+    if (j.success) {
+      alert('保存成功，新余额：' + (j.balance ?? v));
+      loadMembers();
+    } else {
+      alert('保存失败');
     }
+  }catch(e){
+    console.error("saveMemberBalance error", e);
+    alert('保存错误');
   }
+}
 
-  // 5. 更新订单状态
-  async function updateOrderStatus(id, status) {
-    try {
-      const res = await fetch('/api/order/updateStatus', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status })
-      });
+// Settings
+async function loadSettings(){
+  try{
+    const res = await fetch(API_SETTINGS);
+    const s = await res.json();
+    $('#s_tg_token').value = s.telegramBotToken||'';
+    $('#s_tg_chat').value = s.telegramChatId||'';
+    $('#s_tg_thresh').value = s.tgThresholdCount||5;
+    $('#s_tg_window').value = s.tgWindowSeconds||3600;
+  }catch(e){}
+}
 
-      const data = await res.json();
-      if (data.success) {
-        alert('状态更新成功');
-        loadOrders(); // 重新加载订单
-      } else {
-        alert('状态更新失败');
-      }
-    } catch (e) {
-      console.error('Error updating order status', e);
-      alert('更新状态时出错');
-    }
-  }
+async function saveSettings(){
+  const body = {
+    telegramBotToken:$('#s_tg_token').value.trim(),
+    telegramChatId:$('#s_tg_chat').value.trim(),
+    tgThresholdCount:parseInt($('#s_tg_thresh').value||'5',10),
+    tgWindowSeconds:parseInt($('#s_tg_window').value||'3600',10)
+  };
+  await fetch(API_SETTINGS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  alert("保存成功");
+}
 
-})();
+async function changeWithdrawPassword(){}
+async function changeLoginPassword(){}
+async function setup2FA(){}
+async function disable2FA(){}
+
 </script>
+
+<!-- 登录验证 + API 封装 -->
+<script>requireLogin();</script>
+<script src="nexbit-api.js"></script>
 
 </body>
 </html>
