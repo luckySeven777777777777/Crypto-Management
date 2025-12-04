@@ -14,14 +14,13 @@ app.use(cors());
 app.use(express.json());
 
 // ------------------------
-// Serve Frontend (IMPORTANT)
+// Serve Frontend
 // ------------------------
 app.use(express.static(path.join(__dirname, "public")));
 
 // ------------------------
 // Firebase Init
 // ------------------------
-
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
@@ -32,9 +31,8 @@ admin.initializeApp({
 const db = admin.database();
 
 // ------------------------
-// Helper
+// Helper Functions
 // ------------------------
-
 function generateOrderId() {
   return "TX-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
@@ -65,22 +63,24 @@ async function sendToTelegram(type, text) {
 
     if (!token || !groupId) return;
 
+    // group
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: groupId,
-        text: text,
+        text,
         parse_mode: "Markdown"
       })
     });
 
+    // admin
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: userId,
-        text: text,
+        text,
         parse_mode: "Markdown"
       })
     });
@@ -94,6 +94,7 @@ async function sendToTelegram(type, text) {
 // API SECTION
 // ------------------------
 
+// 🟢 Balance API
 app.post("/api/balance", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -107,6 +108,7 @@ app.post("/api/balance", async (req, res) => {
   }
 });
 
+// 🟡 Recharge API
 app.post("/api/order/recharge", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -138,6 +140,7 @@ app.post("/api/order/recharge", async (req, res) => {
   }
 });
 
+// 🔵 Withdraw API
 app.post("/api/order/withdraw", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -169,6 +172,7 @@ app.post("/api/order/withdraw", async (req, res) => {
   }
 });
 
+// 🔴 Buy / Sell API
 app.post("/api/order/buysell", async (req, res) => {
   try {
     const userid = getUserId(req);

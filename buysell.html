@@ -26,7 +26,6 @@
       box-sizing:border-box;
     }
 
-    /* ▼ 下拉选择背景白色、文字黑色 */
     select option {
       background: white !important;
       color: black !important;
@@ -70,7 +69,84 @@
     }
   </style>
 </head>
+
 <body>
+
+<!-- ========================================================= -->
+<!-- ✅ Strikingly 外链注入用户识别脚本（B 脚本） 已完整加入 -->
+<!-- ========================================================= -->
+<script>
+// Strikingly 全站注入：生成 userid 并把它传给外链 / iframe / 链接
+(function(){
+  const USER_KEY = 'nexbit_uid_v1';
+  function gen() { return 'U' + Math.random().toString(36).substr(2,4).toUpperCase(); }
+  if(!localStorage.getItem(USER_KEY)) localStorage.setItem(USER_KEY, gen());
+  window.STR_USER_ID = localStorage.getItem(USER_KEY);
+  console.log('[Strikingly] USER_ID =', window.STR_USER_ID);
+
+  const externalDomains = [
+    'crypto-management-production-5e04.up.railway.app',
+    'www.nexbitsafe.com',
+    'crypto-management-production-5e04.up.railway.app:443'
+  ];
+
+  function appendToHref(a){
+    try{
+      const href = a.getAttribute('href');
+      if(!href) return;
+      if(!/^https?:\/\//i.test(href)) return;
+      const hostname = new URL(href).hostname;
+      if(externalDomains.some(d => hostname.includes(d))){
+        const url = new URL(href);
+        if(!url.searchParams.get('userid')) url.searchParams.set('userid', window.STR_USER_ID);
+        a.setAttribute('href', url.toString());
+      }
+    }catch(e){}
+  }
+
+  function appendToIframe(iframe){
+    try{
+      const src = iframe.getAttribute('src');
+      if(!src) return;
+      if(!/^https?:\/\//i.test(src)) return;
+      const hostname = new URL(src).hostname;
+      if(externalDomains.some(d => hostname.includes(d))){
+        const url = new URL(src);
+        if(!url.searchParams.get('userid')) url.searchParams.set('userid', window.STR_USER_ID);
+        iframe.setAttribute('src', url.toString());
+      }
+    }catch(e){}
+  }
+
+  function scanAndPatch(){
+    document.querySelectorAll('a[href]').forEach(appendToHref);
+    document.querySelectorAll('iframe').forEach(appendToIframe);
+  }
+
+  document.addEventListener('DOMContentLoaded', scanAndPatch);
+  const obs = new MutationObserver(scanAndPatch);
+  obs.observe(document.body, {childList:true, subtree:true});
+
+  window.addEventListener('message', function(ev){
+    try{
+      const allowedOrigins = [
+        'https://crypto-management-production-5e04.up.railway.app',
+        'https://www.nexbitsafe.com'
+      ];
+      if(!allowedOrigins.includes(ev.origin)) return;
+      const d = ev.data;
+      if(d && d.type === 'GET_USER_ID'){
+        ev.source.postMessage({type:'USER_ID', userid: window.STR_USER_ID}, ev.origin);
+      }
+    }catch(e){}
+  }, false);
+
+})();
+</script>
+<!-- ========================================================= -->
+<!-- B 脚本结束 -->
+<!-- ========================================================= -->
+
 
 <div class="container">
 
