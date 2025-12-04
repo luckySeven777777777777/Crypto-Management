@@ -1,16 +1,15 @@
 {
-  "name": "nexbit-admin",
+  "name": "crypto-management",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "axios": "^1.6.2",
-    "body-parser": "^1.20.2",
-    "dotenv": "^16.0.3",
     "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "firebase": "^9.22.2",
     "firebase-admin": "^11.10.1"
   }
 }
