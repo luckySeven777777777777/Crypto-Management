@@ -21,6 +21,38 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static("public"));
 
+// -----------------------------------------------------
+// 新增：自动创建/更新用户 (前端 /api/user/sync)
+// -----------------------------------------------------
+app.post("/api/user/sync", async (req, res) => {
+  try {
+    const { userid } = req.body;
+    if (!userid) return res.json({ success: false, msg: "missing userid" });
+
+    const userRef = db.collection("users").doc(userid);
+    const snap = await userRef.get();
+
+    if (!snap.exists) {
+      await userRef.set({
+        wallet: "",
+        balance: 0,
+        status: "active",
+        created: Date.now(),
+        lastActive: Date.now()
+      });
+      return res.json({ success: true, created: true });
+    } else {
+      await userRef.update({
+        lastActive: Date.now()
+      });
+      return res.json({ success: true, created: false });
+    }
+  } catch (err) {
+    console.error("sync user error:", err);
+    return res.status(500).json({ success: false });
+  }
+});
+
 // -----------------------------
 // 用户余额
 // -----------------------------
@@ -56,7 +88,7 @@ app.post("/api/balance", async (req, res) => {
 app.get("/api/admin/users", async (req, res) => {
   try {
     const list = [];
-    const snap = await db.collection("users").get();
+    const snap = await db.collection("users").orderBy("created", "desc").get();
 
     snap.forEach((doc) => list.push({ userid: doc.id, ...doc.data() }));
 
@@ -90,7 +122,7 @@ app.post("/api/admin/balance", async (req, res) => {
 });
 
 // -----------------------------
-// 后台：充值记录（必须）
+// 后台：充值记录
 // -----------------------------
 app.get("/proxy/recharge", async (req, res) => {
   try {
@@ -106,7 +138,7 @@ app.get("/proxy/recharge", async (req, res) => {
 });
 
 // -----------------------------
-// 后台：提现记录（必须）
+// 后台：提现记录
 // -----------------------------
 app.get("/proxy/withdraw", async (req, res) => {
   try {
@@ -122,7 +154,7 @@ app.get("/proxy/withdraw", async (req, res) => {
 });
 
 // -----------------------------
-// 后台：交易记录（必须）
+// 后台：交易记录
 // -----------------------------
 app.get("/proxy/transactions", async (req, res) => {
   try {
