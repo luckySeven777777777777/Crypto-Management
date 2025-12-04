@@ -1,15 +1,16 @@
 {
-  "name": "nexbit-management",
+  "name": "crypto-management",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "firebase-admin": "^12.0.0",
-    "node-fetch": "^2.6.9",
+    "express": "^4.19.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1"
+    "firebase-admin": "^12.0.0",
+    "dotenv": "^16.3.1",
+    "body-parser": "^1.20.2",
+    "node-telegram-bot-api": "^0.61.0"
   }
 }
