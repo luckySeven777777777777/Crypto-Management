@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deposit Page</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: transparent; color:#fff; margin:0; padding:20px;}
+    h1 { text-align:center; margin-bottom:15px; }
+    .container { max-width:400px; margin:0 auto; display:flex; flex-direction:column; gap:12px; position:relative; }
+
+    .select-box { border: 1px solid rgba(255,255,255,0.3); border-radius:8px; background:rgba(30,30,30,0.8); cursor:pointer; padding:8px 12px; display:flex; align-items:center; justify-content:space-between; }
+    .select-box span { color:#fff; }
+
+    .dropdown { 
+      position:absolute; 
+      background: rgba(30,30,30,0.95); 
+      border-radius:8px; 
+      max-height:250px; 
+      overflow-y:auto; 
+      display:none; 
+      z-index:9999; 
+    }
+    .dropdown div { padding:10px 12px; cursor:pointer; display:flex; align-items:center; gap:12px; border-radius:6px; transition:0.2s; }
+    .dropdown div:hover { background: rgba(50,50,50,0.8); }
+    .dropdown img { width:24px; height:24px; object-fit:contain; }
+
+    input[type=number], input[type=text] {
+      font-family: inherit;
+      font-size:14px;
+      background: rgba(255,255,255,0.05);
+      color:#fff;
+      border:1px solid rgba(255,255,255,0.3);
+      border-radius:8px;
+      padding:10px 12px;
+      outline:none;
+      box-sizing:border-box;
+      width:100%;
+      backdrop-filter: blur(4px);
+    }
+
+    #walletAddressInput {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.25);
+    }
+
+    #uploadFile { display:none !important; }
+
+    #uploadLabel{
+      display:block;
+      width:fit-content;
+      padding:10px 14px;
+      background:#00b894;
+      color:#fff;
+      border-radius:8px;
+      cursor:pointer;
+      font-size:14px;
+      text-align:center;
+    }
+
+    #uploadedImage{
+      display:none;
+      width:100px;
+      height:100px;
+      object-fit:contain;
+      margin-bottom:8px;
+      border-radius:6px;
+      border:1px solid rgba(255,255,255,0.3);
+    }
+
+    #submitBtn{
+      padding:10px; 
+      border:none; 
+      border-radius:8px; 
+      background:#00b894; 
+      color:#fff; 
+      cursor:pointer; 
+      transition:0.3s;
+      font-size:15px;
+    }
+
+    #submitBtn.loading {
+      cursor:not-allowed;
+      opacity:0.7;
+      position:relative;
+    }
+
+    #submitBtn.loading::after {
+      content:"";
+      width:18px;
+      height:18px;
+      border:3px solid rgba(255,255,255,0.6);
+      border-top-color:#fff;
+      border-radius:50%;
+      animation:spin 0.8s linear infinite;
+      position:absolute;
+      right:12px;
+      top:50%;
+      transform:translateY(-50%);
+    }
+
+    @keyframes spin {
+      from { transform:translateY(-50%) rotate(0deg); }
+      to { transform:translateY(-50%) rotate(360deg); }
+    }
+
+    #submitBtn:disabled{
+      opacity:0.5;
+      cursor:not-allowed;
+    }
+
+    #successMsg{ display:none; text-align:center; color:#00b894; font-weight:bold; margin-top:10px; }
+    #uploadNotice{ color:#f39c12; font-size:12px; }
+
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <label>Select Coin</label>
+  <div class="select-box" id="coinSelectBox">
+    <span id="coinSelected">Select a coin</span>
+  </div>
+
+  <label for="amountInput">Enter Amount (USDT)</label>
+  <input type="number" id="amountInput" placeholder="0.00">
+
+  <div id="usdtDisplay">USDT: 0.00</div>
+  <div id="boostDisplay" style="display:none;">First Deposit Boost: +0.00</div>
+  <div id="totalDisplay">Total: 0.00 USDT</div>
+
+  <label for="walletAddressInput">Wallet Address</label>
+  <input type="text" id="walletAddressInput" placeholder="Enter your wallet address">
+
+  <label id="uploadLabel" for="uploadFile">Upload Screenshot</label>
+  <input type="file" id="uploadFile" accept="image/*">
+
+  <img id="uploadedImage">
+
+  <div id="uploadNotice">Please upload a screenshot of your wallet deposit first</div>
+
+  <button id="submitBtn" disabled>Submit</button>
+  <div id="successMsg">Submission Successful!</div>
+</div>
+
+<div class="dropdown" id="coinDropdown"></div>
+
+<script>
+// ===== 后端 API 域名（Railway）======
+const API_BASE = "https://crypto-management-production-5e04.up.railway.app";  // 请确保API_URL正确
+
+let coins=[];
+let selectedCoin=null;
+
+const coinDropdown=document.getElementById("coinDropdown");
+const coinSelectBox=document.getElementById("coinSelectBox");
+const coinSelected=document.getElementById("coinSelected");
+
+async function fetchCoins(){
+  try{
+    const res=await fetch('https://api.binance.com/api/v3/ticker/price');
+    const data=await res.json();
+    coins=data.filter(c=>c.symbol.endsWith('USDT')).map(c=>c.symbol);
+    renderDropdown();
+  }catch{
+    coins=["BTCUSDT","ETHUSDT","BNBUSDT"];
+    renderDropdown();
+  }
+}
+
+function renderDropdown(){
+  coinDropdown.innerHTML="";
+  coins.forEach(c=>{
+    const div=document.createElement("div");
+    const sym=c.replace("USDT","").toLowerCase();
+    const img=document.createElement("img");
+    img.src=`https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/${sym}.svg`;
+    img.onerror=()=>{img.src="https://via.placeholder.com/24?text=?";};
+    const span=document.createElement("span");
+    span.textContent=c;
+    div.appendChild(img);
+    div.appendChild(span);
+    div.addEventListener("click",()=>{
+      selectedCoin=c;
+      coinSelected.textContent=c;
+      coinDropdown.style.display="none";
+      connectWS(selectedCoin);
+      updateUSDT();
+    });
+    coinDropdown.appendChild(div);
+  });
+}
+
+coinSelectBox.addEventListener("click",()=>{
+  const r=coinSelectBox.getBoundingClientRect();
+  coinDropdown.style.top=r.bottom+window.scrollY+"px";
+  coinDropdown.style.left=r.left+window.scrollX+"px";
+  coinDropdown.style.width=r.width+"px";
+  coinDropdown.style.display=coinDropdown.style.display==="block"?"none":"block";
+});
+
+document.addEventListener("click",e=>{
+  if(!coinSelectBox.contains(e.target)&&!coinDropdown.contains(e.target)){
+    coinDropdown.style.display="none";
+  }
+});
+
+const amountInput=document.getElementById("amountInput");
+const walletAddressInput=document.getElementById("walletAddressInput");
+const usdtDisplay=document.getElementById("usdtDisplay");
+const boostDisplay=document.getElementById("boostDisplay");
+const totalDisplay=document.getElementById("totalDisplay");
+const uploadFile=document.getElementById("uploadFile");
+const uploadedImage=document.getElementById("uploadedImage");
+const uploadNotice=document.getElementById("uploadNotice");
+const submitBtn=document.getElementById("submitBtn");
+const successMsg=document.getElementById("successMsg");
+
+let ws=null;
+let currentPrice=0;
+
+function connectWS(symbol){
+  if(ws)ws.close();
+  ws=new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
+  ws.onmessage=msg=>{
+    const d=JSON.parse(msg.data);
+    currentPrice=parseFloat(d.c);
+    updateUSDT();
+  };
+}
+
+function updateUSDT(){
+  const amount=parseFloat(amountInput.value)||0;
+  const usdt=amount*currentPrice;
+  const boost=amount>0?usdt*0.41:0;
+
+  usdtDisplay.textContent=`USDT: ${usdt.toFixed(2)}`;
+  if(boost>0){
+    boostDisplay.style.display="block";
+    boostDisplay.textContent=`First Deposit Boost: +${boost.toFixed(2)}`;
+  }else boostDisplay.style.display="none";
+
+  totalDisplay.textContent=`Total: ${(usdt+boost).toFixed(2)} USDT`;
+}
+
+amountInput.addEventListener("input",updateUSDT);
+
+uploadFile.addEventListener("change",()=>{
+  const f=uploadFile.files[0];
+  if(f){
+    const r=new FileReader();
+    r.onload=e=>{
+      uploadedImage.src=e.target.result;
+      uploadedImage.style.display="block";
+      uploadNotice.style.display="none";
+      submitBtn.disabled=false;
+    };
+    r.readAsDataURL(f);
+  }
+});
+
+submitBtn.addEventListener("click",async ()=>{
+  if(!walletAddressInput.value || !selectedCoin || !amountInput.value || !uploadFile.files[0]){
+    alert("Please fill all required fields!");
+    return;
+  }
+
+  // Disable submit button and inputs during submission
+  submitBtn.disabled=true;
+  submitBtn.classList.add("loading");
+  submitBtn.textContent="Submitting...";
+
+  walletAddressInput.disabled=true;
+  amountInput.disabled=true;
+  coinSelectBox.style.pointerEvents="none";
+  uploadLabel.style.pointerEvents="none";
+
+  const message=`New Deposit Submission:
+Coin: ${selectedCoin}
+Amount: ${amountInput.value} USDT
+Wallet: ${walletAddressInput.value}`;
+
+  await sendTelegram(message, uploadFile.files[0]);
+
+  successMsg.style.display="block";
+  submitBtn.textContent="Submitted";
+  submitBtn.classList.remove("loading");
+  submitBtn.style.background="#555";
+});
+
+// Send message to Telegram
+async function sendTelegram(text, imageFile){
+  const botToken = "YOUR_BOT_TOKEN";
+  const chatIds = [
+    "YOUR_USER_CHAT_ID",      // Personal
+    "-100YOUR_GROUP_CHAT_ID"  // Group
+  ];
+
+  for(const chatId of chatIds){
+    // Send text message
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({chat_id: chatId, text})
+    });
+
+    // Send image
+    const formData = new FormData();
+    formData.append("chat_id", chatId);
+    formData.append("photo", imageFile);
+
+    await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+      method: "POST",
+      body: formData
+    });
+  }
+}
+
+fetchCoins();
+</script>
+
+</body>
+</html>
