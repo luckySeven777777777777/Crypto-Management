@@ -1,9 +1,0 @@
-{
-  "admins": [
-    { "username": "admin", "passwordHash": "admin" }
-  ],
-  "users": [],
-  "settings": {},
-  "transactions": [],
-  "balances": {}
-}
