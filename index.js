@@ -8,6 +8,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ★★★ 关键：让 Railway 能访问 HTML、CSS、JS 文件
+app.use(express.static("."));
+
 // ----------------------
 // Firebase RTDB 连接
 // ----------------------
