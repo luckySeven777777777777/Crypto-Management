@@ -6,18 +6,17 @@
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
-require("dotenv").config();
 const path = require("path");
+require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // ------------------------
-// Static File Hosting (必须要有，不然 HTML 404)
+// Serve Frontend (IMPORTANT)
 // ------------------------
-app.use(express.static(path.join(__dirname)));
-
+app.use(express.static(path.join(__dirname, "public")));
 
 // ------------------------
 // Firebase Init
@@ -32,7 +31,6 @@ admin.initializeApp({
 
 const db = admin.database();
 
-
 // ------------------------
 // Helper
 // ------------------------
@@ -44,11 +42,6 @@ function generateOrderId() {
 function getUserId(req) {
   return req.headers["x-user-id"] || req.body.userid || "unknown";
 }
-
-
-// ------------------------
-// Telegram 通知
-// ------------------------
 
 async function sendToTelegram(type, text) {
   try {
@@ -72,7 +65,6 @@ async function sendToTelegram(type, text) {
 
     if (!token || !groupId) return;
 
-    // group
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -83,7 +75,6 @@ async function sendToTelegram(type, text) {
       })
     });
 
-    // personal
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -99,12 +90,10 @@ async function sendToTelegram(type, text) {
   }
 }
 
-
 // ------------------------
 // API SECTION
 // ------------------------
 
-// ✔ Balance
 app.post("/api/balance", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -118,12 +107,10 @@ app.post("/api/balance", async (req, res) => {
   }
 });
 
-
-// ✔ Recharge
 app.post("/api/order/recharge", async (req, res) => {
   try {
     const userid = getUserId(req);
-    const { coin, amount, wallet, screenshot } = req.body;
+    const { coin, amount, wallet } = req.body;
 
     const orderId = generateOrderId();
 
@@ -132,7 +119,6 @@ app.post("/api/order/recharge", async (req, res) => {
       coin,
       amount,
       wallet,
-      screenshot: screenshot || "",
       orderId,
       type: "recharge",
       status: "processing",
@@ -141,8 +127,7 @@ app.post("/api/order/recharge", async (req, res) => {
 
     await db.ref("transactions").push(data);
 
-    sendToTelegram(
-      "recharge",
+    sendToTelegram("recharge",
       `🔔 *充值申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
     );
 
@@ -153,12 +138,10 @@ app.post("/api/order/recharge", async (req, res) => {
   }
 });
 
-
-// ✔ Withdraw
 app.post("/api/order/withdraw", async (req, res) => {
   try {
     const userid = getUserId(req);
-    const { coin, amount, wallet, screenshot } = req.body;
+    const { coin, amount, wallet } = req.body;
 
     const orderId = generateOrderId();
 
@@ -167,7 +150,6 @@ app.post("/api/order/withdraw", async (req, res) => {
       coin,
       amount,
       wallet,
-      screenshot: screenshot || "",
       orderId,
       type: "withdraw",
       status: "processing",
@@ -176,9 +158,8 @@ app.post("/api/order/withdraw", async (req, res) => {
 
     await db.ref("transactions").push(data);
 
-    sendToTelegram(
-      "withdraw",
-      `📤 *提款申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
+    sendToTelegram("withdraw",
+      `📤 *提款申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
     );
 
     res.json({ success: true, orderId });
@@ -188,8 +169,6 @@ app.post("/api/order/withdraw", async (req, res) => {
   }
 });
 
-
-// ✔ BuySell (Trade)
 app.post("/api/order/buysell", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -210,8 +189,7 @@ app.post("/api/order/buysell", async (req, res) => {
 
     await db.ref("transactions").push(data);
 
-    sendToTelegram(
-      "trade",
+    sendToTelegram("trade",
       `💱 *买卖订单*\n用户: ${userid}\n方向: ${side}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
     );
 
@@ -221,7 +199,6 @@ app.post("/api/order/buysell", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-
 
 // ------------------------
 // RUN SERVER
