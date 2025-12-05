@@ -1,32 +1,70 @@
-// public/js/nexbit-api.js
-// 与 server.js 完全匹配的前端 API 封装（覆盖原文件）
-// 注意：BASE_URL 设为你的 Railway 部署域名
+/* ==================================================
+   NEXBIT 通用 API 文件（全站通用，不修改 UI）
+   用途：所有前端页面统一通过这里调用后台
+   ================================================== */
 
-const BASE_URL = "https://crypto-management-production-5e04.up.railway.app";
+const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
 
-async function apiGet(path) {
-  const res = await fetch(`${BASE_URL}${path}`, { credentials: 'omit' });
-  return res.json();
+/* -------------- 基础 GET 封装 -------------- */
+async function nexGet(path) {
+    try {
+        const res = await fetch(API_BASE + path, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                "X-User-Id": window.NEXBIT_USER_ID || ""
+            }
+        });
+        return await res.json();
+    } catch (err) {
+        console.error("GET ERROR:", err);
+        return { ok: false, error: "network error" };
+    }
 }
 
-async function apiPost(path, data) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data || {})
-  });
-  return res.json();
+/* -------------- 基础 POST 封装 -------------- */
+async function nexPost(path, data = {}) {
+    try {
+        const res = await fetch(API_BASE + path, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-User-Id": window.NEXBIT_USER_ID || ""
+            },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    } catch (err) {
+        console.error("POST ERROR:", err);
+        return { ok: false, error: "network error" };
+    }
 }
 
-// 高级接口
-function apiSyncUser(userId) { return apiPost('/api/user/sync', { userId }); }
-function apiGetBalance(userId) { return apiGet(`/api/balance?userId=${encodeURIComponent(userId)}`); }
-function apiUpdateBalance(userId, amount) { return apiPost('/api/balance', { userId, amount }); }
-function apiGetTransactions(params = {}) { const q = new URLSearchParams(params).toString(); return apiGet(`/proxy/transactions?${q}`); }
-function apiRecharge(data) { return apiPost('/proxy/recharge', data); }
-function apiWithdraw(data) { return apiPost('/proxy/withdraw', data); }
-function apiUpdateTransactionStatus(transactionId, status) { return apiPost('/proxy/transaction/update', { transactionId, status }); }
-function apiGetSettings() { return apiGet('/api/settings'); }
-function apiSaveSettings(data) { return apiPost('/api/settings', data); }
-function apiListUsers() { return apiGet('/api/list-users'); }
-function apiAdminLogin(user, pass) { return apiPost('/api/admin/login', { user, pass }); }
+/* -------------- 获取用户余额 -------------- */
+async function getNexBalance() {
+    return await nexGet(`/api/balance?userid=${window.NEXBIT_USER_ID}`);
+}
+
+/* -------------- 充值 -------------- */
+async function nexRecharge(data) {
+    return await nexPost("/api/order/recharge", data);
+}
+
+/* -------------- 提款 -------------- */
+async function nexWithdraw(data) {
+    return await nexPost("/api/order/withdraw", data);
+}
+
+/* -------------- BuySell 交易 -------------- */
+async function nexBuySell(data) {
+    return await nexPost("/api/order/buysell", data);
+}
+
+/* -------------- （后续管理后台需要）订单操作 -------------- */
+async function nexOrderAction(type, orderId, action) {
+    return await nexPost("/api/admin/order/action", {
+        type,
+        orderId,
+        action
+    });
+}
