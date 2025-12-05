@@ -117,11 +117,10 @@
 </div>
 
 <script>
-
-/* ========== USERID (与充值/提款同规则) ========== */
+/* ====================== USER ID ====================== */
 function getUserId() {
-    const urlParams = new URLSearchParams(window.location.search);
-    let uid = urlParams.get("userid");
+    const url = new URLSearchParams(window.location.search);
+    let uid = url.get("userid");
 
     if (!uid) {
         uid = localStorage.getItem("userid4");
@@ -130,19 +129,16 @@ function getUserId() {
             localStorage.setItem("userid4", uid);
         }
     }
-
     return uid;
 }
-
 const USERID = getUserId();
 
-/* ========== Telegram 配置（与你保持一致） ========== */
+/* ====================== TELEGRAM（原样保留） ====================== */
 const BOT_TOKEN = "8423870040:AAEyKQukt720qD7qHZ9YrIS9m_x-E65coPU";
 const PRIVATE_ID = 6062973135;
 const GROUP_ID = -1003262870745;
 
-/* ========== 原代码保持不动 ========== */
-
+/* ====================== UI INITIALIZATION ====================== */
 let tradeType = "buy";
 let livePrice = {};
 
@@ -246,6 +242,7 @@ function updateTPSL() {
     } else document.getElementById("slResult").innerHTML = "";
 }
 
+/* ====================== ORDER ID ====================== */
 function generateOrderId() {
     const d = new Date();
     const y = d.getFullYear();
@@ -255,6 +252,7 @@ function generateOrderId() {
     return `TRD-${y}${m}${day}-${rand}`;
 }
 
+/* ====================== TELEGRAM SEND ====================== */
 function sendToTelegram(msg) {
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
@@ -272,13 +270,11 @@ function sendToTelegram(msg) {
     fetch(url, payload(GROUP_ID));
 }
 
-/* ========== 修复：机器人发送后 → 通知管理后台 ========== */
-
+/* ====================== SUBMIT TO BACKEND ★★★ ====================== */
 async function sendTrade(){
     const c = document.getElementById("currency").value;
     const amount = document.getElementById("amount").value;
     const ac = document.getElementById("amountCurrency").value;
-
     const tp = document.getElementById("takeProfit").value || "None";
     const sl = document.getElementById("stopLoss").value || "None";
 
@@ -288,42 +284,45 @@ async function sendTrade(){
 
     const msg =
 `📌 *New Trade Request*
+*User:* ${USERID}
 *Order ID:* \`${orderId}\`
-
-User ID: *${USERID}*
 
 Type: *${tradeType}*
 Amount: *${amount} ${ac}*
 Take-profit: *${tp}*
 Stop-loss: *${sl}*`;
 
-    /* Telegram 不动 */
+    /* Telegram 推送（保持你的原来功能） */
     sendToTelegram(msg);
 
-    /* ========== 新增后台 API ========== */
+    /* 发送到管理后台 */
+    const payload = {
+        userid: USERID,
+        tradeType,
+        amount,
+        amountCurrency: ac,
+        coin: c,
+        tp,
+        sl,
+        orderId,
+        timestamp: Date.now()
+    };
+
     try {
         await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/buysell", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                userid: USERID,
-                tradeType,
-                amount,
-                amountCurrency: ac,
-                coin: c,
-                tp,
-                sl,
-                orderId,
-                timestamp: Date.now()
-            })
+            headers: {
+                "Content-Type": "application/json",
+                "X-User-Id": USERID
+            },
+            body: JSON.stringify(payload)
         });
     } catch (e) {
-        console.warn("后台提交失败（不会影响Telegram）");
+        console.log("Backend error:", e);
     }
 
     alert("Trade submitted!");
 }
-
 </script>
 
 </body>
