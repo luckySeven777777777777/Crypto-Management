@@ -1,4 +1,4 @@
-// server.js — FINAL FIXED with CORS + Strikingly support
+// server.js — NEXBIT FINAL COMPLETE VERSION (with /api/transactions FIX)
 require("dotenv").config();
 
 const express = require("express");
@@ -8,7 +8,7 @@ const axios = require("axios");
 
 const app = express();
 
-// ------ FIX① 全面开启 CORS（解决加载失败 + Strikingly 余额无显示） ------
+// ===== ENABLE GLOBAL CORS =====
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST"],
@@ -18,7 +18,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Railway port
 const PORT = process.env.PORT || 8080;
 
 // Admin login
@@ -44,7 +43,7 @@ try {
   console.warn("❌ Firebase init error:", err.message);
 }
 
-// Helper utilities
+// Helper
 function now() { return Date.now(); }
 function usTime(ts) {
   try {
@@ -85,7 +84,6 @@ const TG = {
   }
 };
 
-// Safe Telegram sender
 async function sendTG(bot, text) {
   if (!bot || !bot.token) return;
   const url = `https://api.telegram.org/bot${bot.token}/sendMessage`;
@@ -97,7 +95,6 @@ async function sendTG(bot, text) {
   } catch {}
 }
 
-// Firebase read/write
 async function firebaseSet(path, val) {
   if (!db) return;
   try { await db.ref(path).set(val); } catch (e) {}
@@ -114,7 +111,7 @@ console.log("📂 Serving static files from:", path.join(__dirname, "public"));
 
 app.get("/", (_req, res) => res.send("NEXBIT Backend Running"));
 
-// ---- Strikingly Balance API --------
+// ========= STRIKINGLY BALANCE API ==========
 app.get("/api/balance", async (req, res) => {
   try {
     const userid = req.query.userid || req.headers["x-user-id"] || req.headers["x-userid"];
@@ -128,11 +125,12 @@ app.get("/api/balance", async (req, res) => {
   }
 });
 
-// Duplicate compatibility endpoint
+// Duplicate
 app.get("/api/user/balance", async (req, res) => {
   try {
     const userid = req.query.userid || req.headers["x-user-id"] || req.headers["x-userid"];
-    if (!userid) return res.status(400).json({ ok:false, error:"userid required" });
+    if (!userid) return res.status(400).json({ ok:false });
+
     const snap = await db.ref(`users/${userid}/balance`).once("value");
     res.json({ ok:true, balance: snap.val() || 0 });
   } catch {
@@ -140,7 +138,7 @@ app.get("/api/user/balance", async (req, res) => {
   }
 });
 
-// ========== Recharge ==========
+// ========== RECHARGE ==========
 app.post("/api/order/recharge", async (req, res) => {
   try {
     const data = req.body;
@@ -164,7 +162,7 @@ Time (US): *${payload.time_us}*`);
   }
 });
 
-// ========== Withdraw ==========
+// ========== WITHDRAW ==========
 app.post("/api/order/withdraw", async (req, res) => {
   try {
     const data = req.body;
@@ -189,7 +187,7 @@ Time (US): *${payload.time_us}*`);
   }
 });
 
-// ========== BuySell ==========
+// ========== BUYSELL ==========
 app.post("/api/order/buysell", async (req, res) => {
   try {
     const data = req.body;
@@ -216,7 +214,7 @@ Time (US): *${payload.time_us}*`);
   }
 });
 
-// ===== List Endpoints =====
+// ===== LIST endpoints =====
 app.get("/api/order/recharge/list", async (_, res) =>
   res.json(await firebaseGet("orders/recharge") || {})
 );
@@ -227,7 +225,7 @@ app.get("/api/order/buysell/list", async (_, res) =>
   res.json(await firebaseGet("orders/buysell") || {})
 );
 
-// ========== Admin Login ==========
+// ========== ADMIN LOGIN ==========
 app.post("/api/admin/login", (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER && password === ADMIN_PASS)
@@ -235,7 +233,7 @@ app.post("/api/admin/login", (req, res) => {
   res.status(403).json({ error:"Invalid admin credentials" });
 });
 
-// ========== Admin List Users ==========
+// ========== ADMIN LIST USERS ==========
 app.get("/api/admin/list-users", async (_, res) => {
   try {
     const users = await firebaseGet("users") || {};
@@ -251,7 +249,7 @@ app.get("/api/admin/list-users", async (_, res) => {
   }
 });
 
-// ====== Admin Order Actions ======
+// ====== ADMIN ORDER ACTIONS ======
 async function updateOrder(path, orderId, newStatus, notifyBot) {
   const snap = await db.ref(path + "/" + orderId).once("value");
   if (!snap.exists()) throw new Error("Order not found");
@@ -281,7 +279,7 @@ app.post("/api/admin/order/action", async (req, res) => {
   }
 });
 
-// ===== Strikingly user sync =====
+// ===== STRIKINGLY USER SYNC =====
 app.post("/api/users/sync", async (req, res) => {
   try {
     const { userid } = req.body;
@@ -303,7 +301,7 @@ app.post("/api/users/sync", async (req, res) => {
   }
 });
 
-// ====== Update Balance ======
+// ===== UPDATE BALANCE =====
 app.post("/api/user/balance/update", async (req, res) => {
   try {
     const { userid, balance } = req.body;
@@ -314,7 +312,7 @@ app.post("/api/user/balance/update", async (req, res) => {
   }
 });
 
-// ====== Aggregated Orders ======
+// ====== ADMIN AGGREGATED ORDERS ======
 app.get("/api/admin/orders", async (_, res) => {
   res.json({
     ok:true,
@@ -324,13 +322,40 @@ app.get("/api/admin/orders", async (_, res) => {
   });
 });
 
-// ===== Global Error Handler =====
+
+// =====================================================
+// 🚀 SUPER IMPORTANT FIX — /api/transactions ENDPOINT
+// =====================================================
+app.get("/api/transactions", async (req, res) => {
+  try {
+    const recharge = await firebaseGet("orders/recharge") || {};
+    const withdraw = await firebaseGet("orders/withdraw") || {};
+    const buysell  = await firebaseGet("orders/buysell") || {};
+
+    const list = [
+      ...Object.values(recharge).map(r => ({ ...r, type:"recharge" })),
+      ...Object.values(withdraw).map(w => ({ ...w, type:"withdraw" })),
+      ...Object.values(buysell).map(b => ({ ...b, type:"buysell" }))
+    ];
+
+    list.sort((a, b) => b.timestamp - a.timestamp);
+
+    res.json({ ok:true, list });
+
+  } catch (e) {
+    console.error("transactions error:", e);
+    res.status(500).json({ ok:false, error:"server error" });
+  }
+});
+
+
+// ====== Global Error Handler ======
 app.use((err, req, res, next) => {
   console.error("SERVER ERROR:", err);
   res.status(500).json({ error:"Internal server error" });
 });
 
-// ===== Start Server =====
+// ====== Start Server ======
 app.listen(PORT, () => {
   console.log(`🚀 NEXBIT backend running on port ${PORT}`);
 });
