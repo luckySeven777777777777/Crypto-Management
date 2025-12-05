@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXBIT 管理后台 — 最终版</title>
+<style>
+:root{--top-blue:#1976d2;--deep-blue:#0f2655;--bg:#f4f7fb;--card:#fff;
+--red:#ff4444;--black:#000;--green:#00c851;--yellow:#ffbb33;--purple:#9933ff;}
+*{box-sizing:border-box}
+body{margin:0;font-family:Segoe UI,Roboto,Arial;background:var(--bg);min-height:100vh}
+.top-header{position:fixed;top:0;left:0;width:100%;height:64px;background:var(--top-blue);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:1000;}
+.top-header .brand{font-weight:700;font-size:18px}
+.top-header .user{font-size:14px}
+.app{display:flex;padding-top:64px}
+.sidebar{width:88px;background:var(--deep-blue);color:#fff;min-height:calc(100vh - 64px);padding-top:20px;position:fixed;top:64px;left:0}
+.sidebar .icon{display:block;padding:16px;text-align:center;color:#cdd6f4;cursor:pointer}
+.sidebar .icon.active{background:var(--top-blue);color:#fff;border-radius:8px;margin:4px}
+.main{margin-left:88px;flex:1;padding:22px 26px}
+.container{background:var(--card);border-radius:8px;padding:18px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+.page-title{font-size:20px;font-weight:700;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px}
+.card{background:#fff;border-radius:8px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);} 
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+input,select,button{padding:8px;border:1px solid #ddd;border-radius:6px}
+button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
+.table{width:100%;border-collapse:collapse;margin-top:8px}
+.table th,.table td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.member-label{display:inline-block;padding:4px 8px;border-radius:4px;color:#fff;font-weight:600;margin-left:8px;font-size:12px}
+.label-attention{background:var(--red)} .label-observe{background:var(--black)} .label-first-recharge{background:var(--green)} .label-first-withdraw{background:var(--yellow);color:#111} .label-vip{background:var(--purple)}
+.small{font-size:12px;color:#666}
+.actions button{margin-right:6px}
+.footer-note{margin-top:10px;color:#888;font-size:12px}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+
+/* ADDED: order/admin pages styles (keeps consistent) */
+.subpage-actions{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.table-sm th,.table-sm td{padding:8px;font-size:13px}
+.badge{display:inline-block;padding:4px 8px;border-radius:4px;background:#eee;color:#333;font-weight:600}
+
+/* small button style for action */
+.small-btn { padding:6px 8px; border-radius:6px; border:none; cursor:pointer; font-size:13px; }
+.lock-btn { background:#ffcc00; }
+.confirm-btn { background:#00c851; color:#fff; }
+.cancel-btn { background:#ff4444; color:#fff; }
+.unlock-btn { background:#6c757d; color:#fff; }
+
+/* BuySell sticky marker in sidebar */
+.sidebar .buysell { background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)); border-radius:8px; margin:6px; padding:12px 6px; text-align:center }
+
+/* wallet modal */
+.modal{display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1200}
+.modal .box{background:#fff;padding:16px;border-radius:8px;min-width:320px}
+
+</style>
+</head>
+<body>
+
+<div class="top-header">
+  <div class="brand">NEXBIT 管理后台（代理）</div>
+  <div class="user"><span id="easternNow">US/Eastern: --</span> &nbsp;·&nbsp; 已登录：admin</div>
+</div>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="icon active" data-page="dashboard" title="控制台">🏠</div>
+    <div class="icon buysell" data-page="buysell" title="BuySell（常显）">💱<div style="font-size:11px;margin-top:6px;color:#cfe6ff">BuySell</div></div>
+    <div class="icon" data-page="recharge" title="充值管理">💳</div>
+    <div class="icon" data-page="withdraw" title="提款管理">💸</div>
+    <div class="icon" data-page="members" title="会员管理">👥</div>
+    <div class="icon" data-page="orders" title="订单记录">📜</div>
+    <div class="icon" data-page="settings" title="系统设置">⚙️</div>
+  </div>
+
+  <div class="main">
+    <!-- Dashboard -->
+    <div id="page-dashboard" class="container">
+      <div class="page-title">控制台</div>
+      <div class="grid">
+        <div class="card">今日充值<br><strong id="todayRecharge">--</strong></div>
+        <div class="card">今日提款<br><strong id="todayWithdraw">--</strong></div>
+        <div class="card">今日订单<br><strong id="todayOrders">--</strong></div>
+        <div class="card">风控预警<br><strong id="alertsCount">--</strong></div>
+      </div>
+      <div class="container card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="small">会员等级统计</div>
+          <div class="small">更新于 <span id="statTime"></span></div>
+        </div>
+        <div style="margin-top:12px" id="memberStats"></div>
+      </div>
+    </div>
+
+    <!-- BuySell page (新增，完全使用你的 UI 风格) -->
+    <div id="page-buysell" class="container" style="display:none">
+      <div class="page-title">BuySell 管理</div>
+      <div class="filters">
+        <label>开始 <input type="date" id="bs_start"></label>
+        <label>结束 <input type="date" id="bs_end"></label>
+        <input id="bs_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+        <select id="bs_currency"><option value="">全部币种</option><option>BTC</option><option>ETH</option><option>USDT</option></select>
+        <select id="bs_side"><option value="">全部</option><option value="buy">买</option><option value="sell">卖</option></select>
+        <button class="primary" onclick="bs_search()">搜索</button>
+      </div>
+
+      <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
+
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>订单/会员/钱包</th>
+            <th>时间 (US/Eastern)</th>
+            <th>类型</th>
+            <th>金额</th>
+            <th>币种</th>
+            <th>估算 USDT</th>
+            <th>Wallet</th>
+            <th>IP</th>
+            <th>TP/SL</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="bs_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Recharge page -->
+    <div id="page-recharge" class="container" style="display:none">
+      <div class="page-title">充值管理</div>
+      <div class="filters">
+        <label>开始 <input type="date" id="r_start"></label>
+        <label>结束 <input type="date" id="r_end"></label>
+        <input id="r_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+        <select id="r_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
+        <input id="r_minCount" placeholder="钱包充值次数 >=" type="number" min="1" style="width:140px">
+        <select id="r_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <button class="primary" onclick="r_search()">搜索</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>Wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="r_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Withdraw page -->
+    <div id="page-withdraw" class="container" style="display:none">
+      <div class="page-title">提款管理</div>
+      <div class="filters">
+        <label>开始 <input type="date" id="w_start"></label>
+        <label>结束 <input type="date" id="w_end"></label>
+        <input id="w_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+        <select id="w_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
+        <input id="w_minCount" placeholder="钱包提款次数 >=" type="number" min="1" style="width:140px">
+        <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <button class="primary" onclick="w_search()">搜索</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>Wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="w_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Members page -->
+    <div id="page-members" class="container" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="page-title">会员管理</div>
+        <div><button style="background:#6c757d;color:#fff;border:none;padding:8px;border-radius:6px;" onclick="showPage('admins')">管理员权限</button></div>
+      </div>
+
+      <div class="filters"><input id="m_search" placeholder="搜索会员ID / 钱包" style="width:360px"><button onclick="loadMembers()">搜索</button></div>
+      <table class="table"><thead><tr><th>会员ID</th><th>钱包</th><th>等级</th><th>最近活动</th></tr></thead><tbody id="m_table"><tr><td colspan="4" class="small">暂无会员数据</td></tr></tbody></table>
+    </div>
+
+    <!-- Orders page -->
+    <div id="page-orders" class="container" style="display:none">
+      <div class="page-title">订单记录（充值/提款/买卖）</div>
+
+      <div class="filters">
+        <label>开始 <input type="date" id="o_start"></label>
+        <label>结束 <input type="date" id="o_end"></label>
+        <input id="o_q" placeholder="订单号 / 会员ID / 钱包地址" style="width:320px">
+        <select id="o_type"><option value="">全部类型</option><option value="recharge">充值</option><option value="withdraw">提款</option><option value="trade">买卖</option></select>
+        <select id="o_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
+        <select id="o_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <button class="primary" onclick="o_search()">搜索</button>
+        <button onclick="showPage('withdraw')">返回提款</button>
+      </div>
+
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>订单 / 会员 / 钱包</th>
+            <th>时间</th>
+            <th>类型</th>
+            <th>金额</th>
+            <th>币种</th>
+            <th>Wallet</th>
+            <th>IP</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="o_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Admins page -->
+    <div id="page-admins" class="container" style="display:none">
+      <div class="page-title">管理员权限管理</div>
+
+      <div class="subpage-actions">
+        <input id="admin_id" placeholder="管理员ID" style="width:220px">
+        <label><input type="checkbox" id="perm_recharge"> 充值</label>
+        <label><input type="checkbox" id="perm_withdraw"> 提款</label>
+        <label><input type="checkbox" id="perm_trade"> 交易</label>
+        <button class="primary" onclick="addAdmin()">新增管理员</button>
+        <button onclick="showPage('members')">返回会员</button>
+      </div>
+
+      <table class="table table-sm">
+        <thead><tr><th>管理员ID</th><th>权限</th><th>最近登录</th><th>操作</th></tr></thead>
+        <tbody id="admin_table"><tr><td colspan="4" class="small">暂无管理员</td></tr></tbody>
+      </table>
+      <div class="small" style="margin-top:8px">说明：此页面前端管理 UI 已实现；如需权限真正生效，请将新增/编辑请求对接到后端接口（例如 /api/admins）。</div>
+    </div>
+
+    <div class="footer-note">系统生成：<span id="genTime"></span></div>
+  </div>
+</div>
+
+<!-- wallet modal -->
+<div id="walletModal" class="modal"><div class="box"><h4>钱包地址</h4><div id="walletAddr" style="font-family:monospace;color:#0f2655"></div><div style="text-align:right;margin-top:10px"><button onclick="closeWallet()">关闭</button></div></div></div>
+
+<script>
+/* ---------------------------
+   使用你的 UI：整合功能实现
+   - BuySell 固定在 sidebar
+   - Recharge / Withdraw / BuySell 表格及操作
+   - US/Eastern 时间显示
+   - Binance WebSocket 实时价格 → 估算 USDT
+   - TP/SL 仅在 BuySell 显示
+   - 钱包查看 Modal
+   - 操作接口: POST /api/order/action 或 /proxy/transaction/update
+   --------------------------- */
+
+const PROXY_TRANSACTIONS = '/proxy/transactions'; // 返回所有交易列表的接口（后端需支持）
+const PROXY_UPDATE = '/proxy/transaction/update'; // 更新单笔交易状态接口
+
+// helper
+function $(s){return document.querySelector(s)}
+function $all(s){return Array.from(document.querySelectorAll(s))}
+
+// Sidebar navigation
+$all('.sidebar .icon').forEach(ic=>ic.addEventListener('click', ()=>{
+  $all('.sidebar .icon').forEach(x=>x.classList.remove('active'));
+  ic.classList.add('active');
+  const page = ic.getAttribute('data-page');
+  hideAllPages();
+  const el = document.getElementById('page-' + page);
+  if(el) el.style.display = 'block';
+  // auto-run search when page shows
+  if(page === 'dashboard') loadDashboard();
+  if(page === 'recharge') r_search();
+  if(page === 'withdraw') w_search();
+  if(page === 'buysell') bs_search();
+  if(page === 'orders') o_search();
+  if(page === 'members') loadMembers();
+  if(page === 'settings') loadSettings();
+}));
+
+function hideAllPages(){ $all('.main > .container').forEach(c=>c.style.display='none'); }
+
+function showPage(key){ const el = document.getElementById('page-'+key); hideAllPages(); if(el) el.style.display='block'; }
+
+// US/Eastern time
+function updateEastern(){ try{ const now = new Date(); const fmt = new Intl.DateTimeFormat('en-US',{ timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' }); $('#easternNow').innerText = 'US/Eastern: ' + fmt.format(now); }catch(e){ $('#easternNow').innerText='US/Eastern: --'; }}
+setInterval(updateEastern,1000); updateEastern();
+
+// Binance websocket realtime prices
+const watchedSymbols = ['BTCUSDT','ETHUSDT','LTCUSDT','XRPUSDT','BCHUSDT'];
+const priceMap = {}; // symbol -> price
+let bsock = null;
+function connectBinance(){
+  try{
+    const streams = watchedSymbols.map(s=>s.toLowerCase()+'@trade').join('/');
+    const url = 'wss://stream.binance.com:9443/stream?streams=' + streams;
+    bsock = new WebSocket(url);
+    bsock.onopen = ()=>console.log('binance ws open');
+    bsock.onmessage = (ev)=>{
+      try{ const msg = JSON.parse(ev.data); const d = msg.data || msg; const sym = (d.s||'').toUpperCase(); const p = d.p || d.price || d.P || null; if(sym && p) priceMap[sym] = Number(p); updateTickSummary(); refreshBuySellEstimates(); }catch(e){ console.warn('ws parse err', e); }};
+    bsock.onclose = ()=>{ console.warn('ws closed, reconnect in 5s'); setTimeout(connectBinance,5000); };
+    bsock.onerror = (e)=>{ console.error('ws error', e); bsock.close(); };
+  }catch(e){ console.warn('connect binance failed', e); }
+}
+connectBinance();
+function updateTickSummary(){ const parts = watchedSymbols.map(s=> s + ': ' + (priceMap[s]? priceMap[s].toFixed(6) : '--')); $('#tickersSummary').innerText = parts.join(' | '); }
+
+// wallet modal
+function showWallet(addr){ $('#walletAddr').innerText = addr || '--'; $('#walletModal').style.display = 'flex'; }
+function closeWallet(){ $('#walletModal').style.display = 'none'; }
+
+// render a generic row for recharge/withdraw/orders
+function renderCommonRow(it, extraCols = []){
+  const order = it.orderId||it.oid||it.id||'';
+  const user = it.userId||it.user||it.member||'';
+  const wallet = it.wallet||it.address||it.to||it.from||'';
+  const ts = it.timestamp||it.time||it.date||'';
+  const time = ts ? new Date(Number(ts)).toLocaleString('en-US',{ timeZone:'America/New_York' }) : '';
+  const amount = it.amount||it.value||0;
+  const currency = (it.currency||it.coin||'').toUpperCase() || 'BRL';
+  const ip = it.ip||it.ipAddr||'';
+  const status = it.status||'pending';
+  const id = it.id||order||'';
+
+  const label = memberLabel(it);
+
+  return `
+  <tr>
+    <td><div class="small">Order: ${order}</div><div>User: ${user}</div><div style="color:var(--top-blue)">Wallet: <a href=\"javascript:showWallet('${wallet}')\">${shorten(wallet,10)}</a></div>${label}</td>
+    <td>${time}</td>
+    <td>${it.type||it.txType||''}</td>
+    <td>${amount}</td>
+    <td>${currency}</td>
+    ${extraCols.map(c=>`<td>${c}</td>`).join('')}
+    <td>${ip}</td>
+    <td>${status}</td>
+    <td>
+      <button class="small-btn lock-btn" onclick="txAction('${id}','lock')">锁定</button>
+      <button class="small-btn confirm-btn" onclick="txAction('${id}','confirm')">确认</button>
+      <button class="small-btn cancel-btn" onclick="txAction('${id}','cancel')">取消</button>
+      <button class="small-btn unlock-btn" onclick="txAction('${id}','unlock')">解锁</button>
+      <button class="small-btn" onclick="viewDetail('${id}')">查看</button>
+    </td>
+  </tr>`;
+}
+
+// BuySell specialized row (includes estimate USDT and TP/SL)
+function renderBuySellRow(it){
+  const common = it;
+  const order = it.orderId||it.id||'';
+  const user = it.userId||it.user||'';
+  const wallet = it.wallet||it.address||'';
+  const ts = it.timestamp||it.time||it.date||'';
+  const time = ts ? new Date(Number(ts)).toLocaleString('en-US',{ timeZone:'America/New_York' }) : '';
+  const amount = Number(it.amount||0);
+  const currency = (it.currency||it.coin||'').toUpperCase() || '';
+  const symbol = currency ? currency + 'USDT' : null;
+  const price = symbol && priceMap[symbol] ? priceMap[symbol] : null;
+  const estimate = price ? (price * amount).toFixed(6) : '--';
+  const tp = it.tp || '';
+  const sl = it.sl || '';
+  const ip = it.ip||'';
+  const status = it.status||'pending';
+  const id = it.id||order||'';
+
+  return `
+  <tr>
+    <td><div class="small">Order: ${order}</div><div>User: ${user}</div><div style="color:var(--top-blue)">Wallet: <a href=\"javascript:showWallet('${wallet}')\">${shorten(wallet,10)}</a></div></td>
+    <td>${time}</td>
+    <td>${it.side||it.type||''}</td>
+    <td>${amount}</td>
+    <td>${currency}</td>
+    <td>${estimate}</td>
+    <td>${shorten(wallet,10)}</td>
+    <td>${ip}</td>
+    <td>${tp?('TP:'+tp):'--'}/${sl?('SL:'+sl):'--'}</td>
+    <td>${status}</td>
+    <td>
+      <button class="small-btn lock-btn" onclick="txAction('${id}','lock')">锁定</button>
+      <button class="small-btn confirm-btn" onclick="txAction('${id}','confirm')">确认</button>
+      <button class="small-btn cancel-btn" onclick="txAction('${id}','cancel')">取消</button>
+      <button class="small-btn unlock-btn" onclick="txAction('${id}','unlock')">解锁</button>
+      <button class="small-btn" onclick="viewDetail('${id}')">查看</button>
+    </td>
+  </tr>`;
+}
+
+function shorten(s,len=12){ if(!s) return '--'; return s.length>len? s.slice(0, len-4)+'...'+s.slice(-4): s; }
+
+function memberLabel(item){
+  if(!item) return '';
+  const lvl = (item.memberLevel||item.level||'').toString().toLowerCase();
+  if(item.flag==='attention') return '<div class="member-label label-attention">注意会员</div>';
+  if(item.flag==='observe') return '<div class="member-label label-observe">观察会员</div>';
+  if(item.firstRecharge) return '<div class="member-label label-first-recharge">首次充值</div>';
+  if(item.firstWithdraw) return '<div class="member-label label-first-withdraw">首次提款</div>';
+  if(lvl.indexOf('vip')!==-1) return '<div class="member-label label-vip">VIP</div>';
+  return '';
+}
+
+// txAction: 调用后端更新接口
+async function txAction(id, action){
+  if(!id) return alert('缺少订单ID');
+  const body = { orderId: id, action };
+  try{
+    const res = await fetch(PROXY_UPDATE, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const j = await res.json();
+    if(j && (j.ok || j.success)){
+      alert('操作成功');
+      // 刷新当前页
+      const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page');
+      if(active==='recharge') r_search(); else if(active==='withdraw') w_search(); else if(active==='buysell') bs_search(); else o_search();
+    } else {
+      alert('操作失败: ' + (j.message||JSON.stringify(j)));
+    }
+  }catch(e){ console.error(e); alert('网络或服务器错误'); }
+}
+
+function viewDetail(id){ alert('查看订单: '+id); }
+
+// Loaders
+async function fetchAll(params = {}){
+  const url = new URL(PROXY_TRANSACTIONS, window.location.origin);
+  Object.keys(params||{}).forEach(k=>{ if(params[k]!=null) url.searchParams.append(k, params[k]); });
+  const res = await fetch(url.toString());
+  const j = await res.json();
+  return Array.isArray(j)? j : (j.data && Array.isArray(j.data) ? j.data : []);
+}
+
+async function r_search(){
+  const params = {};
+  if($('#r_start').value) params.start = $('#r_start').value;
+  if($('#r_end').value) params.end = $('#r_end').value;
+  if($('#r_wallet').value) params.q = $('#r_wallet').value;
+  if($('#r_currency').value) params.currency = $('#r_currency').value;
+  if($('#r_status').value) params.status = $('#r_status').value;
+  const tbody = $('#r_table'); tbody.innerHTML = '<tr><td colspan="9" class="small">加载中...</td></tr>';
+  try{
+    const all = await fetchAll(params);
+    const list = all.filter(it=> ((it.type||it.txType||'').toString().toLowerCase().indexOf('recharge')!==-1));
+    if(!list.length) { tbody.innerHTML = '<tr><td colspan="9" class="small">没有记录</td></tr>'; return; }
+    tbody.innerHTML = list.map(it=>renderCommonRow(it, ['',''])).join('');
+  }catch(e){ console.error(e); tbody.innerHTML = '<tr><td colspan="9" class="small">加载失败</td></tr>'; }
+}
+
+async function w_search(){
+  const params = {};
+  if($('#w_start').value) params.start = $('#w_start').value;
+  if($('#w_end').value) params.end = $('#w_end').value;
+  if($('#w_wallet').value) params.q = $('#w_wallet').value;
+  if($('#w_currency').value) params.currency = $('#w_currency').value;
+  if($('#w_status').value) params.status = $('#w_status').value;
+  const tbody = $('#w_table'); tbody.innerHTML = '<tr><td colspan="9" class="small">加载中...</td></tr>';
+  try{
+    const all = await fetchAll(params);
+    const list = all.filter(it=> ((it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1));
+    if(!list.length) { tbody.innerHTML = '<tr><td colspan="9" class="small">没有记录</td></tr>'; return; }
+    tbody.innerHTML = list.map(it=>renderCommonRow(it, ['',''])).join('');
+  }catch(e){ console.error(e); tbody.innerHTML = '<tr><td colspan="9" class="small">加载失败</td></tr>'; }
+}
+
+async function bs_search(){
+  const params = {};
+  if($('#bs_start').value) params.start = $('#bs_start').value;
+  if($('#bs_end').value) params.end = $('#bs_end').value;
+  if($('#bs_wallet').value) params.q = $('#bs_wallet').value;
+  if($('#bs_currency').value) params.currency = $('#bs_currency').value;
+  if($('#bs_side').value) params.side = $('#bs_side').value;
+  const tbody = $('#bs_table'); tbody.innerHTML = '<tr><td colspan="11" class="small">加载中...</td></tr>';
+  try{
+    const all = await fetchAll(params);
+    const list = all.filter(it=> ((it.type||it.txType||it.side||'').toString().toLowerCase().indexOf('trade')!==-1) || ((it.side||'').toString().toLowerCase() === 'buy') || ((it.side||'').toString().toLowerCase() === 'sell'));
+    if(!list.length){ tbody.innerHTML = '<tr><td colspan="11" class="small">没有记录</td></tr>'; return; }
+    tbody.innerHTML = list.map(it=>renderBuySellRow(it)).join('');
+  }catch(e){ console.error(e); tbody.innerHTML = '<tr><td colspan="11" class="small">加载失败</td></tr>'; }
+}
+
+async function o_search(){
+  const params = {};
+  if($('#o_start').value) params.start = $('#o_start').value;
+  if($('#o_end').value) params.end = $('#o_end').value;
+  if($('#o_q').value) params.q = $('#o_q').value;
+  if($('#o_type').value) params.type = $('#o_type').value;
+  if($('#o_currency').value) params.currency = $('#o_currency').value;
+  if($('#o_status').value) params.status = $('#o_status').value;
+  const tbody = $('#o_table'); tbody.innerHTML = '<tr><td colspan="9" class="small">加载中...</td></tr>';
+  try{
+    const all = await fetchAll(params);
+    if(!all.length){ tbody.innerHTML = '<tr><td colspan="9" class="small">没有记录</td></tr>'; return; }
+    tbody.innerHTML = all.map(it=>renderCommonRow(it, ['',''])).join('');
+  }catch(e){ console.error(e); tbody.innerHTML = '<tr><td colspan="9" class="small">加载失败</td></tr>'; }
+}
+
+// Members and Admins functions (reuse your existing implementations)
+async function loadMembers(){
+  const q = $('#m_search').value.trim(); const tbody = $('#m_table'); tbody.innerHTML = '<tr><td colspan="4" class="small">加载中...</td></tr>';
+  try{
+    const all = await fetchAll();
+    const map = {};
+    all.forEach(it=>{ const user = it.userId||it.user||it.member||''; const wallet = it.wallet||it.address||''; if(!map[user]) map[user]={user:user,wallets:new Set(),last:it.timestamp||it.time||it.date}; if(wallet) map[user].wallets.add(wallet); if(it.timestamp && (!map[user].last || it.timestamp>map[user].last)) map[user].last=it.timestamp; });
+    const items = Object.values(map).map(m=>({user:m.user,wallets:Array.from(m.wallets),last:m.last}));
+    const filtered = q?items.filter(i=>(i.user+''+i.wallets.join('')).indexOf(q)!==-1):items;
+    if(filtered.length===0){ tbody.innerHTML='<tr><td colspan="4" class="small">没有会员</td></tr>'; return; }
+    tbody.innerHTML = filtered.map(m=>`<tr><td>${m.user}</td><td>${m.wallets.join(', ')}</td><td><span class="member-label label-observe">观察会员</span></td><td>${m.last?new Date(Number(m.last)).toLocaleString('en-US',{ timeZone:'America/New_York' }):''}</td></tr>`).join('');
+  }catch(e){ tbody.innerHTML='<tr><td colspan="4" class="small">加载失败</td></tr>'; console.error(e) }
+}
+
+function loadAdmins(){ const raw = localStorage.getItem('nexbit_admins') || '[]'; let arr = []; try{ arr = JSON.parse(raw); }catch(e){ arr = []; } const tbody = document.getElementById('admin_table'); if(!arr.length){ tbody.innerHTML = '<tr><td colspan="4" class="small">暂无管理员</td></tr>'; return; } tbody.innerHTML = arr.map(a=>`<tr><td>${a.id}</td><td>${a.perms.join(', ')}</td><td>${a.lastLogin||''}</td><td><button onclick="removeAdmin('${a.id}')">删除</button></td></tr>`).join(''); }
+function addAdmin(){ const id = document.getElementById('admin_id').value.trim(); if(!id) return alert('请输入管理员ID'); const perms = []; if(document.getElementById('perm_recharge').checked) perms.push('充值'); if(document.getElementById('perm_withdraw').checked) perms.push('提款'); if(document.getElementById('perm_trade').checked) perms.push('交易'); const raw = localStorage.getItem('nexbit_admins') || '[]'; let arr = []; try{ arr = JSON.parse(raw); }catch(e){ arr = []; } if(arr.find(x=>x.id===id)) return alert('管理员已存在'); arr.push({id,perms,lastLogin:new Date().toLocaleString()}); localStorage.setItem('nexbit_admins', JSON.stringify(arr)); document.getElementById('admin_id').value=''; document.getElementById('perm_recharge').checked=false; document.getElementById('perm_withdraw').checked=false; document.getElementById('perm_trade').checked=false; loadAdmins(); alert('新增管理员已保存（本地存储，仅供 UI 管理）。如需后端权限控制，请对接 /api/admins。'); }
+function removeAdmin(id){ const raw = localStorage.getItem('nexbit_admins') || '[]'; let arr = []; try{ arr = JSON.parse(raw); }catch(e){ arr = []; } arr = arr.filter(x=>x.id!==id); localStorage.setItem('nexbit_admins', JSON.stringify(arr)); loadAdmins(); }
+
+// Dashboard loader
+async function loadDashboard(){
+  try{
+    const all = await fetchAll();
+    const today = new Date(); today.setHours(0,0,0,0);
+    let todayRecharge=0, todayWithdraw=0, orders=0, alerts=0;
+    const memberMap = {};
+    all.forEach(it=>{
+      const t = Number(it.timestamp||it.time||it.date||0);
+      if(t && t>=today.getTime()){
+        const typ = (it.type||it.txType||'').toString().toLowerCase();
+        if(typ.indexOf('recharge')!==-1) todayRecharge += Number(it.amount||it.value||0);
+        if(typ.indexOf('withdraw')!==-1) todayWithdraw += Number(it.amount||it.value||0);
+        orders++;
+      }
+      const user = it.userId||it.user||it.member||'unknown';
+      const wallet = (it.wallet||it.address||it.to||it.from||'').toString();
+      memberMap[user] = memberMap[user] || {user, wallets:new Set(), last:t, flags:[]};
+      if(wallet) memberMap[user].wallets.add(wallet);
+      if(t && (!memberMap[user].last || t>memberMap[user].last)) memberMap[user].last = t;
+      if((it.status||'').toString().toLowerCase()==='failed'){ alerts++; }
+    });
+    document.getElementById('todayRecharge').innerText = todayRecharge;
+    document.getElementById('todayWithdraw').innerText = todayWithdraw;
+    document.getElementById('todayOrders').innerText = orders;
+    document.getElementById('alertsCount').innerText = alerts;
+    const stats = {vip:0}; Object.values(memberMap).forEach(m=>{ if(m.wallets.size>5) stats.vip++; });
+    document.getElementById('memberStats').innerHTML = `<div>VIP: ${stats.vip}</div><div>注意会员: 0</div><div>观察会员: 0</div><div>首次充值: 0</div><div>首次提款: 0</div>`;
+    document.getElementById('statTime').innerText = new Date().toLocaleString();
+    document.getElementById('genTime').innerText = new Date().toISOString();
+  }catch(e){ console.error(e) }
+}
+
+// init
+document.addEventListener('DOMContentLoaded', ()=>{
+  // show dashboard by default
+  document.querySelector('.sidebar .icon.active').click();
+  loadAdmins();
+});
+
+</script>
+
+<!-- keep hooks for your auth and api js if present -->
+<script src="js/auth.js"></script>
+<script src="js/nexbit-api.js"></script>
+</body>
+</html>
