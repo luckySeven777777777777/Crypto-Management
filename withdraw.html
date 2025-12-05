@@ -82,7 +82,7 @@
 
 <script>
 
-/* ====================== USER ID（4位数字） ====================== */
+/* ====================== USER ID（保持 4 位数字） ====================== */
 function getUserId() {
     const url = new URLSearchParams(window.location.search);
     let uid = url.get("userid");
@@ -120,7 +120,7 @@ function updateUSDT() {
     document.getElementById("usdtValue").innerText = (amount * price).toFixed(6);
 }
 
-/* ====================== PASSWORD SYSTEM ====================== */
+/* ====================== PASSWORD SYSTEM（保持原样） ====================== */
 let storedPassword = localStorage.getItem("withdraw_password");
 let passwordConfirmed = false;
 
@@ -159,7 +159,7 @@ function forgotPassword() {
     alert("Password updated!");
 }
 
-/* ====================== WALLET + HASH ====================== */
+/* ====================== WALLET + HASH（保持 UI） ====================== */
 let txHash = null;
 
 function confirmWallet() {
@@ -180,7 +180,7 @@ function copyHash() {
     alert("Hash copied!");
 }
 
-/* ====================== SUBMIT WITHDRAWAL ====================== */
+/* ====================== SUBMIT TO BACKEND（对接后台 ★★★） ====================== */
 async function submitWithdrawal() {
 
     const coin = document.getElementById("coin").value;
@@ -191,32 +191,34 @@ async function submitWithdrawal() {
     if (!passwordConfirmed) return alert("Confirm password first.");
     if (!wallet) return alert("Enter wallet address.");
 
-    const orderId = "WD-" + Date.now();
-
     const payload = {
         userid: USERID,
         coin,
         amount,
-        usdt,
         wallet,
-        password: storedPassword,
-        hash: txHash,
-        orderId,
-        type: "withdraw",
-        status: "processing",
-        timestamp: Date.now()
+        usdt,
+        hash: txHash
     };
 
     try {
-        await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/withdraw", {
+        let res = await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/withdraw", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                "X-User-Id": USERID
+            },
             body: JSON.stringify(payload)
         });
 
-        alert("Withdrawal submitted!");
+        let data = await res.json();
+        if (data.success) {
+            alert("Withdrawal submitted!");
+        } else {
+            alert("Server error: " + data.error);
+        }
 
     } catch (e) {
+        console.log(e);
         alert("Network error");
     }
 }
