@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>订单记录</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+.table-box { padding: 20px; background: #fff; border-radius: 6px; }
+.table-title { font-size: 20px; margin-bottom: 15px; font-weight: bold; }
+table { width: 100%; border-collapse: collapse; }
+table th, table td {
+    padding: 10px;
+    border-bottom: 1px solid #e6e6e6;
+    text-align: left;
+}
+.filter-box { display: flex; gap: 10px; margin-bottom: 15px; }
+.filter-box input, .filter-box select {
+    padding: 6px 10px;
+    border: 1px solid #dcdcdc;
+    border-radius: 4px;
+}
+.btn-search {
+    background: #3c8dbc;
+    padding: 6px 15px;
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.status-tag { padding: 5px 10px; border-radius: 4px; color: #fff; }
+.status-processing { background: orange; }
+.status-success { background: #28a745; }
+.status-failed { background: #dc3545; }
+</style>
+</head>
+
+<body>
+<div class="container">
+
+    <div class="table-box">
+        <div class="table-title">订单记录</div>
+
+        <!-- 筛选器 -->
+        <div class="filter-box">
+            <input type="date">
+            <input type="date">
+            <input type="text" placeholder="订单号 / 会员ID / 钱包地址">
+            <select>
+                <option>全部类型</option>
+                <option>充值</option>
+                <option>提款</option>
+                <option>买入</option>
+                <option>卖出</option>
+            </select>
+            <button class="btn-search">搜索</button>
+        </div>
+
+        <!-- 表格 -->
+        <table>
+            <thead>
+                <tr>
+                    <th>订单 / 会员 / 钱包</th>
+                    <th>时间</th>
+                    <th>类型</th>
+                    <th>金额</th>
+                    <th>币种</th>
+                    <th>IP</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="orderTable">
+                <tr><td colspan="8" style="text-align:center; padding:20px;">加载中...</td></tr>
+            </tbody>
+        </table>
+
+    </div>
+</div>
+
+
+<script src="js/nexbit-api.js"></script>
+<script src="js/auth.js"></script>
+
+</body>
+</html>

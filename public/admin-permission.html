@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理员权限</title>
+<link rel="stylesheet" href="assets/style.css">
+
+<style>
+.page-box { padding:20px; background:#fff; border-radius:6px; }
+.page-title { font-size:20px; margin-bottom:15px; font-weight:bold; }
+
+table { width:100%; border-collapse: collapse; }
+table th, table td {
+    padding:10px;
+    border-bottom:1px solid #e6e6e6;
+    text-align:left;
+}
+
+.btn-add {
+    background:#28a745;
+    padding:6px 15px;
+    color:#fff;
+    border-radius:4px;
+    cursor:pointer;
+    float:right;
+    margin-bottom:10px;
+}
+
+.perm-tag {
+    padding:4px 8px;
+    background:#3c8dbc;
+    color:white;
+    border-radius:4px;
+    margin-right:5px;
+}
+</style>
+
+</head>
+
+<body>
+
+<div class="page-box">
+
+    <div class="page-title">
+        管理员权限
+        <button class="btn-add">新增管理员</button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>管理员 ID</th>
+                <th>权限</th>
+                <th>可操作</th>
+                <th>最近登录</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr>
+                <td>admin01</td>
+                <td>超级管理员</td>
+                <td>
+                    <span class="perm-tag">充值</span>
+                    <span class="perm-tag">提款</span>
+                    <span class="perm-tag">交易</span>
+                </td>
+                <td>2025-12-04 14:20</td>
+                <td><button>编辑</button></td>
+            </tr>
+
+            <tr>
+                <td>support02</td>
+                <td>财务</td>
+                <td>
+                    <span class="perm-tag">充值</span>
+                    <span class="perm-tag">提款</span>
+                </td>
+                <td>2025-12-03 19:50</td>
+                <td><button>编辑</button></td>
+            </tr>
+        </tbody>
+    </table>
+
+</div>
+
+
+<script src="js/nexbit-api.js"></script>
+<script src="js/auth.js"></script>
+
+</body>
+</html>
