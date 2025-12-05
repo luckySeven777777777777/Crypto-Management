@@ -1,8 +1,6 @@
-// final_server.js
 // ==========================
-//  NEXBIT - Unified Paths Server
-//  transactions/, userList/, balances/
-//  Deploy this file to Railway (overwrite server.js)
+//      Crypto Management
+//      FINAL server.js
 // ==========================
 
 const express = require("express");
@@ -11,50 +9,39 @@ const admin = require("firebase-admin");
 const path = require("path");
 require("dotenv").config();
 
-// If your Node doesn't include global fetch, uncomment the next line and install node-fetch:
-// const fetch = (...args) => import('node-fetch').then(({default:fetch})=>fetch(...args));
-
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Serve static frontend files from /public
+// ------------------------
+// Serve Frontend
+// ------------------------
 app.use(express.static(path.join(__dirname, "public")));
 
-// Firebase init
-if (!process.env.FIREBASE_SERVICE_ACCOUNT || !process.env.FIREBASE_DATABASE_URL) {
-  console.error("Missing FIREBASE_SERVICE_ACCOUNT or FIREBASE_DATABASE_URL in env!");
-  // don't exit to allow dev, but logs will show error
-}
+// ------------------------
+// Firebase Init
+// ------------------------
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-const serviceAccount = (() => {
-  try {
-    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
-  } catch (e) {
-    console.error("Invalid FIREBASE_SERVICE_ACCOUNT JSON:", e);
-    return {};
-  }
-})();
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: process.env.FIREBASE_DATABASE_URL
+});
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
-  });
-}
 const db = admin.database();
 
-// Helper
-function generateOrderId(prefix = "TX") {
-  return `${prefix}-${Math.random().toString(36).slice(2,10).toUpperCase()}`;
-}
-function getUserId(req) {
-  // priority: header X-User-Id -> body.userid -> query.userid -> "guest"
-  return (req.headers["x-user-id"] || req.body.userid || req.query.userid || "guest").toString();
+// ------------------------
+// Helper functions
+// ------------------------
+
+function generateOrderId() {
+  return "TX-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
-// Telegram send helper
+function getUserId(req) {
+  return req.headers["x-user-id"] || req.body.userid || "unknown";
+}
+
 async function sendToTelegram(type, text) {
   try {
     let token = "";
@@ -75,206 +62,210 @@ async function sendToTelegram(type, text) {
       userId = process.env.TRADE_USER_CHAT_ID;
     }
 
-    if (!token || !groupId) {
-      // missing config; just return
-      console.log("Telegram config missing for", type);
-      return;
-    }
+    if (!token || !groupId) return;
 
-    const payload = (chat_id) => ({
+    // 群
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id, text, parse_mode: "Markdown" })
+      body: JSON.stringify({
+        chat_id: groupId,
+        text: text,
+        parse_mode: "Markdown"
+      })
     });
 
-    // send to group
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, payload(groupId));
-    // send to admin (if provided)
-    if (userId) await fetch(`https://api.telegram.org/bot${token}/sendMessage`, payload(userId));
+    // 管理员
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: userId,
+        text: text,
+        parse_mode: "Markdown"
+      })
+    });
+
   } catch (err) {
-    console.log("Telegram send error:", err);
+    console.log("Telegram Error:", err);
   }
 }
 
-/* =========================
-   API: user sync
-   Writes user info into userList/{userid}
-   ========================= */
+// -----------------------------------------------------------
+// ★★★★★ 同步用户到 Firebase ★★★★★
+// -----------------------------------------------------------
 app.post("/api/user/sync", async (req, res) => {
   try {
     const userid = getUserId(req);
-    const userRef = db.ref(`userList/${userid}`);
-    const now = Date.now();
+    const userRef = db.ref(`users/${userid}`);
+
     await userRef.update({
       userid,
-      wallet: req.body.wallet || "",
-      level: req.body.level || "normal",
-      lastActive: now,
-      balance: req.body.balance || 0
+      wallet: "",
+      level: "normal",
+      lastActive: Date.now(),
+      balance: 0
     });
-    return res.json({ success: true, userid });
-  } catch (e) {
-    console.error("user/sync error:", e);
-    return res.status(500).json({ success: false, error: "server error" });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-/* =========================
-   Balance API (supports GET and POST)
-   Writes/reads balances/{userid}
-   ========================= */
-// GET /api/balance?userid=1234   OR header X-User-Id
-app.get("/api/balance", async (req, res) => {
-  try {
-    const userid = getUserId(req);
-    const snap = await db.ref(`balances/${userid}`).once("value");
-    const balance = snap.exists() ? snap.val() : 0;
-    return res.json({ success: true, userid, balance });
-  } catch (e) {
-    console.error("GET /api/balance error", e);
-    return res.status(500).json({ success: false, error: "server error" });
-  }
-});
-
-// POST /api/balance  { userid? }  (for older frontends)
+// ------------------------
+// User Balance API
+// ------------------------
 app.post("/api/balance", async (req, res) => {
   try {
     const userid = getUserId(req);
-    const snap = await db.ref(`balances/${userid}`).once("value");
-    const balance = snap.exists() ? snap.val() : 0;
-    return res.json({ success: true, userid, balance });
-  } catch (e) {
-    console.error("POST /api/balance error", e);
-    return res.status(500).json({ success: false, error: "server error" });
+    const snapshot = await db.ref(`users/${userid}/balance`).once("value");
+    const balance = snapshot.val() || 0;
+    res.json({ success: true, balance });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-/* =========================
-   Orders: unified path -> transactions/{orderId}
-   Each endpoint pushes a record to transactions/
-   ========================= */
-
-// Recharge
+// ------------------------
+// Recharge Order
+// ------------------------
 app.post("/api/order/recharge", async (req, res) => {
   try {
     const userid = getUserId(req);
     const { coin, amount, wallet } = req.body;
-    const orderId = generateOrderId("RC");
-    const data = { userid, coin, amount, wallet, orderId, type: "recharge", status: "processing", timestamp: Date.now() };
+    const orderId = generateOrderId();
 
-    await db.ref(`transactions/${orderId}`).set(data);
-    // optionally create user record if not exists
-    await db.ref(`userList/${userid}`).update({ userid, lastActive: Date.now() });
+    const data = {
+      userid,
+      coin,
+      amount,
+      wallet,
+      orderId,
+      type: "recharge",
+      status: "processing",
+      timestamp: Date.now()
+    };
 
-    // Telegram notify (non-blocking)
-    sendToTelegram("recharge", `🔔 *充值申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`);
+    await db.ref("transactions").push(data);
 
-    return res.json({ success: true, orderId });
-  } catch (e) {
-    console.error("/api/order/recharge error", e);
-    return res.status(500).json({ success: false, error: "server error" });
+    sendToTelegram(
+      "recharge",
+      `🔔 *充值申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
+    );
+
+    res.json({ success: true, orderId });
+
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// Withdraw
+// ------------------------
+// Withdraw Order
+// ------------------------
 app.post("/api/order/withdraw", async (req, res) => {
   try {
     const userid = getUserId(req);
-    const { coin, amount, wallet, hash } = req.body;
-    const orderId = generateOrderId("WD");
-    const data = { userid, coin, amount, wallet, hash: hash || "", orderId, type: "withdraw", status: "processing", timestamp: Date.now() };
+    const { coin, amount, wallet } = req.body;
+    const orderId = generateOrderId();
 
-    await db.ref(`transactions/${orderId}`).set(data);
-    await db.ref(`userList/${userid}`).update({ userid, lastActive: Date.now() });
+    const data = {
+      userid,
+      coin,
+      amount,
+      wallet,
+      orderId,
+      type: "withdraw",
+      status: "processing",
+      timestamp: Date.now()
+    };
 
-    sendToTelegram("withdraw", `📤 *提款申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}`);
+    await db.ref("transactions").push(data);
 
-    return res.json({ success: true, orderId });
-  } catch (e) {
-    console.error("/api/order/withdraw error", e);
-    return res.status(500).json({ success: false, error: "server error" });
+    sendToTelegram(
+      "withdraw",
+      `📤 *提款申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
+    );
+
+    res.json({ success: true, orderId });
+
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// BuySell
+// ------------------------
+// Buy/Sell Trade Order
+// ------------------------
 app.post("/api/order/buysell", async (req, res) => {
   try {
     const userid = getUserId(req);
-    const { coin, amount, side, amountCurrency, tp, sl } = req.body;
-    const orderId = generateOrderId("TR");
-    const data = { userid, coin, amount, side, amountCurrency: amountCurrency || "USDT", tp: tp || null, sl: sl || null, orderId, type: "trade", status: "processing", timestamp: Date.now() };
+    const { coin, amount, side } = req.body;
+    const orderId = generateOrderId();
 
-    await db.ref(`transactions/${orderId}`).set(data);
-    await db.ref(`userList/${userid}`).update({ userid, lastActive: Date.now() });
+    const data = {
+      userid,
+      coin,
+      amount,
+      side,
+      orderId,
+      type: "trade",
+      status: "processing",
+      timestamp: Date.now()
+    };
 
-    sendToTelegram("trade", `💱 *买卖订单*\n用户: ${userid}\n方向: ${side}\n金额: ${amount} ${coin}\n订单号: ${orderId}`);
+    await db.ref("transactions").push(data);
 
-    return res.json({ success: true, orderId });
-  } catch (e) {
-    console.error("/api/order/buysell error", e);
-    return res.status(500).json({ success: false, error: "server error" });
+    sendToTelegram(
+      "trade",
+      `💱 *买卖订单*\n用户: ${userid}\n方向: ${side}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
+    );
+
+    res.json({ success: true, orderId });
+
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-/* =========================
-   Admin APIs (formal)
-   ========================= */
-
+// -----------------------------------------------------------
+// ★★★★★ 后台管理 API（真实 API） ★★★★★
+// -----------------------------------------------------------
 app.get("/api/admin/users", async (req, res) => {
   try {
-    const users = (await db.ref("userList").once("value")).val() || {};
-    return res.json({ success: true, users });
-  } catch (e) {
-    console.error("/api/admin/users error", e);
-    return res.status(500).json({ success: false, error: "server error" });
+    const users = (await db.ref("users").once("value")).val() || {};
+    res.json({ success: true, users });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 app.get("/api/admin/transactions", async (req, res) => {
   try {
     const tx = (await db.ref("transactions").once("value")).val() || {};
-    return res.json({ success: true, transactions: tx });
-  } catch (e) {
-    console.error("/api/admin/transactions error", e);
-    return res.status(500).json({ success: false, error: "server error" });
+    res.json({ success: true, transactions: tx });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-/* =========================
-   Proxy (compat for older dashboard JS)
-   ========================= */
-
+// -----------------------------------------------------------
+// ★★★★★ 兼容管理后台旧路径 /proxy/* ★★★★★
+// -----------------------------------------------------------
 app.get("/proxy/users", async (req, res) => {
-  try {
-    const users = (await db.ref("userList").once("value")).val() || {};
-    return res.json({ success: true, users });
-  } catch (e) {
-    console.error("/proxy/users error", e);
-    return res.status(500).json({ success: false, error: "server error" });
-  }
+  const users = (await db.ref("users").once("value")).val() || {};
+  res.json({ success: true, users });
 });
 
 app.get("/proxy/transactions", async (req, res) => {
-  try {
-    const tx = (await db.ref("transactions").once("value")).val() || {};
-    return res.json({ success: true, transactions: tx });
-  } catch (e) {
-    console.error("/proxy/transactions error", e);
-    return res.status(500).json({ success: false, error: "server error" });
-  }
+  const tx = (await db.ref("transactions").once("value")).val() || {};
+  res.json({ success: true, transactions: tx });
 });
 
-// settings endpoint used by dashboard
-app.get("/api/settings", (req, res) => {
-  res.json({ success: true });
-});
-
-// fallback serve index for SPA support (if needed)
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "dashboard-brand.html"));
-});
-
-// run
+// ------------------------
+// RUN SERVER
+// ------------------------
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log("Server running on port", PORT);
