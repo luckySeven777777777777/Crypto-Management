@@ -196,23 +196,42 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
 </div>
 
 <script>
-/* ---------------------------
-   轻量前端逻辑（保留原有主要函数）
-   这里不重复放 requireLogin()，请确保 auth.js 内部会执行 requireLogin()（如果需要）
-   --------------------------- */
+/* ===================== 后台 JS 增强（保持 UI 不变） ===================== */
 
-const PROXY_TRANSACTIONS = "/proxy/transactions";
-const PROXY_RECHARGE = "/proxy/recharge";
-const PROXY_WITHDRAW = "/proxy/withdraw";
-const API_SETTINGS = "/api/settings";
-const API_2FA_SETUP = "/api/2fa/setup";
-const API_2FA_ENABLE = "/api/2fa/enable";
-const API_2FA_DISABLE = "/api/2fa/disable";
-const API_CHANGE_LOGIN = "/api/change-login-password";
-const API_CHANGE_WITHDRAW = "/api/change-withdraw-password";
-const API_LOGIN = "/api/login";
+const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
+const PROXY_TRANSACTIONS = API_BASE + "/api/transactions_proxy"; // 如果你的后端使用别名，可在 server 端映射；这里作默认调用
+const PROXY_TRANSACTIONS_RAW = API_BASE + "/api/transactions"; // 备用
+const PROXY_RECHARGE = API_BASE + "/api/order/recharge";
+const PROXY_WITHDRAW = API_BASE + "/api/order/withdraw";
+const API_ORDER_ACTION = API_BASE + "/api/order/action";
+const API_SETTINGS = API_BASE + "/api/settings";
+const API_2FA_SETUP = API_BASE + "/api/2fa/setup";
+const API_2FA_ENABLE = API_BASE + "/api/2fa/enable";
+const API_2FA_DISABLE = API_BASE + "/api/2fa/disable";
+const API_CHANGE_LOGIN = API_BASE + "/api/change-login-password";
+const API_CHANGE_WITHDRAW = API_BASE + "/api/change-withdraw-password";
 
 function $(s){return document.querySelector(s)}
+function el(id){return document.getElementById(id)}
+
+async function postWithRetry(url, options={}, retries=2, delay=700){
+  for(let i=0;i<=retries;i++){
+    try{
+      const r = await fetch(url, options);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r;
+    }catch(e){
+      if(i===retries) throw e;
+      await new Promise(res=>setTimeout(res, delay));
+    }
+  }
+}
+
+function formatUsTime(ts){
+  const d = ts ? new Date(Number(ts)) : new Date();
+  const s = d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
+  return s.replace(',', '');
+}
 
 /* Sidebar handling */
 document.querySelectorAll('.sidebar .icon').forEach(ic=>ic.addEventListener('click',()=>{
@@ -251,88 +270,86 @@ function showPage(key){
 /* Dashboard loader */
 async function loadDashboard(){
   try{
-    const res = await fetch(PROXY_TRANSACTIONS);
-    const list = await res.json();
-    if(!Array.isArray(list)) return;
+    // 尝试从后端获取交易列表（后端实现请返回数组）
+    let res = await fetch(PROXY_TRANSACTIONS_RAW).catch(()=>null);
+    if(!res || !res.ok){
+      res = await fetch(PROXY_TRANSACTIONS).catch(()=>null);
+    }
+    const list = res ? await res.json().catch(()=>[]) : [];
     const today = new Date(); today.setHours(0,0,0,0);
     let todayRecharge=0, todayWithdraw=0, orders=0, alerts=0;
     const memberMap = {};
-    list.forEach(it=>{
+    (list||[]).forEach(it=>{
       const t = Number(it.timestamp||it.time||it.date||0);
       if(t && t>=today.getTime()){
         if((it.type||it.txType||'').toString().toLowerCase().indexOf('recharge')!==-1) todayRecharge += Number(it.amount||it.value||0);
         if((it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1) todayWithdraw += Number(it.amount||it.value||0);
         orders++;
       }
-      const user = it.userId||it.user||it.member||it.account||'unknown';
+      const user = it.userid||it.userId||it.user||it.member||it.account||'unknown';
       const wallet = (it.wallet||it.address||it.to||it.from||'').toString();
       memberMap[user] = memberMap[user] || {user, wallets:new Set(), last:t, flags:[]};
       if(wallet) memberMap[user].wallets.add(wallet);
       if(t && (!memberMap[user].last || t>memberMap[user].last)) memberMap[user].last = t;
       if((it.status||'').toString().toLowerCase()==='failed'){ alerts++; }
     });
-    document.getElementById('todayRecharge').innerText = todayRecharge;
-    document.getElementById('todayWithdraw').innerText = todayWithdraw;
-    document.getElementById('todayOrders').innerText = orders;
-    document.getElementById('alertsCount').innerText = alerts;
+    el('todayRecharge').innerText = todayRecharge;
+    el('todayWithdraw').innerText = todayWithdraw;
+    el('todayOrders').innerText = orders;
+    el('alertsCount').innerText = alerts;
     const stats = {attention:0,observe:0,firstRecharge:0,firstWithdraw:0,vip:0};
     Object.values(memberMap).forEach(m=>{
       if(m.wallets.size>5) stats.vip++;
     });
-    const statEl = document.getElementById('memberStats');
+    const statEl = el('memberStats');
     statEl.innerHTML = `<div>VIP: ${stats.vip}</div><div>注意会员: ${stats.attention}</div><div>观察会员: ${stats.observe}</div><div>首次充值: ${stats.firstRecharge}</div><div>首次提款: ${stats.firstWithdraw}</div>`;
-    document.getElementById('statTime').innerText = new Date().toLocaleString();
+    el('statTime').innerText = new Date().toLocaleString();
   }catch(e){console.error(e)}
 }
 
-/* Recharge / Withdraw / Orders / Members / Admins functions */
-/* 与前端原实现一致，仅做容错。若需要更深权限控制请对接后端新增接口。 */
-
-async function r_search(){
-  const params = new URLSearchParams();
-  const s = $('#r_start').value; const e = $('#r_end').value;
-  const w = $('#r_wallet').value.trim(); const c = $('#r_currency').value;
-  const min = $('#r_minCount').value; const status = $('#r_status').value;
-  if(s) params.append('start', s); if(e) params.append('end', e); if(w) params.append('q', w);
-  if(c) params.append('currency', c); if(min) params.append('minCount', min); if(status) params.append('status', status);
-  const tbody = $('#r_table'); tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
-  try{
-    const res = await fetch(PROXY_TRANSACTIONS + '?' + params.toString());
-    const list = await res.json();
-    if(!Array.isArray(list)){ tbody.innerHTML='<tr><td colspan="8" class="small">返回异常</td></tr>'; return; }
-    if(list.length===0){ tbody.innerHTML='<tr><td colspan="8" class="small">没有记录</td></tr>'; return; }
-    const rows = list.filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('recharge')!==-1).map(it=>renderRow(it));
-    tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
-  }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
-}
-
-async function w_search(){
-  const params = new URLSearchParams();
-  const s = $('#w_start').value; const e = $('#w_end').value;
-  const w = $('#w_wallet').value.trim(); const c = $('#w_currency').value; const min = $('#w_minCount').value; const status = $('#w_status').value;
-  if(s) params.append('start', s); if(e) params.append('end', e); if(w) params.append('q', w);
-  if(c) params.append('currency', c); if(min) params.append('minCount', min); if(status) params.append('status', status);
-  const tbody = $('#w_table'); tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
-  try{
-    const res = await fetch(PROXY_TRANSACTIONS + '?' + params.toString());
-    const list = await res.json();
-    if(!Array.isArray(list)){ tbody.innerHTML='<tr><td colspan="8" class="small">返回异常</td></tr>'; return; }
-    if(list.length===0){ tbody.innerHTML='<tr><td colspan="8" class="small">没有记录</td></tr>'; return; }
-    const rows = list.filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1).map(it=>renderRow(it));
-    tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
-  }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
-}
-
+/* 渲染单行（含 Strikingly 用户显示 + 时间美式格式 + 操作按钮） */
 function renderRow(it){
-  const order = it.orderId||it.oid||it.id||''; const user = it.userId||it.user||it.member||'';
-  const wallet = it.wallet||it.address||''; const time = it.timestamp?new Date(Number(it.timestamp)).toLocaleString(): (it.time||it.date||'');
-  const amount = it.amount||it.value||0; const currency = it.currency||it.coin||'BRL';
-  const ip = it.ip||it.ipAddr||''; const status = (it.status||'').toString().toLowerCase();
-  const label = memberLabel(it);
+  const order = it.orderId||it.oid||it.id||'';
+  const user = it.userid||it.userId||it.user||it.member||'';
+  const wallet = it.wallet||it.address||'';
+  const ts = it.timestamp || it.time || it.date || Date.now();
+  const timeFormatted = formatUsTime(ts);
+  const amount = it.amount||it.value||0;
+  const currency = it.currency||it.coin||'BRL';
+  const ip = it.ip||it.ipAddr||'';
+  const status = (it.status||'').toString().toLowerCase();
   const type = (it.type||it.txType||'').toString();
-  return `<tr><td><div class="small">${order}</div><div>${user}</div><div style="color:var(--top-blue)">${wallet}</div>${label}</td><td>${time}</td><td>${type}</td><td>${amount}</td><td>${currency}</td><td>${ip}</td><td>${status}</td><td class="actions"><button onclick="viewDetail('${order}')">查看</button></td></tr>`;
+  const label = memberLabel(it);
+
+  // 操作按钮（锁定/解锁/确认/取消）
+  const actionsHtml = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button onclick="handleAction('${order}','lock',this)">锁定</button>
+      <button onclick="handleAction('${order}','unlock',this)">解锁</button>
+      <button onclick="handleAction('${order}','confirm',this)">确认</button>
+      <button onclick="handleAction('${order}','cancel',this)">取消</button>
+      <button onclick="viewDetail('${order}')">查看</button>
+    </div>
+  `;
+
+  return `<tr>
+    <td>
+      <div class="small">${order}</div>
+      <div>Strikingly ID: <b style="color:var(--top-blue)">${user || '--'}</b></div>
+      <div style="color:var(--top-blue)">${wallet}</div>
+      ${label}
+    </td>
+    <td>${timeFormatted}</td>
+    <td>${type}</td>
+    <td>${amount}</td>
+    <td>${currency}</td>
+    <td>${ip}</td>
+    <td>${status}</td>
+    <td class="actions">${actionsHtml}</td>
+  </tr>`;
 }
 
+/* member label */
 function memberLabel(item){
   const lvl = (item.memberLevel||item.level||'').toString().toLowerCase();
   const isFirstRecharge = item.firstRecharge||false; const isFirstWithdraw = item.firstWithdraw||false; const isVip = lvl.indexOf('vip')!==-1;
@@ -344,34 +361,90 @@ function memberLabel(item){
   return '';
 }
 
+/* 搜索 / 加载数据（充值） */
+async function r_search(){
+  const params = new URLSearchParams();
+  const s = el('r_start').value; const e = el('r_end').value; const q = el('r_wallet').value; const c = el('r_currency').value; const min = el('r_minCount').value; const status = el('r_status').value;
+  if(s) params.append('start', s); if(e) params.append('end', e); if(q) params.append('q', q);
+  if(c) params.append('currency', c); if(min) params.append('minCount', min); if(status) params.append('status', status);
+  const tbody = el('r_table'); tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS_RAW + '?' + params.toString()).catch(()=>null);
+    const list = res ? await res.json().catch(()=>[]) : [];
+    const rows = (list||[]).filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('recharge')!==-1).map(it=>renderRow(it));
+    tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
+  }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
+}
+
+/* 搜索 / 加载数据（提款） */
+async function w_search(){
+  const params = new URLSearchParams();
+  const s = el('w_start').value; const e = el('w_end').value; const q = el('w_wallet').value; const c = el('w_currency').value; const min = el('w_minCount').value; const status = el('w_status').value;
+  if(s) params.append('start', s); if(e) params.append('end', e); if(q) params.append('q', q);
+  if(c) params.append('currency', c); if(min) params.append('minCount', min); if(status) params.append('status', status);
+  const tbody = el('w_table'); tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
+  try{
+    const res = await fetch(PROXY_TRANSACTIONS_RAW + '?' + params.toString()).catch(()=>null);
+    const list = res ? await res.json().catch(()=>[]) : [];
+    const rows = (list||[]).filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1).map(it=>renderRow(it));
+    tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
+  }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
+}
+
+/* 订单搜索（通用） */
 async function o_search(){
   const params = new URLSearchParams();
-  const s = $('#o_start').value; const e = $('#o_end').value; const q = $('#o_q').value.trim();
-  const type = $('#o_type').value; const currency = $('#o_currency').value; const status = $('#o_status').value;
+  const s = el('o_start').value; const e = el('o_end').value; const q = el('o_q').value.trim();
+  const type = el('o_type').value; const currency = el('o_currency').value; const status = el('o_status').value;
   if(s) params.append('start', s); if(e) params.append('end', e); if(q) params.append('q', q);
   if(type) params.append('type', type); if(currency) params.append('currency', currency); if(status) params.append('status', status);
-  const tbody = $('#o_table'); tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
+  const tbody = el('o_table'); tbody.innerHTML='<tr><td colspan="8" class="small">加载中...</td></tr>';
   try{
-    const res = await fetch(PROXY_TRANSACTIONS + '?' + params.toString());
-    const list = await res.json();
-    if(!Array.isArray(list)){ tbody.innerHTML='<tr><td colspan="8" class="small">返回异常</td></tr>'; return; }
-    const filtered = list.filter(it=>{
-      const t = (it.type||it.txType||'').toString().toLowerCase();
-      if(type && t.indexOf(type)===-1) return false;
+    const res = await fetch(PROXY_TRANSACTIONS_RAW + '?' + params.toString()).catch(()=>null);
+    const list = res ? await res.json().catch(()=>[]) : [];
+    if(!list || list.length===0){ tbody.innerHTML='<tr><td colspan="8" class="small">没有记录</td></tr>'; return; }
+    const filtered = (list||[]).filter(it=>{
+      if(type){ const t = (it.type||it.txType||'').toString().toLowerCase(); if(t.indexOf(type)===-1) return false; }
       if(status && ((it.status||'').toString().toLowerCase()!==status)) return false;
       if(currency && ((it.currency||it.coin||'').toString().toLowerCase()!==currency.toLowerCase())) return false;
       if(q){
-        const joint = `${it.orderId||it.id||''} ${it.userId||it.user||it.member||''} ${it.wallet||it.address||''}`.toLowerCase();
+        const joint = `${it.orderId||it.id||''} ${it.userid||it.userId||it.user||''} ${it.wallet||it.address||''}`.toLowerCase();
         if(joint.indexOf(q.toLowerCase())===-1) return false;
       }
       return true;
     });
-    if(filtered.length===0){ tbody.innerHTML='<tr><td colspan="8" class="small">没有记录</td></tr>'; return; }
-    tbody.innerHTML = filtered.map(it=>renderRow(it)).join('');
+    tbody.innerHTML = filtered.length? filtered.map(it=>renderRow(it)).join('') : '<tr><td colspan="8" class="small">没有记录</td></tr>';
   }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
 }
 
-/* Admins (localStorage UI) */
+/* 管理操作处理：锁定/解锁/确认/取消（调用后端 /api/order/action） */
+async function handleAction(orderId, action, btnEl){
+  if(!orderId) return alert('缺少订单 ID');
+  const oldText = btnEl ? btnEl.innerText : null;
+  if(btnEl){ btnEl.disabled = true; btnEl.innerText = '处理中...'; }
+  try{
+    await postWithRetry(API_ORDER_ACTION, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ orderId, action, actor: 'admin', timestamp: Date.now(), time_us: formatUsTime(Date.now()) })
+    }, 2, 500);
+    alert('操作成功: ' + action);
+    // 刷新当前页表格（简单起见，调用 o_search/w_search/r_search）
+    const visibleRecharge = document.getElementById('page-recharge').style.display !== 'none';
+    const visibleWithdraw = document.getElementById('page-withdraw').style.display !== 'none';
+    const visibleOrders = document.getElementById('page-orders').style.display !== 'none';
+    if(visibleRecharge) r_search();
+    if(visibleWithdraw) w_search();
+    if(visibleOrders) o_search();
+  }catch(e){
+    console.error('action error', e);
+    alert('操作失败，请重试');
+  }finally{
+    if(btnEl){ btnEl.disabled = false; btnEl.innerText = oldText; }
+  }
+}
+
+/* Admins local functions */
 function loadAdmins(){
   const raw = localStorage.getItem('nexbit_admins') || '[]';
   let arr = [];
@@ -410,11 +483,11 @@ function removeAdmin(id){
 
 /* Members loader */
 async function loadMembers(){
-  const q = $('#m_search').value.trim(); const tbody = $('#m_table'); tbody.innerHTML='<tr><td colspan="4" class="small">加载中...</td></tr>';
+  const q = el('m_search').value.trim(); const tbody = el('m_table'); tbody.innerHTML='<tr><td colspan="4" class="small">加载中...</td></tr>';
   try{
-    const res = await fetch(PROXY_TRANSACTIONS); const list = await res.json();
+    const res = await fetch(PROXY_TRANSACTIONS_RAW).catch(()=>null); const list = res ? await res.json().catch(()=>[]) : [];
     const map = {};
-    list.forEach(it=>{ const user = it.userId||it.user||it.member||''; const wallet = it.wallet||it.address||''; if(!map[user]) map[user]={user:user,wallets:new Set(),last:it.timestamp||it.time||it.date}; if(wallet) map[user].wallets.add(wallet); if(it.timestamp && (!map[user].last || it.timestamp>map[user].last)) map[user].last=it.timestamp; });
+    (list||[]).forEach(it=>{ const user = it.userid||it.userId||it.user||it.member||''; const wallet = it.wallet||it.address||''; if(!map[user]) map[user]={user:user,wallets:new Set(),last:it.timestamp||it.time||it.date}; if(wallet) map[user].wallets.add(wallet); if(it.timestamp && (!map[user].last || it.timestamp>map[user].last)) map[user].last=it.timestamp; });
     const items = Object.values(map).map(m=>({user:m.user,wallets:Array.from(m.wallets),last:m.last}));
     const filtered = q?items.filter(i=>(i.user+''+i.wallets.join('')).indexOf(q)!==-1):items;
     if(filtered.length===0){ tbody.innerHTML='<tr><td colspan="4" class="small">没有会员</td></tr>'; return; }

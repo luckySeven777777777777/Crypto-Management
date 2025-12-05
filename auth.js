@@ -1,35 +1,25 @@
-// public/js/auth.js - client-side helpers
-function saveToken(token) {
-  try { localStorage.setItem("admin_token", token); } catch (e) {}
-}
-function getToken() {
-  try { return localStorage.getItem("admin_token"); } catch (e) { return null; }
-}
-function clearToken() {
-  try { localStorage.removeItem("admin_token"); } catch (e) {}
-}
-function ensureLoggedIn() {
-  const t = getToken();
-  if (!t) {
-    window.location.href = "/login.html";
-    return false;
+// public/js/auth.js
+// 负责生成/保存 NEXBIT_USER_ID，和简单的 requireLogin (如需更复杂可扩展)
+
+(function(){
+  // 生成 4 位用户 ID (U + 4 digits)
+  function genUserId() {
+    return "U" + Math.floor(1000 + Math.random() * 9000);
   }
-  return t;
-}
-async function apiRequest(url, options = {}) {
-  const headers = options.headers || {};
-  const token = getToken();
-  if (token) headers["Authorization"] = `Bearer ${token}`; // placeholder
-  options.headers = headers;
-  options.credentials = 'include';
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    if (res.status === 401) {
-      clearToken();
-      window.location.href = "/login.html";
-    }
-    const txt = await res.text();
-    throw new Error(txt || `HTTP ${res.status}`);
+
+  if (!localStorage.getItem("NEXBIT_USER_ID")) {
+    localStorage.setItem("NEXBIT_USER_ID", genUserId());
   }
-  return res.json();
-}
+
+  window.NEXBIT_USER_ID = localStorage.getItem("NEXBIT_USER_ID");
+
+  // 简单 requireLogin：如果你页面需要强制登录，可在这里实现
+  window.requireLogin = function() {
+    // 目前仅确保全局 ID 存在（已在顶部处理）
+    return !!window.NEXBIT_USER_ID;
+  };
+
+  // 在加载时自动执行一次（不要在 html 中重复调用）
+  try { if (typeof requireLogin === 'function') requireLogin(); } catch(e){}
+
+})();

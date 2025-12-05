@@ -81,20 +81,31 @@
 </div>
 
 <script>
-
-/* ====================== USER ID（保持 4 位数字） ====================== */
-function getUserId() {
-    const url = new URLSearchParams(window.location.search);
-    let uid = url.get("userid");
-
-    if (!uid) {
-        uid = localStorage.getItem("userid4");
-        if (!uid) {
-            uid = Math.floor(1000 + Math.random() * 9000).toString();
-            localStorage.setItem("userid4", uid);
-        }
+/* ===== 通用工具 ===== */
+const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
+async function postWithRetry(url, options={}, retries=2, delay=700){
+  for(let i=0;i<=retries;i++){
+    try{
+      const r = await fetch(url, options);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r;
+    }catch(e){
+      if(i===retries) throw e;
+      await new Promise(res=>setTimeout(res, delay));
     }
-    return uid;
+  }
+}
+function formatUsTime(ts){
+  const d = ts ? new Date(Number(ts)) : new Date();
+  const s = d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
+  return s.replace(',', '');
+}
+function getUserId(){
+  const url = new URLSearchParams(window.location.search);
+  const uid = url.get("userid") || localStorage.getItem("userid4") || (function(){ const x = Math.floor(1000+Math.random()*9000).toString(); localStorage.setItem("userid4", x); return x; })();
+  if(!localStorage.getItem("userid4")) localStorage.setItem("userid4", uid);
+  try{ postWithRetry(`${API_BASE}/api/users/sync`, { method:'POST', headers:{'Content-Type':'application/json','X-User-Id':uid}, body: JSON.stringify({ userid: uid }) }, 1, 400).catch(()=>{}); }catch(e){}
+  return uid;
 }
 const USERID = getUserId();
 
@@ -191,35 +202,55 @@ async function submitWithdrawal() {
     if (!passwordConfirmed) return alert("Confirm password first.");
     if (!wallet) return alert("Enter wallet address.");
 
+    const orderId = `WDL-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100000 + Math.random()*900000)}`;
+    const usTime = formatUsTime(Date.now());
+
     const payload = {
         userid: USERID,
         coin,
         amount,
         wallet,
         usdt,
-        hash: txHash
+        hash: txHash,
+        orderId,
+        timestamp: Date.now(),
+        time_us: usTime
     };
 
+    // 按钮 loading
+    const submitBtnEl = document.getElementById("submitBtn");
+    submitBtnEl.disabled = true;
+    submitBtnEl.style.opacity = "0.7";
+    submitBtnEl.textContent = "Submitting...";
+
     try {
-        let res = await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/withdraw", {
+        const res = await postWithRetry(`${API_BASE}/api/order/withdraw`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "X-User-Id": USERID
             },
             body: JSON.stringify(payload)
-        });
+        }, 3, 700);
 
-        let data = await res.json();
-        if (data.success) {
+        const data = await res.json();
+        if (data && (data.success === true || data.ok === true)) {
             alert("Withdrawal submitted!");
+            // 显示订单 ID
+            document.getElementById("hashBox").innerText += `\n\nOrder ID: ${orderId}\nTime (US): ${usTime}`;
         } else {
-            alert("Server error: " + data.error);
+            alert("Server error: " + (data && (data.error || data.message) || 'unknown'));
+            submitBtnEl.disabled = false;
+            submitBtnEl.style.opacity = "1";
+            submitBtnEl.textContent = "Submit";
         }
 
     } catch (e) {
         console.log(e);
-        alert("Network error");
+        alert("Network error: 提交失败，请稍后在后台确认或重试。");
+        submitBtnEl.disabled = false;
+        submitBtnEl.style.opacity = "1";
+        submitBtnEl.textContent = "Submit";
     }
 }
 </script>

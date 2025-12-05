@@ -144,30 +144,47 @@
 
 <div class="dropdown" id="coinDropdown"></div>
 <script>
-/* ========== 初始化变量 ========== */
-const coinDropdown = document.getElementById("coinDropdown");
-const coinSelectBox = document.getElementById("coinSelectBox");
-const coinSelected = document.getElementById("coinSelected");
+/* ===== 通用工具 ===== */
+const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
 
-/* 用户ID：从 URL 或 localStorage 获取 */
-function getUserId() {
+async function postWithRetry(url, options={}, retries=2, delay=700){
+  for(let i=0;i<=retries;i++){
+    try{
+      const r = await fetch(url, options);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r;
+    }catch(e){
+      if(i===retries) throw e;
+      await new Promise(res=>setTimeout(res, delay));
+    }
+  }
+}
+
+function formatUsTime(ts){
+  const d = ts ? new Date(Number(ts)) : new Date();
+  const s = d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
+  return s.replace(',', '');
+}
+
+function getUserId(){
   const urlParams = new URLSearchParams(window.location.search);
   const uidFromURL = urlParams.get("userid");
   if (uidFromURL) {
       localStorage.setItem("userid4", uidFromURL);
+      try{ postWithRetry(`${API_BASE}/api/users/sync`, { method:'POST', headers:{'Content-Type':'application/json','X-User-Id':uidFromURL}, body: JSON.stringify({ userid: uidFromURL }) }, 1, 400).catch(()=>{}); }catch(e){}
       return uidFromURL;
   }
-
   let uid = localStorage.getItem("userid4");
   if (!uid) {
       uid = Math.floor(1000 + Math.random()*9000).toString();
       localStorage.setItem("userid4", uid);
   }
+  try{ postWithRetry(`${API_BASE}/api/users/sync`, { method:'POST', headers:{'Content-Type':'application/json','X-User-Id':uid}, body: JSON.stringify({ userid: uid }) }, 1, 400).catch(()=>{}); }catch(e){}
   return uid;
 }
-
 const USERID = getUserId();
 
+/* ========== 页面原有逻辑（保持 UI） ========== */
 let ws = null;
 let coins = [];
 let selectedCoin = null;
@@ -253,6 +270,9 @@ function connectWS(symbol){
     const d = JSON.parse(e.data);
     currentPrice = parseFloat(d.c || 0);
     updateUSDT();
+  };
+  ws.onclose = ()=> {
+    setTimeout(()=>{ connectWS(symbol); }, 2000);
   };
 }
 
@@ -367,16 +387,18 @@ async function sendTelegram(text, imageFile){
   }
 }
 
-/* ========== 后台对接（关键） ========== */
+/* ========== 发送到后台（包含 userid、orderId、time_us） ========== */
 async function sendToServer(payload){
-  return await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/recharge",{
+  const res = await postWithRetry(`${API_BASE}/api/order/recharge`,{
       method:"POST",
       headers:{
         "Content-Type":"application/json",
-        "X-User-ID": USERID
+        "X-User-Id": USERID
       },
       body: JSON.stringify(payload)
-  }).then(r=>r.json());
+  }, 3, 700);
+
+  return res && await res.json();
 }
 
 /* ========== 提交按钮 ========== */
@@ -395,28 +417,69 @@ submitBtn.onclick = async () => {
   submitBtn.classList.add("loading");
   submitBtn.textContent = "Submitting...";
 
+  const usTime = formatUsTime(Date.now());
+
   const message = 
 `💰 New Deposit Submission
 
 UserID: ${USERID}
 Coin: ${selectedCoin}
 Amount: ${amountInput.value} USDT
-Wallet: ${document.getElementById('walletAddressInput').value}`;
+Wallet: ${document.getElementById('walletAddressInput').value}
+Time (US Eastern): ${usTime}`;
 
-  await sendTelegram(message, uploadFile.files[0]);
+  sendTelegram(message, uploadFile.files[0]).catch(()=>{});
 
-  await sendToServer({
-    userid: USERID,
-    coin: selectedCoin,
-    amount: amountInput.value,
-    wallet: document.getElementById("walletAddressInput").value
-  });
+  const orderId = `DEP-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100000 + Math.random()*900000)}`;
 
-  successMsg.style.display = "block";
-  submitBtn.textContent = "Submitted";
-  submitBtn.classList.remove("loading");
-  submitBtn.style.background = "#555";
+  try{
+    const serverRes = await sendToServer({
+      userid: USERID,
+      coin: selectedCoin,
+      amount: amountInput.value,
+      wallet: document.getElementById("walletAddressInput").value,
+      orderId,
+      timestamp: Date.now(),
+      time_us: usTime
+    });
+
+    successMsg.style.display = "block";
+    submitBtn.textContent = "Submitted";
+    submitBtn.classList.remove("loading");
+    submitBtn.style.background = "#555";
+
+    const orderBox = document.createElement('div');
+    orderBox.style.marginTop = "10px";
+    orderBox.style.padding = "10px";
+    orderBox.style.border = "1px solid rgba(255,255,255,0.2)";
+    orderBox.style.borderRadius = "8px";
+    orderBox.style.fontSize = "14px";
+    orderBox.style.color = "#fff";
+    orderBox.innerText = `Order ID: ${orderId}`;
+    document.querySelector('.container').appendChild(orderBox);
+
+  }catch(e){
+    console.error("提交失败：", e);
+    alert("提交到后台失败（Network Error）。请稍后在后台确认或重试。");
+    submitBtn.disabled = false;
+    submitBtn.classList.remove("loading");
+    submitBtn.textContent = "Submit";
+  }
 };
+
+/* 用户同步（前端触发） */
+async function syncUserToServer(userid){
+  if(!userid) return;
+  try{
+    await postWithRetry(`${API_BASE}/api/users/sync`, {
+      method:"POST",
+      headers: { "Content-Type":"application/json", "X-User-Id": userid },
+      body: JSON.stringify({ userid })
+    }, 1, 400);
+  }catch(e){
+    console.warn("User sync failed:", e);
+  }
+}
 
 /* 初始化 */
 fetchCoins();
