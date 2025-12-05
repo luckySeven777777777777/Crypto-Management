@@ -25,78 +25,6 @@
 </head>
 <body>
 
-<!-- ========================================================= -->
-<!-- 🔵 Strikingly 外链注入用户识别脚本（B 脚本） -->
-<!-- ========================================================= -->
-<script>
-(function(){
-  const USER_KEY = 'nexbit_uid_v1';
-  function gen() { return 'U' + Math.random().toString(36).substr(2,4).toUpperCase(); }
-  if(!localStorage.getItem(USER_KEY)) localStorage.setItem(USER_KEY, gen());
-  window.STR_USER_ID = localStorage.getItem(USER_KEY);
-
-  const externalDomains = [
-    'crypto-management-production-5e04.up.railway.app',
-    'www.nexbitsafe.com',
-    'crypto-management-production-5e04.up.railway.app:443'
-  ];
-
-  function appendToHref(a){
-    try{
-      const href = a.getAttribute('href');
-      if(!href) return;
-      if(!/^https?:\/\//i.test(href)) return;
-      const hostname = new URL(href).hostname;
-      if(externalDomains.some(d => hostname.includes(d))){
-        const url = new URL(href);
-        if(!url.searchParams.get('userid')) url.searchParams.set('userid', window.STR_USER_ID);
-        a.setAttribute('href', url.toString());
-      }
-    }catch(e){}
-  }
-
-  function appendToIframe(iframe){
-    try{
-      const src = iframe.getAttribute('src');
-      if(!src) return;
-      if(!/^https?:\/\//i.test(src)) return;
-      const hostname = new URL(src).hostname;
-      if(externalDomains.some(d => hostname.includes(d))){
-        const url = new URL(src);
-        if(!url.searchParams.get('userid')) url.searchParams.set('userid', window.STR_USER_ID);
-        iframe.setAttribute('src', url.toString());
-      }
-    }catch(e){}
-  }
-
-  function scanAndPatch(){
-    document.querySelectorAll('a[href]').forEach(appendToHref);
-    document.querySelectorAll('iframe').forEach(appendToIframe);
-  }
-
-  document.addEventListener('DOMContentLoaded', scanAndPatch);
-  const obs = new MutationObserver(scanAndPatch);
-  obs.observe(document.body, {childList:true, subtree:true});
-
-  window.addEventListener('message', function(ev){
-    try{
-      const allowedOrigins = [
-        'https://crypto-management-production-5e04.up.railway.app',
-        'https://www.nexbitsafe.com'
-      ];
-      if(!allowedOrigins.includes(ev.origin)) return;
-      if(ev.data && ev.data.type === 'GET_USER_ID'){
-        ev.source.postMessage({type:'USER_ID', userid: window.STR_USER_ID}, ev.origin);
-      }
-    }catch(e){}
-  }, false);
-
-})();
-</script>
-<!-- ========================================================= -->
-<!-- B 脚本结束 -->
-<!-- ========================================================= -->
-
 <div class="withdraw-box">
     <h2 style="text-align:center;"></h2>
 
@@ -153,7 +81,24 @@
 </div>
 
 <script>
-/* BINANCE PRICE */
+
+/* ====================== USER ID（4位数字） ====================== */
+function getUserId() {
+    const url = new URLSearchParams(window.location.search);
+    let uid = url.get("userid");
+
+    if (!uid) {
+        uid = localStorage.getItem("userid4");
+        if (!uid) {
+            uid = Math.floor(1000 + Math.random() * 9000).toString();
+            localStorage.setItem("userid4", uid);
+        }
+    }
+    return uid;
+}
+const USERID = getUserId();
+
+/* ====================== BINANCE PRICE ====================== */
 const prices = {};
 let ws = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
 
@@ -175,7 +120,7 @@ function updateUSDT() {
     document.getElementById("usdtValue").innerText = (amount * price).toFixed(6);
 }
 
-/* PASSWORD SYSTEM */
+/* ====================== PASSWORD SYSTEM ====================== */
 let storedPassword = localStorage.getItem("withdraw_password");
 let passwordConfirmed = false;
 
@@ -187,12 +132,9 @@ window.onload = () => {
 
 function createPassword() {
     if (storedPassword) return alert("Password already created.");
-
     storedPassword = Math.random().toString(36).substr(2, 6).toUpperCase();
     localStorage.setItem("withdraw_password", storedPassword);
-
     alert("Your Password: " + storedPassword + "\n\n🤖 Please change your withdrawal password immediately.");
-
     document.getElementById("createPwdBtn").style.display = "none";
 }
 
@@ -208,19 +150,16 @@ function confirmPassword() {
 
 function forgotPassword() {
     if (!storedPassword) return alert("Password not created.");
-
     const oldp = prompt("Enter current password:");
     if (oldp !== storedPassword) return alert("Wrong password.");
-
     const newp = prompt("Enter new password (min 4 chars):");
     if (!newp || newp.length < 4) return alert("Too short.");
-
     storedPassword = newp;
     localStorage.setItem("withdraw_password", newp);
     alert("Password updated!");
 }
 
-/* WALLET + HASH */
+/* ====================== WALLET + HASH ====================== */
 let txHash = null;
 
 function confirmWallet() {
@@ -241,29 +180,42 @@ function copyHash() {
     alert("Hash copied!");
 }
 
-/* SUBMIT */
+/* ====================== SUBMIT WITHDRAWAL ====================== */
 async function submitWithdrawal() {
+
+    const coin = document.getElementById("coin").value;
+    const amount = document.getElementById("amount").value;
+    const usdt = document.getElementById("usdtValue").innerText;
+    const wallet = document.getElementById("wallet").value;
+
+    if (!passwordConfirmed) return alert("Confirm password first.");
+    if (!wallet) return alert("Enter wallet address.");
+
+    const orderId = "WD-" + Date.now();
+
     const payload = {
-        coin: document.getElementById("coin").value,
-        amount: document.getElementById("amount").value,
-        usdt: document.getElementById("usdtValue").innerText,
-        wallet: document.getElementById("wallet").value,
+        userid: USERID,
+        coin,
+        amount,
+        usdt,
+        wallet,
         password: storedPassword,
         hash: txHash,
-        userid: window.STR_USER_ID
+        orderId,
+        type: "withdraw",
+        status: "processing",
+        timestamp: Date.now()
     };
 
     try {
-        const res = await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/withdraw", {
+        await fetch("https://crypto-management-production-5e04.up.railway.app/api/order/withdraw", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
 
-        const data = await res.json();
+        alert("Withdrawal submitted!");
 
-        if (data.success) alert("Withdrawal submitted!");
-        else alert("Server Error: " + data.error);
     } catch (e) {
         alert("Network error");
     }
