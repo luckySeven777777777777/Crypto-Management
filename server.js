@@ -1,471 +1,295 @@
-/**
- * server.js — NEXBIT 完整统一版（最终） - 修订版（增加静态映射 + preflight 支持）
- *
- * 环境变量：
- *  - FIREBASE_SERVICE_ACCOUNT (可选) : 整个 service account JSON 字符串
- *  - FIREBASE_DATABASE_URL   (可选)
- *  - ADMIN_API_KEY            (可选)
- *  - TELEGRAM_BOT_TOKEN      (可选)
- *  - TELEGRAM_CHAT_IDS       (可选，逗号分隔)
- *  - PORT
- */
+// server.js - NEXBIT FINAL (Firebase 支持 全接口版)
+// 环境变量（必须）：FIREBASE_SERVICE_ACCOUNT (JSON string), FIREBASE_DATABASE_URL
+
 const express = require('express');
-const path = require('path');
-const helmet = require('helmet');
-const cors = require('cors');
 const bodyParser = require('body-parser');
-const { v4: uuidv4 } = require('uuid');
-const fetch = require('node-fetch');
+const cors = require('cors');
+const path = require('path');
+const admin = require('firebase-admin');
 
 const app = express();
-app.use(helmet());
-app.use(bodyParser.json({ limit: '8mb' }));
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cors());
+app.use(bodyParser.json());
 
-// 允许所有 CORS（简化 Strikingly / 前端跨域访问）
-// 保留凭据配置以备将来需要，但目前允许任意 origin
-app.use(cors({
-  origin: (origin, cb) => { cb(null, true); },
-  credentials: true
-}));
-// 明确允许所有 preflight OPTIONS 请求
-app.options('*', cors());
+// 静态托管 public 文件夹（确保 public 存在）
+const PUBLIC_DIR = path.join(__dirname, 'public');
+app.use(express.static(PUBLIC_DIR));
 
-/* 静态文件 public */
-app.use(express.static(path.join(__dirname, 'public')));
-
-// 为了兼容前端可能使用根路径引用的脚本，显式映射这些文件到 public/js 下
-app.get('/nexbit-api.js', (req, res) => {
-  const p = path.join(__dirname, 'public', 'js', 'nexbit-api.js');
-  return res.sendFile(p, err => {
-    if (err) {
-      console.warn('[server] /nexbit-api.js not found ->', p);
-      res.status(404).send('');
-    }
-  });
-});
-app.get('/auth.js', (req, res) => {
-  const p = path.join(__dirname, 'public', 'js', 'auth.js');
-  return res.sendFile(p, err => {
-    if (err) {
-      console.warn('[server] /auth.js not found ->', p);
-      res.status(404).send('');
-    }
-  });
-});
-// 也提供 /js/ 前缀（express.static 已处理，但这里做双重保险）
-app.get('/js/nexbit-api.js', (req, res) => {
-  const p = path.join(__dirname, 'public', 'js', 'nexbit-api.js');
-  return res.sendFile(p, err => {
-    if (err) { res.status(404).send(''); }
-  });
-});
-app.get('/js/auth.js', (req, res) => {
-  const p = path.join(__dirname, 'public', 'js', 'auth.js');
-  return res.sendFile(p, err => {
-    if (err) { res.status(404).send(''); }
-  });
-});
-
-// 避免 favicon 404 干扰日志
-app.get('/favicon.ico', (req, res) => res.status(204).end());
-
-/* Firebase 初始化（可选） */
-let useFirebase = false;
-let admin = null;
+// ---------- Firebase 初始化（容错） ----------
 let db = null;
-const FIREBASE_SERVICE_ACCOUNT = process.env.FIREBASE_SERVICE_ACCOUNT || '';
-const FIREBASE_DATABASE_URL = process.env.FIREBASE_DATABASE_URL || '';
-
-if (FIREBASE_SERVICE_ACCOUNT && FIREBASE_DATABASE_URL) {
-  try {
-    admin = require('firebase-admin');
-    const svc = JSON.parse(FIREBASE_SERVICE_ACCOUNT);
+try {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT || !process.env.FIREBASE_DATABASE_URL) {
+    console.warn('[SERVER] WARNING: Firebase 环境变量未配置，使用内存存储（仅测试）。');
+  } else {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     admin.initializeApp({
-      credential: admin.credential.cert(svc),
-      databaseURL: FIREBASE_DATABASE_URL
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL
     });
     db = admin.database();
-    useFirebase = true;
-    console.log('[server] Firebase inited:', FIREBASE_DATABASE_URL);
-  } catch (e) {
-    console.warn('[server] Firebase init failed, falling back to memory store:', e.message);
-    useFirebase = false;
+    console.log('[SERVER] Firebase 初始化成功');
   }
-} else {
-  console.log('[server] Firebase not configured - using in-memory store');
+} catch (err) {
+  console.error('[SERVER] Firebase 初始化异常：', err);
 }
 
-/* 内存回退 */
-const memory = {
-  users: {},
-  orders: [],
-  settings: { telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '', telegramChatIds: (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean) }
-};
+// ---------- 简单 DB 抽象（优先 Firebase，回退 memory） ----------
+const memoryStore = { transactions: {}, balances: {}, users: {}, settings: {} };
 
-/* DB 抽象 */
-async function dbGet(path) {
-  if (useFirebase) {
+async function dbRead(path) {
+  if (db) {
     const snap = await db.ref(path).once('value');
     return snap.val();
   } else {
-    if (path === '/users') return memory.users;
-    if (path === '/orders') return memory.orders;
-    if (path === '/settings') return memory.settings;
-    return null;
+    const parts = path.split('/').filter(Boolean);
+    let cur = memoryStore;
+    for (const p of parts) {
+      if (!cur[p]) return null;
+      cur = cur[p];
+    }
+    return cur;
   }
 }
-async function dbSet(path, value) {
-  if (useFirebase) {
+
+async function dbSave(path, value) {
+  if (db) {
     await db.ref(path).set(value);
     return true;
   } else {
-    if (path === '/settings') { memory.settings = value; return true; }
-    return false;
+    const parts = path.split('/').filter(Boolean);
+    let cur = memoryStore;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts[i];
+      cur[p] = cur[p] || {};
+      cur = cur[p];
+    }
+    cur[parts[parts.length - 1]] = value;
+    return true;
   }
 }
+
 async function dbPush(path, value) {
-  if (useFirebase) {
-    const ref = db.ref(path).push();
-    await ref.set(value);
+  if (db) {
+    const ref = await db.ref(path).push(value);
     return ref.key;
   } else {
-    if (path === '/orders') {
-      memory.orders.push(value);
-      return memory.orders.length - 1;
+    const key = 'k' + Date.now() + Math.floor(Math.random() * 1000);
+    const parts = path.split('/').filter(Boolean);
+    let cur = memoryStore;
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      cur[p] = cur[p] || {};
+      if (i === parts.length - 1) {
+        cur[p][key] = value;
+      } else {
+        cur = cur[p];
+      }
     }
-    return null;
-  }
-}
-async function dbUpdate(path, patch) {
-  if (useFirebase) {
-    await db.ref(path).update(patch);
-    return true;
-  } else {
-    if (path.startsWith('/users/')) {
-      const id = path.split('/')[2];
-      memory.users[id] = Object.assign({}, memory.users[id] || {}, patch);
-      return true;
-    }
-    return false;
+    return key;
   }
 }
 
-/* helper */
-async function ensureUser(userId) {
-  if (!userId) return;
-  if (useFirebase) {
-    const ref = db.ref(`/users/${userId}`);
-    const snap = await ref.once('value');
-    if (!snap.exists()) {
-      await ref.set({ balance: 0, createdAt: Date.now(), meta: {} });
-    }
-  } else {
-    if (!memory.users[userId]) memory.users[userId] = { balance: 0, createdAt: Date.now(), meta: {} };
-  }
-}
-async function getUserBalance(userId) {
-  if (!userId) return 0;
-  if (useFirebase) {
-    const snap = await db.ref(`/users/${userId}`).once('value');
-    const u = snap.val() || { balance: 0 };
-    return Number(u.balance || 0);
-  } else {
-    return Number((memory.users[userId] && memory.users[userId].balance) || 0);
-  }
-}
-async function adjustUserBalance({ userId, amount, mode = 'delta' }) {
-  await ensureUser(userId);
-  if (useFirebase) {
-    const ref = db.ref(`/users/${userId}`);
-    const snap = await ref.once('value');
-    const u = snap.val() || { balance: 0 };
-    const cur = Number(u.balance || 0);
-    const newBal = (mode === 'set') ? Number(amount) : cur + Number(amount);
-    await ref.update({ balance: newBal, updatedAt: Date.now() });
-    return newBal;
-  } else {
-    const cur = Number((memory.users[userId] && memory.users[userId].balance) || 0);
-    const newBal = (mode === 'set') ? Number(amount) : cur + Number(amount);
-    memory.users[userId].balance = newBal;
-    memory.users[userId].updatedAt = Date.now();
-    return newBal;
-  }
-}
+function ok(data) { return Object.assign({ ok: true }, data || {}); }
+function fail(message) { return { ok: false, message: message || 'error' }; }
 
-/* Telegram */
-async function sendTelegramMessage(text) {
-  let botToken = process.env.TELEGRAM_BOT_TOKEN || '';
-  let chatIds = (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-  if ((!botToken || chatIds.length === 0)) {
-    const s = await dbGet('/settings');
-    if (s && s.telegramBotToken) botToken = s.telegramBotToken;
-    if (s && s.telegramChatIds) chatIds = (s.telegramChatIds || []).slice();
-    if ((!botToken || chatIds.length === 0) && memory.settings) {
-      if (!botToken && memory.settings.telegramBotToken) botToken = memory.settings.telegramBotToken;
-      if ((chatIds.length === 0) && memory.settings.telegramChatIds) chatIds = (memory.settings.telegramChatIds || []).slice();
-    }
-  }
-  if (!botToken || !chatIds || chatIds.length === 0) return false;
-  const urlBase = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  for (const chatId of chatIds) {
-    try {
-      await fetch(urlBase, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
-      });
-    } catch (e) {
-      console.warn('[telegram] send fail', e.message);
-    }
-  }
-  return true;
-}
+// ---------- APIs ----------
 
-/* admin middleware */
-function requireAdmin(req, res, next) {
-  const adminKey = process.env.ADMIN_API_KEY || '';
-  if (!adminKey) return res.status(403).json({ ok: false, error: 'admin key not configured' });
-  const header = (req.headers['x-admin-key'] || req.headers['x-admin-key'.toLowerCase()] || '').toString();
-  if (!header || header !== adminKey) return res.status(401).json({ ok: false, error: 'invalid admin key' });
-  next();
-}
+// health
+app.get('/api/ping', (req, res) => res.json(ok({ time: Date.now() })));
 
-/* logging */
-app.use((req, res, next) => {
-  // log with potential user header for debugging (Strikingly sends X-User-Id)
-  const uid = req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()] || '';
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} user:${uid}`);
-  next();
-});
-
-/* ROUTES */
-app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now(), firebase: useFirebase }));
-
+// 1) Strikingly -> 后端 用户同步
+// POST /api/user/sync  { userId }
 app.post('/api/user/sync', async (req, res) => {
   try {
-    const uid = (req.body && (req.body.userId || req.body.userid)) || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    if (!uid) return res.status(400).json({ success: false, error: 'missing userId' });
-    await ensureUser(uid);
-    return res.json({ success: true, userId: uid });
+    const { userId } = req.body || {};
+    if (!userId) return res.json(fail('missing userId'));
+    await dbSave(`/users/${userId}`, { userId, updatedAt: Date.now() });
+    // 若暂无余额则初始化
+    const b = (await dbRead(`/balances/${userId}`)) || null;
+    if (!b) await dbSave(`/balances/${userId}`, { balance: 0 });
+    return res.json(ok());
   } catch (e) {
     console.error('/api/user/sync err', e);
-    return res.status(500).json({ success: false, error: e.message });
+    return res.json(fail('sync error'));
   }
 });
 
+// 2) 查询余额
+// GET /api/balance?userId=Uxxx
+app.get('/api/balance', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.json(fail('missing userId'));
+    const b = (await dbRead(`/balances/${userId}`)) || { balance: 0 };
+    return res.json(ok({ balance: Number(b.balance || 0) }));
+  } catch (e) {
+    console.error('/api/balance GET err', e);
+    return res.json(fail('read balance error'));
+  }
+});
+
+// 3) 写入余额（充值/扣款）
+// POST /api/balance { userId, amount }
 app.post('/api/balance', async (req, res) => {
   try {
-    const body = req.body || {};
-    const headerUid = req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    const userId = body.userid || body.userId || headerUid;
-    if (!userId) return res.status(400).json({ success: false, error: 'missing userid' });
-    if (typeof body.newBalance !== 'undefined') {
-      const adminKey = process.env.ADMIN_API_KEY || '';
-      const header = (req.headers['x-admin-key'] || req.headers['x-admin-key'.toLowerCase()] || '').toString();
-      if (!adminKey || header !== adminKey) return res.status(403).json({ success: false, error: 'admin required' });
-      const nb = Number(body.newBalance);
-      if (isNaN(nb)) return res.status(400).json({ success: false, error: 'invalid newBalance' });
-      const after = await adjustUserBalance({ userId, amount: nb, mode: 'set' });
-      return res.json({ success: true, userId, balance: after });
-    }
-    await ensureUser(userId);
-    const bal = await getUserBalance(userId);
-    return res.json({ success: true, userId, balance: bal });
+    const { userId, amount } = req.body || {};
+    if (!userId || typeof amount === 'undefined') return res.json(fail('missing params'));
+    const cur = (await dbRead(`/balances/${userId}`)) || { balance: 0 };
+    const newBalance = Number(cur.balance || 0) + Number(amount);
+    await dbSave(`/balances/${userId}`, { balance: newBalance });
+    // 写入交易记录
+    await dbPush('/transactions', { userId, amount: Number(amount), timestamp: Date.now(), note: 'balance update' });
+    return res.json(ok({ balance: newBalance }));
   } catch (e) {
-    console.error('/api/balance err', e);
-    return res.status(500).json({ success: false, error: e.message });
+    console.error('/api/balance POST err', e);
+    return res.json(fail('balance update error'));
   }
 });
 
-app.get('/api/balance/:userId', async (req, res) => {
-  try {
-    const uid = req.params.userId;
-    if (!uid) return res.status(400).json({ success: false, error: 'missing userId' });
-    await ensureUser(uid);
-    const bal = await getUserBalance(uid);
-    return res.json({ success: true, userId: uid, balance: bal });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/* Orders endpoints (unchanged) */
-app.post('/api/order/recharge', async (req, res) => {
-  try {
-    const { userid, userId, coin, amount, wallet, ...rest } = req.body || {};
-    const uid = userid || userId || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    if (!uid || typeof amount === 'undefined') return res.status(400).json({ success: false, error: 'missing userid or amount' });
-    await ensureUser(uid);
-    const orderId = 'R-' + uuidv4();
-    const rec = { type: 'recharge', orderId, userId: uid, coin: coin || 'USDT', amount: Number(amount), wallet: wallet || '', status: 'pending', time: Date.now(), meta: rest };
-    await dbPush('/orders', rec);
-    const text = `💳 New Recharge\nOrder: ${orderId}\nUser: ${uid}\nCoin: ${rec.coin}\nAmount: ${rec.amount}`;
-    sendTelegramMessage(text).catch(()=>{});
-    return res.json({ success: true, orderId });
-  } catch (e) {
-    console.error('/api/order/recharge err', e);
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-app.post('/api/order/withdraw', async (req, res) => {
-  try {
-    const { userid, userId, coin, amount, wallet, hash, ...rest } = req.body || {};
-    const uid = userid || userId || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    if (!uid || typeof amount === 'undefined' || !wallet) return res.status(400).json({ success: false, error: 'missing params' });
-    await ensureUser(uid);
-    const orderId = 'W-' + uuidv4();
-    const rec = { type: 'withdraw', orderId, userId: uid, coin: coin || 'USDT', amount: Number(amount), wallet, txHash: hash || '', status: 'processing', time: Date.now(), meta: rest };
-    await dbPush('/orders', rec);
-    const text = `💸 New Withdraw\nOrder: ${orderId}\nUser: ${uid}\nCoin: ${rec.coin}\nAmount: ${rec.amount}\nWallet: ${wallet}`;
-    sendTelegramMessage(text).catch(()=>{});
-    return res.json({ success: true, orderId });
-  } catch (e) {
-    console.error('/api/order/withdraw err', e);
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-app.post('/api/order/buysell', async (req, res) => {
-  try {
-    const { userid, userId, side, pair, coin, qty, price, amount, ...rest } = req.body || {};
-    const uid = userid || userId || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    if (!uid || !side || (!(pair || coin) || (!qty && !amount))) return res.status(400).json({ success: false, error: 'missing params' });
-    await ensureUser(uid);
-    const execPrice = price ? Number(price) : (rest.execPrice || 100);
-    const total = qty ? Number(qty) * execPrice : Number(amount || 0);
-    const orderId = (side === 'sell' ? 'S-' : 'B-') + uuidv4();
-    const rec = { type: 'trade', orderId, userId: uid, side, pair: pair || coin, qty: Number(qty || 0), price: Number(execPrice), total: Number(total), status: 'filled', time: Date.now(), meta: rest };
-    await dbPush('/orders', rec);
-    await adjustUserBalance({ userId: uid, amount: (side === 'buy' ? -total : total), mode: 'delta' });
-    const text = `🪙 New Trade\nOrder: ${orderId}\nUser: ${uid}\nSide: ${side}\nPair: ${rec.pair}\nQty: ${rec.qty}\nPrice: ${rec.price}`;
-    sendTelegramMessage(text).catch(()=>{});
-    return res.json({ success: true, orderId });
-  } catch (e) {
-    console.error('/api/order/buysell err', e);
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
-
+// 4) Proxy: 交易记录读取（管理后台）
+// GET /proxy/transactions?start=...&end=...&q=...&type=...&status=...&currency=...
 app.get('/proxy/transactions', async (req, res) => {
   try {
-    const list = await dbGet('/orders') || [];
-    let arr = [];
-    if (useFirebase) {
-      if (typeof list === 'object' && !Array.isArray(list)) arr = Object.keys(list).map(k => list[k]);
-      else arr = list;
-    } else arr = list;
-    const { start, end, wallet, q, type, status, currency } = req.query;
-    let filtered = arr;
-    if (start) {
-      const sTs = Date.parse(start);
-      if (!isNaN(sTs)) filtered = filtered.filter(it => (it.time || it.timestamp || 0) >= sTs);
-    }
-    if (end) {
-      const eTs = Date.parse(end);
-      if (!isNaN(eTs)) filtered = filtered.filter(it => (it.time || it.timestamp || 0) <= eTs + 24*3600*1000);
-    }
-    if (wallet) filtered = filtered.filter(it => (((it.wallet || '') + '') + ((it.userId || '') + '') + ((it.orderId || '') + '')).indexOf(wallet) !== -1);
-    if (q) filtered = filtered.filter(it => JSON.stringify(it).toLowerCase().indexOf(q.toLowerCase()) !== -1);
-    if (type) filtered = filtered.filter(it => (it.type || '').toLowerCase() === type.toLowerCase());
-    if (status) filtered = filtered.filter(it => (it.status || '').toLowerCase() === status.toLowerCase());
-    if (currency) filtered = filtered.filter(it => ((it.coin || it.currency || it.pair || '') + '').toLowerCase() === currency.toLowerCase());
+    const raw = (await dbRead('/transactions')) || {};
+    const list = Object.keys(raw).map(k => raw[k]);
+    const { start, end, q, type, status, currency } = req.query || {};
+    let filtered = list.slice().sort((a,b)=> (b.timestamp||0)-(a.timestamp||0));
+    if (start) { const t = Date.parse(start); if(!isNaN(t)) filtered = filtered.filter(x => (x.timestamp || 0) >= t); }
+    if (end) { const t = Date.parse(end); if(!isNaN(t)) filtered = filtered.filter(x => (x.timestamp || 0) <= (t + 24*3600*1000)); }
+    if (q) { const qq = q.toString().toLowerCase(); filtered = filtered.filter(x => (`${x.orderId||x.id||''} ${x.userId||x.user||''} ${x.wallet||x.address||''}`).toLowerCase().indexOf(qq)!==-1); }
+    if (type) filtered = filtered.filter(x => (x.type||x.txType||'').toString().toLowerCase().indexOf(type.toString().toLowerCase()) !== -1);
+    if (status) filtered = filtered.filter(x => (x.status||'').toString().toLowerCase() === status.toString().toLowerCase());
+    if (currency) filtered = filtered.filter(x => (x.currency||x.coin||'').toString().toLowerCase() === currency.toString().toLowerCase());
     return res.json(filtered);
   } catch (e) {
     console.error('/proxy/transactions err', e);
-    return res.status(500).json({ error: e.message });
+    return res.json([]);
   }
 });
 
-app.get('/api/admin/users', requireAdmin, async (req, res) => {
+// 5) Proxy: recharge / withdraw 写入
+app.post('/proxy/recharge', async (req, res) => {
   try {
-    if (useFirebase) {
-      const snap = await db.ref('/users').once('value');
-      const obj = snap.val() || {};
-      const arr = Object.keys(obj).map(k => ({ userId: k, ...obj[k] }));
-      return res.json(arr);
-    } else {
-      const arr = Object.keys(memory.users).map(k => ({ userId: k, ...memory.users[k] }));
-      return res.json(arr);
+    const rec = req.body || {};
+    rec.type = rec.type || 'recharge';
+    rec.timestamp = Date.now();
+    await dbPush('/transactions', rec);
+    if (rec.userId && typeof rec.amount !== 'undefined') {
+      const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
+      await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) + Number(rec.amount) });
     }
+    return res.json(ok());
   } catch (e) {
-    console.error('/api/admin/users err', e);
-    return res.status(500).json({ error: e.message });
+    console.error('/proxy/recharge err', e);
+    return res.json(fail('recharge error'));
   }
 });
 
-app.get('/api/orders', requireAdmin, async (req, res) => {
+app.post('/proxy/withdraw', async (req, res) => {
   try {
-    const list = await dbGet('/orders') || [];
-    let arr = [];
-    if (useFirebase) {
-      if (typeof list === 'object' && !Array.isArray(list)) arr = Object.keys(list).map(k => list[k]);
-      else arr = list;
-    } else arr = list;
-    return res.json({ success: true, orders: arr });
-  } catch (e) {
-    console.error('/api/orders err', e);
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-app.post('/api/order/update-status', requireAdmin, async (req, res) => {
-  try {
-    const { orderId, status } = req.body || {};
-    if (!orderId || !status) return res.status(400).json({ ok: false, error: 'missing params' });
-    if (useFirebase) {
-      const snap = await db.ref('/orders').once('value');
-      const obj = snap.val() || {};
-      const key = Object.keys(obj).find(k => (obj[k].orderId || '') === orderId);
-      if (!key) return res.status(404).json({ ok: false, error: 'order not found' });
-      await db.ref(`/orders/${key}`).update({ status, updatedAt: Date.now() });
-      return res.json({ ok: true });
-    } else {
-      const idx = memory.orders.findIndex(o => o.orderId === orderId);
-      if (idx === -1) return res.status(404).json({ ok: false, error: 'order not found' });
-      memory.orders[idx].status = status;
-      memory.orders[idx].updatedAt = Date.now();
-      return res.json({ ok: true });
+    const rec = req.body || {};
+    rec.type = rec.type || 'withdraw';
+    rec.timestamp = Date.now();
+    await dbPush('/transactions', rec);
+    if (rec.userId && typeof rec.amount !== 'undefined') {
+      const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
+      await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) - Number(rec.amount) });
     }
+    return res.json(ok());
   } catch (e) {
-    console.error('/api/order/update-status err', e);
-    return res.status(500).json({ ok: false, error: e.message });
+    console.error('/proxy/withdraw err', e);
+    return res.json(fail('withdraw error'));
   }
 });
 
-app.get('/api/settings', requireAdmin, async (req, res) => {
+// 6) Settings endpoints
+app.get('/api/settings', async (req, res) => {
   try {
-    const s = await dbGet('/settings');
-    return res.json(s || (useFirebase ? {} : memory.settings));
+    const s = (await dbRead('/settings')) || {};
+    return res.json(ok(s));
   } catch (e) {
     console.error('/api/settings GET err', e);
-    return res.status(500).json({ ok: false, error: e.message });
+    return res.json(fail('settings read error'));
   }
 });
-app.post('/api/settings', requireAdmin, async (req, res) => {
+
+app.post('/api/settings', async (req, res) => {
   try {
-    const payload = req.body || {};
-    await dbSet('/settings', payload);
-    if (!useFirebase) memory.settings = payload;
-    return res.json({ ok: true });
+    await dbSave('/settings', req.body || {});
+    return res.json(ok());
   } catch (e) {
     console.error('/api/settings POST err', e);
-    return res.status(500).json({ ok: false, error: e.message });
+    return res.json(fail('settings save error'));
   }
 });
 
-// 默认首页展示管理后台（保持你原来的文件）
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dashboard-brand.html'));
+// 7) Admin login (简单示例，实际请安全加固)
+// POST /api/admin/login { user, pass }
+app.post('/api/admin/login', async (req, res) => {
+  try {
+    const { user, pass } = req.body || {};
+    if (!user || !pass) return res.json({ success: false });
+    const settings = (await dbRead('/settings')) || {};
+    // 示例：settings.loginPassword 存明文（仅示例），真实系统请用哈希
+    if (settings.loginUser === user && settings.loginPassword === pass) {
+      return res.json({ success: true });
+    }
+    // 兼容默认 admin/admin（开发环境）
+    if (user === 'admin' && (settings.loginPassword === undefined || settings.loginPassword === '' || settings.loginPassword === pass)) {
+      return res.json({ success: true });
+    }
+    return res.json({ success: false });
+  } catch (e) {
+    console.error('/api/admin/login err', e);
+    return res.json({ success: false });
+  }
 });
 
-app.use((req, res) => {
-  res.status(404).json({ ok: false, error: 'not found' });
+// 8) Change passwords examples
+app.post('/api/change-login-password', async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body || {};
+    if (!newPassword) return res.json(fail('missing newPassword'));
+    const s = (await dbRead('/settings')) || {};
+    if (s.loginPassword && oldPassword && s.loginPassword !== oldPassword) return res.json(fail('old password mismatch'));
+    s.loginPassword = newPassword;
+    await dbSave('/settings', s);
+    return res.json(ok());
+  } catch (e) {
+    console.error('/api/change-login-password err', e);
+    return res.json(fail('change login password error'));
+  }
 });
 
-const PORT = process.env.PORT || 3000;
+app.post('/api/change-withdraw-password', async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body || {};
+    if (!newPassword) return res.json(fail('missing newPassword'));
+    const s = (await dbRead('/settings')) || {};
+    if (s.withdrawPassword && oldPassword && s.withdrawPassword !== oldPassword) return res.json(fail('old password mismatch'));
+    s.withdrawPassword = newPassword;
+    await dbSave('/settings', s);
+    return res.json(ok());
+  } catch (e) {
+    console.error('/api/change-withdraw-password err', e);
+    return res.json(fail('change withdraw password error'));
+  }
+});
+
+// Fallback: SPA support - 若找不到路由则返回 index.html，便于前端路由
+app.get('*', (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
+// 启动 server 并保证异常不退出
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`[server] listening on ${PORT} (Firebase=${useFirebase})`);
+  console.log(`[SERVER] NEXBIT server running on port ${PORT}`);
+});
+
+process.on('uncaughtException', err => {
+  console.error('uncaughtException', err);
+});
+process.on('unhandledRejection', reason => {
+  console.error('unhandledRejection', reason);
 });
