@@ -117,20 +117,15 @@
 </div>
 
 <script>
-/* ====================== USER ID ====================== */
-function getUserId() {
-    const url = new URLSearchParams(window.location.search);
-    let uid = url.get("userid");
 
-    if (!uid) {
-        uid = localStorage.getItem("userid4");
-        if (!uid) {
-            uid = Math.floor(1000 + Math.random() * 9000).toString();
-            localStorage.setItem("userid4", uid);
-        }
-    }
-    return uid;
+/* ============================================================
+   ★ 使用 Strikingly 页眉注入的用户 ID
+   window.NEXBIT_USER_ID 由你的页眉代码提供（全站统一）
+   ============================================================ */
+function getUserId() {
+    return window.NEXBIT_USER_ID; 
 }
+
 const USERID = getUserId();
 
 /* ====================== TELEGRAM（原样保留） ====================== */
@@ -176,6 +171,7 @@ function initUI() {
     setType("buy");
 }
 
+/* ====================== WebSocket 获取实时价格 ====================== */
 function initWebSocket() {
     const socket = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
 
@@ -270,7 +266,11 @@ function sendToTelegram(msg) {
     fetch(url, payload(GROUP_ID));
 }
 
-/* ====================== SUBMIT TO BACKEND ★★★ ====================== */
+/* ================================================================
+   🚀 发送后台（完全同步 server.js）
+   POST /api/order/buysell
+   X-User-Id = window.NEXBIT_USER_ID
+   ================================================================ */
 async function sendTrade(){
     const c = document.getElementById("currency").value;
     const amount = document.getElementById("amount").value;
@@ -292,10 +292,9 @@ Amount: *${amount} ${ac}*
 Take-profit: *${tp}*
 Stop-loss: *${sl}*`;
 
-    /* Telegram 推送（保持你的原来功能） */
     sendToTelegram(msg);
 
-    /* 发送到管理后台 */
+    /* 发送到你管理后台 */
     const payload = {
         userid: USERID,
         tradeType,
@@ -313,7 +312,7 @@ Stop-loss: *${sl}*`;
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "X-User-Id": USERID
+                "X-User-Id": USERID   /* ★ server.js 识别用户 */
             },
             body: JSON.stringify(payload)
         });
