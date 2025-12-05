@@ -1,70 +1,55 @@
-/* ==================================================
-   NEXBIT 通用 API 文件（全站通用，不修改 UI）
-   用途：所有前端页面统一通过这里调用后台
-   ================================================== */
 
+// Unified API base
 const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
 
-/* -------------- 基础 GET 封装 -------------- */
-async function nexGet(path) {
-    try {
-        const res = await fetch(API_BASE + path, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                "X-User-Id": window.NEXBIT_USER_ID || ""
-            }
-        });
-        return await res.json();
-    } catch (err) {
-        console.error("GET ERROR:", err);
-        return { ok: false, error: "network error" };
-    }
+// Helper GET
+async function apiGet(path) {
+    const r = await fetch(API_BASE + path);
+    return r.json();
 }
 
-/* -------------- 基础 POST 封装 -------------- */
-async function nexPost(path, data = {}) {
-    try {
-        const res = await fetch(API_BASE + path, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-User-Id": window.NEXBIT_USER_ID || ""
-            },
-            body: JSON.stringify(data)
-        });
-        return await res.json();
-    } catch (err) {
-        console.error("POST ERROR:", err);
-        return { ok: false, error: "network error" };
-    }
-}
-
-/* -------------- 获取用户余额 -------------- */
-async function getNexBalance() {
-    return await nexGet(`/api/balance?userid=${window.NEXBIT_USER_ID}`);
-}
-
-/* -------------- 充值 -------------- */
-async function nexRecharge(data) {
-    return await nexPost("/api/order/recharge", data);
-}
-
-/* -------------- 提款 -------------- */
-async function nexWithdraw(data) {
-    return await nexPost("/api/order/withdraw", data);
-}
-
-/* -------------- BuySell 交易 -------------- */
-async function nexBuySell(data) {
-    return await nexPost("/api/order/buysell", data);
-}
-
-/* -------------- （后续管理后台需要）订单操作 -------------- */
-async function nexOrderAction(type, orderId, action) {
-    return await nexPost("/api/admin/order/action", {
-        type,
-        orderId,
-        action
+// Helper POST
+async function apiPost(path, data) {
+    const r = await fetch(API_BASE + path, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify(data)
     });
+    return r.json();
+}
+
+// ADMIN LOGIN
+async function adminLogin(username, password) {
+    return apiPost("/api/admin/login", { username, password });
+}
+
+// LIST USERS
+async function loadUsers() {
+    return apiGet("/api/admin/list-users");
+}
+
+// ORDERS SUMMARY
+async function loadAllOrders() {
+    return apiGet("/api/admin/orders");
+}
+
+// LIST BY TYPE
+async function loadRecharge() {
+    return apiGet("/api/order/recharge/list");
+}
+async function loadWithdraw() {
+    return apiGet("/api/order/withdraw/list");
+}
+async function loadBuySell() {
+    return apiGet("/api/order/buysell/list");
+}
+
+// ADMIN ACTION
+async function adminOrderAction(type, orderId, action) {
+    return apiPost("/api/admin/order/action", { type, orderId, action });
+}
+
+// USER BALANCE
+async function getUserBalance(userid) {
+    return apiGet("/api/balance?userid=" + userid);
 }
