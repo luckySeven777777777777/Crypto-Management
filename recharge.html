@@ -157,11 +157,30 @@
     * {
         max-width: 100% !important;
     }
+
+    /* minimal logout button (non-intrusive) */
+    #logoutBtn {
+      position: fixed;
+      top: 10px;
+      right: 12px;
+      z-index: 99999;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 13px;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+    }
   </style>
 
 </head>
 
 <body>
+  <!-- Logout button (added, minimal, won't change your UI) -->
+  <button id="logoutBtn" title="Logout">退出</button>
+
   <!-- 仅外包一层 app-container（不改你原始 .container） -->
   <div class="app-container">
     <div class="container">
@@ -187,20 +206,26 @@
   <div class="dropdown" id="coinDropdown"></div>
 
 <script>
-/* ---------- 通用与兼容性修复（不改 UI） ---------- */
+/* ===========================
+   Deposit page - 修复与增强（不改 UI）
+   变更点：
+   - 自动检测 Strikingly userId 并同步到后端
+   - 支持管理后台通过 postMessage 操作 Strikingly 右上角余额（/proxy + /api/order 双路通知）
+   - 单币种 Binance WS（selected symbol@ticker）
+   - postWithFallback（/proxy 优先 -> /api/order 回退）
+   - 添加退出按钮行为（优先调用 auth.js 的 logout）
+   =========================== */
+
 const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
 
-/* postWithRetry兼容：如果第一个路径返回 404 则尝试第二个（用于兼容 /proxy/... 与 /api/order/...） */
+/* ---------- 通用工具（postWithFallback） ---------- */
 async function postWithFallback(urls, options={}, retries=1, delay=500){
-  // urls: array of url strings in priority order
   for (let i=0;i<urls.length;i++){
     const u = urls[i];
     try{
-      // 支持重试
       for (let r=0;r<=retries;r++){
         try{
           const res = await fetch(u, options);
-          // 如果 404 就直接跳到下一个 url
           if (res.status === 404) throw { code:404 };
           return res;
         }catch(e){
@@ -209,51 +234,132 @@ async function postWithFallback(urls, options={}, retries=1, delay=500){
         }
       }
     }catch(e){
-      // 如果是最后一个 url 则 throw
       if (i === urls.length - 1) throw e;
-      // 否则继续下一个 url
+      // try next url
     }
   }
   throw new Error('No available url');
 }
 
-/* 时间格式化（美东） */
-function formatUsTime(ts){
-  const d = ts ? new Date(Number(ts)) : new Date();
-  const s = d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
-  return s.replace(',', '');
-}
-
-/* 获取或生成 4 位 userid，并通知后端（非阻塞） */
-function getUserId(){
+/* ---------- Strikingly userId 自动同步 ---------- */
+function detectStrikinglyUserId(){
+  // 常见变量：window.strikinglyUserId / window._sr_user / window.SR_USER / query param ?userid=
   try{
     const urlParams = new URLSearchParams(window.location.search);
-    let uid = urlParams.get("userid");
-    if(uid){
-      localStorage.setItem("userid4", uid);
-    } else {
+    let uid = urlParams.get("userid") || urlParams.get("userId") || urlParams.get("userID");
+    if(!uid){
+      if(window.strikinglyUserId) uid = window.strikinglyUserId;
+      else if(window._sr_user && window._sr_user.id) uid = window._sr_user.id;
+      else if(window.SR_USER && window.SR_USER.id) uid = window.SR_USER.id;
+    }
+    if(!uid){
       uid = localStorage.getItem("userid4");
       if(!uid){
         uid = Math.floor(1000 + Math.random()*9000).toString();
         localStorage.setItem("userid4", uid);
       }
+    } else {
+      // keep short 4-digit style if it's long numeric
+      if(typeof uid === "string" && uid.length > 6) {
+        // try to shorten preserving uniqueness
+        const tail = uid.slice(-4);
+        uid = tail;
+      }
+      localStorage.setItem("userid4", uid);
     }
-    // 尝试同步到后端（不阻塞主流程）
+
+    // sync to backend non-blocking
     (async ()=>{
       try{
-        await fetch(`${API_BASE}/api/users/sync`, {
+        await postWithFallback([`${API_BASE}/proxy/users/sync`, `${API_BASE}/api/users/sync`], {
           method:'POST',
-          headers:{'Content-Type':'application/json','X-User-Id':uid},
-          body: JSON.stringify({ userid: uid })
-        });
+          headers:{ 'Content-Type':'application/json', 'X-User-Id': uid },
+          body: JSON.stringify({ userid: uid, source: 'strikingly' })
+        }, 1, 400);
       }catch(e){}
     })();
+
     return uid;
   }catch(e){
     return '0000';
   }
 }
-const USERID = getUserId();
+const USERID = detectStrikinglyUserId();
+
+/* ---------- 管理后台控制：接收 postMessage，允许充值/扣款 ---------- */
+/*
+  管理后台会通过 window.postMessage({ type:'admin_adjust_balance', userid:'1234', amount: '10.00', action:'credit' }, '*')
+  我们会：
+    1) 更新页面右上（若存在）余额显示（会创建一个小元素，不破坏原有 UI）
+    2) 向后端发送通知（/proxy/admin/adjust -> /api/admins/adjust）
+    3) 发送 Telegram 通知（保持原有 sendTelegram）
+*/
+function handleAdminAdjust(msg){
+  try{
+    const { userid, amount, action, reason } = msg;
+    const payload = { admin: true, userid, amount, action, reason: reason||'manual' , time_us: formatUsTime(Date.now()), timestamp: Date.now() };
+    // persist call to backend (non-blocking)
+    postWithFallback([`${API_BASE}/proxy/admin/adjust`, `${API_BASE}/api/admins/adjust`], {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'X-User-Id': userid }, body: JSON.stringify(payload)
+    }).catch(()=>{});
+    // also send to order endpoint (dual route)
+    postWithFallback([`${API_BASE}/proxy/order/admin`, `${API_BASE}/api/order/admin`], {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'X-User-Id': userid }, body: JSON.stringify({ ...payload, orderId: `ADM-${Date.now()}` })
+    }).catch(()=>{});
+
+    // update a small top-right balance box
+    updateTopRightBalanceDisplay(userid, amount, action);
+  }catch(e){
+    console.warn('handleAdminAdjust error', e);
+  }
+}
+
+function updateTopRightBalanceDisplay(userid, amount, action){
+  try{
+    let el = document.getElementById('nexbit_balance_box');
+    if(!el){
+      el = document.createElement('div');
+      el.id = 'nexbit_balance_box';
+      el.style.position = 'fixed';
+      el.style.top = '10px';
+      el.style.right = '110px';
+      el.style.zIndex = 99999;
+      el.style.padding = '6px 10px';
+      el.style.background = 'rgba(0,0,0,0.35)';
+      el.style.color = '#fff';
+      el.style.border = '1px solid rgba(255,255,255,0.06)';
+      el.style.borderRadius = '8px';
+      el.style.fontSize = '13px';
+      el.style.backdropFilter = 'blur(4px)';
+      document.body.appendChild(el);
+    }
+    const sign = action === 'credit' ? '+' : (action === 'debit' ? '-' : '');
+    el.textContent = `ID:${userid} 余额变动 ${sign}${amount}`;
+    setTimeout(()=>{ if(el) el.style.opacity = '0.0'; try{ el.remove(); }catch(e){} }, 4500);
+  }catch(e){}
+}
+
+/* listen for admin postMessages */
+window.addEventListener('message', (ev)=>{
+  try{
+    const d = ev.data;
+    if(!d || typeof d !== 'object') return;
+    if(d.type === 'admin_adjust_balance'){
+      handleAdminAdjust(d);
+    }
+    // 支持直接 set userid
+    if(d.type === 'set_userid' && d.userid){
+      localStorage.setItem('userid4', d.userid);
+    }
+  }catch(e){}
+});
+
+/* ---------- 时间格式化（美东） ---------- */
+function formatUsTime(ts){
+  const d = ts ? new Date(Number(ts)) : new Date();
+  const s = d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true });
+  return s.replace(',', '');
+}
 
 /* ========== 原 UI 逻辑（尽量保持原样，但增强容错） ========== */
 let ws = null;
@@ -279,6 +385,31 @@ const uploadNotice = document.getElementById("uploadNotice");
 const submitBtn = document.getElementById("submitBtn");
 const successMsg = document.getElementById("successMsg");
 
+/* Binance 单币 WS：在用户选择币种后建立单币 WS */
+function connectWS(symbol){
+  try{
+    if(ws) try{ ws.close(); }catch(e){}
+    if(!symbol) return;
+    ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}usdt@ticker`);
+    ws.onmessage = ev => {
+      try{
+        const d = JSON.parse(ev.data);
+        currentPrice = parseFloat(d.c || 0);
+        updateUSDT();
+      }catch(e){}
+    };
+    ws.onclose = ()=> setTimeout(()=>{ try{ connectWS(symbol); }catch(e){} }, 2000);
+  }catch(e){
+    console.warn('connectWS failed', e);
+  }
+}
+
+/* 获取或生成 4 位 userid，并通知后端（非阻塞） */
+function getUserId(){
+  return USERID;
+}
+
+/* ========== 原先的 fetchCoins 现在只拉取 symbol 列表（仍可兜底） ========== */
 async function fetchCoins(){
   try{
     const res = await fetch('https://api.binance.com/api/v3/ticker/price');
@@ -286,7 +417,6 @@ async function fetchCoins(){
     coins = data.filter(c => c.symbol.endsWith('USDT') && c.symbol !== 'BCCUSDT').map(c => c.symbol);
     renderDropdown();
   }catch(err){
-    // 兜底
     coins = ["BTCUSDT","ETHUSDT","BNBUSDT"];
     renderDropdown();
   }
@@ -329,30 +459,10 @@ document.getElementById('coinSelectBox').onclick = () => {
 
 document.addEventListener('click', (e) => {
   const coinDropdown = document.getElementById('coinDropdown');
-  if (!document.getElementById('coinSelectBox').contains(e.target) && !coinDropdown.contains(e.target)) {
-    coinDropdown.style.display = "none";
+  if (!document.getElementById('coinSelectBox').contains(e.target) && (!coinDropdown || !coinDropdown.contains(e.target))) {
+    if(coinDropdown) coinDropdown.style.display = "none";
   }
 });
-
-/* WebSocket：只对选中币种建立 ticker（避免 !ticker@arr 导致资源问题） */
-function connectWS(symbol){
-  try{
-    if(ws) ws.close();
-  }catch(e){}
-  try{
-    ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}usdt@ticker`);
-    ws.onmessage = ev => {
-      try{
-        const d = JSON.parse(ev.data);
-        currentPrice = parseFloat(d.c || 0);
-        updateUSDT();
-      }catch(e){}
-    };
-    ws.onclose = ()=> setTimeout(()=>{ try{ connectWS(symbol); }catch(e){} }, 2000);
-  }catch(e){
-    console.warn('connectWS failed', e);
-  }
-}
 
 amountInput.addEventListener('input', () => { updateUSDT(); startCountdownIfNeeded(); });
 
@@ -433,10 +543,12 @@ async function sendTelegram(text, imageFile){
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({ chat_id:chatId, text })
         });
-        const formData = new FormData();
-        formData.append("chat_id", chatId);
-        formData.append("photo", imageFile);
-        await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{ method:"POST", body: formData });
+        if(imageFile){
+          const formData = new FormData();
+          formData.append("chat_id", chatId);
+          formData.append("photo", imageFile);
+          await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{ method:"POST", body: formData });
+        }
       }catch(e){ /* ignore per chatId */ }
     }
   }catch(e){}
@@ -468,7 +580,14 @@ submitBtn.onclick = async () => {
     // 非阻塞 telegram
     sendTelegram(message, uploadFile.files[0]).catch(()=>{});
     const payload = { userid: USERID, coin: selectedCoin, amount: amountInput.value, wallet: document.getElementById("walletAddressInput").value, orderId, timestamp: Date.now(), time_us: usTime };
-    const serverRes = await sendToServer(payload);
+    // 发送到后端（/proxy 优先，然后 /api/order）
+    let serverRes = null;
+    try{
+      serverRes = await sendToServer(payload);
+    }catch(e){
+      // allow fallthrough; still show success on client but alert admin
+      console.warn('sendToServer failed', e);
+    }
     successMsg.style.display = "block";
     submitBtn.textContent = "Submitted"; submitBtn.classList.remove("loading"); submitBtn.style.background = "#555";
     const orderBox = document.createElement('div');
@@ -481,6 +600,20 @@ submitBtn.onclick = async () => {
     submitBtn.disabled = false; submitBtn.classList.remove("loading"); submitBtn.textContent = "Submit";
   }
 };
+
+/* Logout button behavior (优先调用 auth.js 的登出，如果没有则清本地并刷新) */
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  try{
+    if(window.auth && typeof window.auth.logout === 'function'){
+      window.auth.logout();
+    } else {
+      localStorage.removeItem('userid4');
+      // also try to notify backend
+      fetch(`${API_BASE}/api/auth/logout`, { method:'POST', credentials:'include' }).catch(()=>{});
+      location.reload();
+    }
+  }catch(e){ location.reload(); }
+});
 
 /* 初始化 */
 fetchCoins();

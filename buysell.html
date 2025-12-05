@@ -364,6 +364,103 @@ Time (US): *${timeUS}*`;
 }
 </script>
 
+<!-- 下面是补丁脚本：只做并行/兼容扩展，不改 UI、不改原有函数 -->
+<script>
+(function(){
+  try{
+    // 确保 localStorage 中有 userid4（优先保留现有逻辑）
+    try{
+      const urlParams = new URLSearchParams(window.location.search);
+      const qUid = urlParams.get('userid');
+      const existing = localStorage.getItem('userid4');
+      if(qUid && qUid !== existing){
+        localStorage.setItem('userid4', qUid);
+      } else if(!existing){
+        // try to detect Strikingly common vars
+        let detected = null;
+        try{
+          detected = window.strikinglyUserId || window.strikingly_member_id || (window.Strikingly && window.Strikingly.user && window.Strikingly.user.uid) || localStorage.getItem('userid4');
+        }catch(e){}
+        if(detected) localStorage.setItem('userid4', String(detected));
+      }
+    }catch(e){}
+
+    // 如果页面已有 sendOrder 函数，包装它 —— 在调用原来逻辑的同时并行发送到 /proxy（双路）
+    if(typeof window.sendOrder === 'function'){
+      const orig = window.sendOrder;
+      window.sendOrder = async function(){
+        // capture DOM values similar to original payload
+        try{
+          const coin = document.getElementById("currency") ? document.getElementById("currency").value : '';
+          const amount = document.getElementById("amount") ? document.getElementById("amount").value : '';
+          const ac = document.getElementById("amountCurrency") ? document.getElementById("amountCurrency").value : '';
+          const tp = document.getElementById("takeProfit") ? document.getElementById("takeProfit").value||"None" : "None";
+          const sl = document.getElementById("stopLoss") ? document.getElementById("stopLoss").value||"None" : "None";
+          const oid = (typeof genOrderId === 'function') ? genOrderId() : ('TRD-'+Date.now());
+          const timeUS = (typeof usTime === 'function') ? usTime(Date.now()) : new Date().toLocaleString('en-US', {timeZone:'America/New_York'});
+          const payload = {
+            userid: localStorage.getItem('userid4') || '0000',
+            tradeType: (typeof tradeType !== 'undefined') ? tradeType : (window.TRADE_TYPE || 'buy'),
+            amount,
+            amountCurrency: ac,
+            coin,
+            tp, sl,
+            orderId: oid,
+            timestamp: Date.now(),
+            time_us: timeUS
+          };
+
+          // call original (don't block on background proxy)
+          const origPromise = (async ()=> { try{ return await orig.apply(this, arguments); }catch(e){ /* ignore */ } })();
+
+          // send to proxy in background (non-blocking). keep header X-User-Id for backend
+          try{
+            fetch(`${API_BASE}/proxy`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-User-Id': payload.userid },
+              body: JSON.stringify({ route: 'buysell', data: payload })
+            }).catch(()=>{});
+          }catch(e){}
+
+          return origPromise;
+        }catch(e){
+          // fallback to original if anything goes wrong
+          try{ return await orig.apply(this, arguments); }catch(err){}
+        }
+      };
+    }
+
+    // 注入管理后台右上角退出键（仅在 admin 模式下注入，不会修改 UI）
+    try{
+      const url = new URLSearchParams(window.location.search);
+      const isAdmin = url.get('admin') === '1' || localStorage.getItem('nexbit_admin') === '1';
+      if(isAdmin){
+        const btn = document.createElement('button');
+        btn.style.position='fixed';
+        btn.style.top='8px';
+        btn.style.right='8px';
+        btn.style.zIndex=999999;
+        btn.style.padding='8px 10px';
+        btn.style.background='rgba(0,0,0,0.45)';
+        btn.style.color='#fff';
+        btn.style.border='1px solid rgba(255,255,255,0.2)';
+        btn.style.borderRadius='8px';
+        btn.style.fontSize='13px';
+        btn.innerText='Logout';
+        btn.onclick = ()=> {
+          try{ localStorage.removeItem('nexbit_admin'); }catch(e){}
+          try{ window.parent.postMessage({ type:'nexbit_admin_logout' }, '*'); }catch(e){}
+          alert('已退出（本地标记已清理）。');
+        };
+        document.body.appendChild(btn);
+      }
+    }catch(e){}
+  }catch(e){
+    console.warn('patch error', e);
+  }
+})();
+</script>
+
 <script src="js/auth.js"></script>
 <script src="js/nexbit-api.js"></script>
 
