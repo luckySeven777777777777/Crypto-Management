@@ -31,6 +31,101 @@
     .boost-timer { color:#00ffea; margin-top:6px; font-weight:600; }
   </style>
 </head>
+<style>
+/* 让 Strikingly 不再隐藏页面内容 */
+html, body {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    background: #ffffff00 !important;
+}
+
+/* 主容器 */
+.container {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 15px;
+    font-family: Arial, sans-serif;
+    color: #fff;
+}
+
+/* 选择框修复 */
+.select-box {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 16px;
+    margin-bottom: 10px;
+}
+
+/* 输入框修复 */
+input[type="number"],
+input[type="text"],
+input[type="file"] {
+    width: 100%;
+    padding: 10px;
+    font-size: 15px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    margin-top: 5px;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+}
+
+/* 上传图片显示 */
+#uploadedImage {
+    width: 100%;
+    max-height: 260px;
+    border-radius: 10px;
+    margin-top: 10px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.4);
+}
+
+/* 提交按钮修复 */
+.submit-btn {
+    width: 100%;
+    padding: 12px;
+    background: #0a84ff;
+    border: none;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: bold;
+    color: white;
+    margin-top: 10px;
+    cursor: pointer;
+}
+
+.submit-btn:active {
+    background: #006edc;
+}
+
+/* Boost 奖励提示 */
+.boost-note {
+    font-size: 14px;
+    margin-top: 5px;
+    color: #ffe066;
+}
+
+/* 金额显示 */
+#usdtDisplay,
+#boostDisplay,
+#totalDisplay {
+    font-size: 16px;
+    font-weight: bold;
+    margin-top: 6px;
+}
+
+/* 防止 Strikingly 强行缩放导致只显示半屏 */
+* {
+    max-width: 100% !important;
+}
+</style>
+
 <body>
   <div class="container">
     <label>Select Coin</label>

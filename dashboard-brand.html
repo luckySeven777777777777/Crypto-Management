@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NEXBIT 管理后台 — 最终版</title>
 <style>
-:root{--top-blue:#1976d2;--deep-blue:#0f2655;--bg:#f4f7fb;--card:#fff;--red:#ff4444;--black:#000;--green:#00c851;--yellow:#ffbb33;--purple:#9933ff;}
+:root{--top-blue:#1976d2;--deep-blue:#0f2655;--bg:#f4f7fb;--card:#fff;
+--red:#ff4444;--black:#000;--green:#00c851;--yellow:#ffbb33;--purple:#9933ff;}
 *{box-sizing:border-box}
 body{margin:0;font-family:Segoe UI,Roboto,Arial;background:var(--bg);min-height:100vh}
 .top-header{position:fixed;top:0;left:0;width:100%;height:64px;background:var(--top-blue);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:1000;}
@@ -31,9 +32,18 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
 .actions button{margin-right:6px}
 .footer-note{margin-top:10px;color:#888;font-size:12px}
 @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+
+/* ADDED: order/admin pages styles (keeps consistent) */
 .subpage-actions{display:flex;gap:8px;align-items:center;margin-bottom:12px}
 .table-sm th,.table-sm td{padding:8px;font-size:13px}
 .badge{display:inline-block;padding:4px 8px;border-radius:4px;background:#eee;color:#333;font-weight:600}
+
+/* small button style for action */
+.small-btn { padding:6px 8px; border-radius:6px; border:none; cursor:pointer; font-size:13px; }
+.lock-btn { background:#ffcc00; }
+.confirm-btn { background:#00c851; color:#fff; }
+.cancel-btn { background:#ff4444; color:#fff; }
+.unlock-btn { background:#6c757d; color:#fff; }
 </style>
 </head>
 <body>
@@ -71,7 +81,7 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
       </div>
     </div>
 
-    <!-- Recharge 管理 -->
+    <!-- Recharge page -->
     <div id="page-recharge" class="container" style="display:none">
       <div class="page-title">充值管理</div>
       <div class="filters">
@@ -84,12 +94,12 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
         <button class="primary" onclick="r_search()">搜索</button>
       </div>
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间（US）</th><th>类型</th><th>金额</th><th>币种</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
         <tbody id="r_table"><tr><td colspan="8" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
-    <!-- Withdraw 管理 -->
+    <!-- Withdraw page -->
     <div id="page-withdraw" class="container" style="display:none">
       <div class="page-title">提款管理</div>
       <div class="filters">
@@ -100,24 +110,25 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
         <input id="w_minCount" placeholder="钱包提款次数 >=" type="number" min="1" style="width:140px">
         <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="w_search()">搜索</button>
-        <button style="margin-left:8px;background:#6c757d;color:#fff;border:none;padding:8px;border-radius:6px;" onclick="showPage('orders')">查看订单记录</button>
       </div>
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间（US）</th><th>类型</th><th>金额</th><th>币种</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
         <tbody id="w_table"><tr><td colspan="8" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
-    <!-- 其余页面保持不变 -->
+    <!-- Members page -->
     <div id="page-members" class="container" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div class="page-title">会员管理</div>
         <div><button style="background:#6c757d;color:#fff;border:none;padding:8px;border-radius:6px;" onclick="showPage('admins')">管理员权限</button></div>
       </div>
+
       <div class="filters"><input id="m_search" placeholder="搜索会员ID / 钱包" style="width:360px"><button onclick="loadMembers()">搜索</button></div>
       <table class="table"><thead><tr><th>会员ID</th><th>钱包</th><th>等级</th><th>最近活动</th></tr></thead><tbody id="m_table"><tr><td colspan="4" class="small">暂无会员数据</td></tr></tbody></table>
     </div>
 
+    <!-- Settings page -->
     <div id="page-settings" class="container" style="display:none">
       <div class="page-title">系统设置</div>
       <div style="max-width:900px">
@@ -132,15 +143,17 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
       </div>
     </div>
 
+    <!-- Orders page -->
     <div id="page-orders" class="container" style="display:none">
       <div class="page-title">订单记录（充值/提款/买卖）</div>
+
       <div class="filters">
         <label>开始 <input type="date" id="o_start"></label>
         <label>结束 <input type="date" id="o_end"></label>
         <input id="o_q" placeholder="订单号 / 会员ID / 钱包地址" style="width:320px">
         <select id="o_type"><option value="">全部类型</option><option value="recharge">充值</option><option value="withdraw">提款</option><option value="trade">买卖</option></select>
         <select id="o_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
-        <select id="o_status"><option value="">全部状态</option><option value="success">成功</option><option value="processing">处理中</option><option value="failed">失败</option></select>
+        <select id="o_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="o_search()">搜索</button>
         <button onclick="showPage('withdraw')">返回提款</button>
       </div>
@@ -149,7 +162,7 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
         <thead>
           <tr>
             <th>订单 / 会员 / 钱包</th>
-            <th>时间（US）</th>
+            <th>时间</th>
             <th>类型</th>
             <th>金额</th>
             <th>币种</th>
@@ -162,8 +175,10 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
       </table>
     </div>
 
+    <!-- Admins page -->
     <div id="page-admins" class="container" style="display:none">
       <div class="page-title">管理员权限管理</div>
+
       <div class="subpage-actions">
         <input id="admin_id" placeholder="管理员ID" style="width:220px">
         <label><input type="checkbox" id="perm_recharge"> 充值</label>
@@ -172,6 +187,7 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
         <button class="primary" onclick="addAdmin()">新增管理员</button>
         <button onclick="showPage('members')">返回会员</button>
       </div>
+
       <table class="table table-sm">
         <thead><tr><th>管理员ID</th><th>权限</th><th>最近登录</th><th>操作</th></tr></thead>
         <tbody id="admin_table"><tr><td colspan="4" class="small">暂无管理员</td></tr></tbody>
@@ -179,31 +195,19 @@ button.primary{background:var(--top-blue);color:#fff;border:none;cursor:pointer}
       <div class="small" style="margin-top:8px">说明：此页面前端管理 UI 已实现；如需权限真正生效，请将新增/编辑请求对接到后端接口（例如 /api/admins）。</div>
     </div>
 
-    <div class="footer-note">系统生成：<span id="genTime">--</span></div>
+    <div class="footer-note">系统生成：<span id="genTime"></span></div>
   </div>
 </div>
 
 <script>
-/* ---------- 后端 base ---------- */
-const PROXY_TRANSACTIONS = "/proxy/transactions";
-const PROXY_RECHARGE = "/proxy/recharge";
-const PROXY_WITHDRAW = "/proxy/withdraw";
-const API_ORDER_ACTION = "/api/order/action"; // 兼容
-const PROXY_TRANSACTION_UPDATE = "/proxy/transaction/update";
-const API_SETTINGS = "/api/settings";
-const API_2FA_SETUP = "/api/2fa/setup";
-const API_2FA_ENABLE = "/api/2fa/enable";
-const API_2FA_DISABLE = "/api/2fa/disable";
-const API_CHANGE_LOGIN = "/api/change-login-password";
-const API_CHANGE_WITHDRAW = "/api/change-withdraw-password";
+/* ---------------------------
+   轻量前端逻辑（保留原有主要函数）
+   --------------------------- */
 
-/* 小工具 */
+const PROXY_TRANSACTIONS = "/proxy/transactions";
+const PROXY_UPDATE = "/proxy/transaction/update";
+const API_SETTINGS = "/api/settings";
 function $(s){return document.querySelector(s)}
-function formatUsTime(ts){
-  if(!ts) return '';
-  const d = new Date(Number(ts));
-  return d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).replace(',', '');
-}
 
 /* Sidebar handling */
 document.querySelectorAll('.sidebar .icon').forEach(ic=>ic.addEventListener('click',()=>{
@@ -220,7 +224,9 @@ document.querySelectorAll('.sidebar .icon').forEach(ic=>ic.addEventListener('cli
   if(page==='settings') loadSettings();
 }));
 
-function hideAllPages(){ document.querySelectorAll('.main > .container').forEach(c=>c.style.display='none'); }
+function hideAllPages(){
+  document.querySelectorAll('.main > .container').forEach(c=>c.style.display='none');
+}
 
 function showPage(key){
   document.querySelectorAll('.sidebar .icon').forEach(x=>x.classList.remove('active'));
@@ -237,11 +243,19 @@ function showPage(key){
   if(key==='admins') loadAdmins();
 }
 
+/* format US Eastern time */
+function formatUsTime(ts){
+  if(!ts) return '';
+  const d = new Date(Number(ts));
+  return d.toLocaleString('en-US', { timeZone: 'America/New_York' });
+}
+
 /* Dashboard loader */
 async function loadDashboard(){
   try{
     const res = await fetch(PROXY_TRANSACTIONS);
     const list = await res.json();
+    if(!Array.isArray(list)) return;
     const today = new Date(); today.setHours(0,0,0,0);
     let todayRecharge=0, todayWithdraw=0, orders=0, alerts=0;
     const memberMap = {};
@@ -252,7 +266,7 @@ async function loadDashboard(){
         if((it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1) todayWithdraw += Number(it.amount||it.value||0);
         orders++;
       }
-      const user = it.userId||it.user||it.member||it.userid||'unknown';
+      const user = it.userId||it.user||it.member||it.account||'unknown';
       const wallet = (it.wallet||it.address||it.to||it.from||'').toString();
       memberMap[user] = memberMap[user] || {user, wallets:new Set(), last:t, flags:[]};
       if(wallet) memberMap[user].wallets.add(wallet);
@@ -274,40 +288,73 @@ async function loadDashboard(){
   }catch(e){console.error(e)}
 }
 
-/* 渲染行：增加 Strikingly 用户显示 & US 时间 & 操作按钮（锁定/解锁/确认/取消） */
-function renderRowWithActions(it){
-  const order = it.orderId||it.oid||it.id||it._key||'';
-  const user = it.userId||it.userid||it.user||it.member||'--';
+/* renderRow: 渲染订单行（含操作按钮：锁定/确认/取消/解锁），并显示 Strikingly 用户 ID 与美国时间 */
+function renderRow(it){
+  const order = it.orderId||it.oid||it.id||'';
+  const user = it.userId||it.user||it.member||'';
   const wallet = it.wallet||it.address||'';
-  const time = it.time_us ? it.time_us : (it.timestamp? formatUsTime(it.timestamp) : (it.time||it.date||''));
+  const timeTs = it.timestamp || it.time || it.date || null;
+  const time = timeTs ? formatUsTime(timeTs) : (it.time_us || '');
   const amount = it.amount||it.value||0;
   const currency = it.currency||it.coin||'BRL';
   const ip = it.ip||it.ipAddr||'';
-  const status = (it.status||'').toString();
+  const status = (it.status||'').toString().toLowerCase();
+  const label = memberLabel(it);
   const type = (it.type||it.txType||'').toString();
-  const key = it._key || order;
-  const locked = !!it.locked;
-  // 按钮
-  const actionsHtml = `<div class="actions">
-    <button onclick="adminAction('${key}','lock')">${locked? '已锁定' : '锁定'}</button>
-    <button onclick="adminAction('${key}','unlock')">解锁</button>
-    <button onclick="adminAction('${key}','confirm')">确认</button>
-    <button onclick="adminAction('${key}','cancel')">取消</button>
-    <button onclick="viewDetail('${order}')">查看</button>
-  </div>`;
+  const id = it.id || it._id || order || '';
+
+  const actions = `
+    <button class="small-btn lock-btn" onclick="txUpdate('${id}','processing')">锁定</button>
+    <button class="small-btn confirm-btn" onclick="txUpdate('${id}','confirmed')">确认</button>
+    <button class="small-btn cancel-btn" onclick="txUpdate('${id}','cancelled')">取消</button>
+    <button class="small-btn unlock-btn" onclick="txUpdate('${id}','unlocked')">解锁</button>
+  `;
+
   return `<tr>
-    <td><div class="small">${order}</div><div>UID: <strong style="color:var(--top-blue)">${user}</strong></div><div style="color:var(--top-blue)">${wallet}</div></td>
-    <td>${time}</td>
-    <td>${type}</td>
-    <td>${amount}</td>
-    <td>${currency}</td>
-    <td>${ip}</td>
-    <td>${status}${it.locked?'<div style="color:#ff4444;font-weight:700">LOCKED</div>':''}</td>
-    <td>${actionsHtml}</td>
-  </tr>`;
+    <td><div class="small">Order: ${order}</div><div>User: ${user}</div><div style="color:var(--top-blue)">Wallet: ${wallet}</div>${label}</td>
+    <td>${time}</td><td>${type}</td><td>${amount}</td><td>${currency}</td><td>${ip}</td><td>${status}</td>
+    <td class="actions">${actions}</td></tr>`;
 }
 
-/* Recharge 搜索 */
+/* memberLabel unchanged */
+function memberLabel(item){
+  const lvl = (item.memberLevel||item.level||'').toString().toLowerCase();
+  const isFirstRecharge = item.firstRecharge||false; const isFirstWithdraw = item.firstWithdraw||false; const isVip = lvl.indexOf('vip')!==-1;
+  if(item.flag==='attention') return '<span class="member-label label-attention">注意会员</span>';
+  if(item.flag==='observe') return '<span class="member-label label-observe">观察会员</span>';
+  if(isFirstRecharge) return '<span class="member-label label-first-recharge">首次充值</span>';
+  if(isFirstWithdraw) return '<span class="member-label label-first-withdraw">首次提款</span>';
+  if(isVip) return '<span class="member-label label-vip">VIP</span>';
+  return '';
+}
+
+/* txUpdate: 更新交易状态（锁定/确认/取消/解锁） */
+async function txUpdate(id, status) {
+  if(!id) return alert('缺少 transaction id');
+  try{
+    const res = await fetch(PROXY_UPDATE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactionId: id, status })
+    });
+    const j = await res.json();
+    if(j.ok) {
+      alert('更新成功');
+      // 刷新当前页
+      const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page');
+      if(active==='recharge') r_search();
+      else if(active==='withdraw') w_search();
+      else o_search();
+    } else {
+      alert('更新失败: ' + (j.message || JSON.stringify(j)));
+    }
+  }catch(e){
+    console.error(e);
+    alert('更新接口出错');
+  }
+}
+
+/* Recharge / Withdraw / Orders / Members / Admins functions */
 async function r_search(){
   const params = new URLSearchParams();
   const s = $('#r_start').value; const e = $('#r_end').value;
@@ -320,12 +367,12 @@ async function r_search(){
     const res = await fetch(PROXY_TRANSACTIONS + '?' + params.toString());
     const list = await res.json();
     if(!Array.isArray(list)){ tbody.innerHTML='<tr><td colspan="8" class="small">返回异常</td></tr>'; return; }
-    const rows = list.filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('recharge')!==-1).map(it=>renderRowWithActions(it));
+    if(list.length===0){ tbody.innerHTML='<tr><td colspan="8" class="small">没有记录</td></tr>'; return; }
+    const rows = list.filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('recharge')!==-1).map(it=>renderRow(it));
     tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
   }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
 }
 
-/* Withdraw 搜索 */
 async function w_search(){
   const params = new URLSearchParams();
   const s = $('#w_start').value; const e = $('#w_end').value;
@@ -337,44 +384,12 @@ async function w_search(){
     const res = await fetch(PROXY_TRANSACTIONS + '?' + params.toString());
     const list = await res.json();
     if(!Array.isArray(list)){ tbody.innerHTML='<tr><td colspan="8" class="small">返回异常</td></tr>'; return; }
-    const rows = list.filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1).map(it=>renderRowWithActions(it));
+    if(list.length===0){ tbody.innerHTML='<tr><td colspan="8" class="small">没有记录</td></tr>'; return; }
+    const rows = list.filter(it=>(it.type||it.txType||'').toString().toLowerCase().indexOf('withdraw')!==-1).map(it=>renderRow(it));
     tbody.innerHTML = rows.length?rows.join(''):'<tr><td colspan="8" class="small">没有记录</td></tr>';
   }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
 }
 
-/* 管理员动作：lock/unlock/confirm/cancel
-   调用顺序：先尝试 /api/order/action（如果部署了新版 server.js），失败或 404 再回退到 /proxy/transaction/update */
-async function adminAction(transactionId, action){
-  if(!transactionId || !action) return alert('参数缺失');
-  if(!confirm(`确认执行 ${action} 操作？`)) return;
-  try{
-    // 优先调用 /api/order/action（更语义化）
-    const payload = { orderId: transactionId, action: action, actor: 'admin' };
-    let res;
-    try{
-      res = await fetch(API_ORDER_ACTION, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-      if(res.status === 404) throw new Error('notfound');
-    }catch(e){
-      // 回退到 /proxy/transaction/update（带 status 映射）
-      const statusMap = { confirm:'success', confirmed:'success', cancel:'failed', canceled:'failed', lock:'locked', unlock:'processing' };
-      const newStatus = statusMap[action] || action;
-      res = await fetch(PROXY_TRANSACTION_UPDATE, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ transactionId, status: newStatus }) });
-    }
-    const j = await res.json();
-    if(j && (j.ok || j.success)) {
-      alert('操作成功');
-      // 刷新表格
-      r_search(); w_search();
-    } else {
-      alert('操作失败：' + (j && (j.message||j.error) || JSON.stringify(j)));
-    }
-  }catch(e){
-    console.error('adminAction error', e);
-    alert('操作异常，请查看控制台或稍后重试');
-  }
-}
-
-/* Orders & Members & Admins (保持原逻辑，仅做容错) */
 async function o_search(){
   const params = new URLSearchParams();
   const s = $('#o_start').value; const e = $('#o_end').value; const q = $('#o_q').value.trim();
@@ -398,10 +413,11 @@ async function o_search(){
       return true;
     });
     if(filtered.length===0){ tbody.innerHTML='<tr><td colspan="8" class="small">没有记录</td></tr>'; return; }
-    tbody.innerHTML = filtered.map(it=>renderRowWithActions(it)).join('');
+    tbody.innerHTML = filtered.map(it=>renderRow(it)).join('');
   }catch(e){ tbody.innerHTML='<tr><td colspan="8" class="small">加载失败</td></tr>'; console.error(e) }
 }
 
+/* Admins (localStorage UI) */
 function loadAdmins(){
   const raw = localStorage.getItem('nexbit_admins') || '[]';
   let arr = [];
@@ -448,7 +464,7 @@ async function loadMembers(){
     const items = Object.values(map).map(m=>({user:m.user,wallets:Array.from(m.wallets),last:m.last}));
     const filtered = q?items.filter(i=>(i.user+''+i.wallets.join('')).indexOf(q)!==-1):items;
     if(filtered.length===0){ tbody.innerHTML='<tr><td colspan="4" class="small">没有会员</td></tr>'; return; }
-    tbody.innerHTML = filtered.map(m=>`<tr><td>${m.user}</td><td>${m.wallets.join(', ')}</td><td><span class="member-label label-observe">观察会员</span></td><td>${m.last||''}</td></tr>`).join('');
+    tbody.innerHTML = filtered.map(m=>`<tr><td>${m.user}</td><td>${m.wallets.join(', ')}</td><td><span class="member-label label-observe">观察会员</span></td><td>${m.last?formatUsTime(m.last):''}</td></tr>`).join('');
   }catch(e){ tbody.innerHTML='<tr><td colspan="4" class="small">加载失败</td></tr>'; console.error(e) }
 }
 
@@ -457,18 +473,20 @@ async function loadSettings(){ try{ const res = await fetch(API_SETTINGS); const
 
 async function saveSettings(){ const body = { telegramBotToken:$('#s_tg_token').value.trim(), telegramChatId:$('#s_tg_chat').value.trim(), tgThresholdCount:parseInt($('#s_tg_thresh').value||'5',10), tgWindowSeconds:parseInt($('#s_tg_window').value||'3600',10) }; const res = await fetch(API_SETTINGS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const j = await res.json(); if(j.ok) $('#settingsStatus').innerText='保存成功'; else $('#settingsStatus').innerText='保存失败'; }
 
-async function changeWithdrawPassword(){ const oldP = $('#s_withdraw_old').value; const newP = $('#s_withdraw_new').value; if(!oldP||!newP) return alert('请输入旧密码和新密码'); const res = await fetch(API_CHANGE_WITHDRAW,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oldPassword:oldP,newPassword:newP})}); const j = await res.json(); if(j.ok) alert('提款密码已修改'); else alert('修改失败:'+ (j.message||'')); $('#s_withdraw_old').value=''; $('#s_withdraw_new').value=''; }
+async function changeWithdrawPassword(){ const oldP = $('#s_withdraw_old').value; const newP = $('#s_withdraw_new').value; if(!oldP||!newP) return alert('请输入旧密码和新密码'); const res = await fetch('/api/change-withdraw-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oldPassword:oldP,newPassword:newP})}); const j = await res.json(); if(j.ok) alert('提款密码已修改'); else alert('修改失败:'+ (j.message||'')); $('#s_withdraw_old').value=''; $('#s_withdraw_new').value=''; }
 
-async function changeLoginPassword(){ const oldP = prompt('旧登录密码:'); const newP = prompt('新登录密码:'); if(!oldP||!newP) return alert('取消'); const res = await fetch(API_CHANGE_LOGIN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oldPassword:oldP,newPassword:newP})}); const j = await res.json(); if(j.ok) alert('登录密码已修改'); else alert('修改失败:'+ (j.message||'')); }
+async function changeLoginPassword(){ const oldP = prompt('旧登录密码:'); const newP = prompt('新登录密码:'); if(!oldP||!newP) return alert('取消'); const res = await fetch('/api/change-login-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oldPassword:oldP,newPassword:newP})}); const j = await res.json(); if(j.ok) alert('登录密码已修改'); else alert('修改失败:'+ (j.message||'')); }
 
-async function setup2FA(){ try{ const res = await fetch(API_2FA_SETUP); const j = await res.json(); if(!j.ok) return alert('2FA setup failed'); const w = window.open('', '_blank'); w.document.write('<img src="'+j.qr+'" /><p>密钥: '+j.secret+'</p>'); const token = prompt('扫描二维码后请输入一次性验证码以启用 2FA:'); if(!token) return; const enableRes = await fetch(API_2FA_ENABLE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:j.secret,token:token})}); const je = await enableRes.json(); if(je.ok) alert('2FA 已启用'); else alert('启用失败: '+(je.message||'')); loadSettings(); }catch(e){alert('2FA setup error')} }
+async function setup2FA(){ try{ const res = await fetch('/api/2fa/setup'); const j = await res.json(); if(!j.ok) return alert('2FA setup failed'); const w = window.open('', '_blank'); w.document.write('<img src="'+j.qr+'" /><p>密钥: '+j.secret+'</p>'); const token = prompt('扫描二维码后请输入一次性验证码以启用 2FA:'); if(!token) return; const enableRes = await fetch('/api/2fa/enable',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:j.secret,token:token})}); const je = await enableRes.json(); if(je.ok) alert('2FA 已启用'); else alert('启用失败: '+(je.message||'')); loadSettings(); }catch(e){alert('2FA setup error')} }
 
-async function disable2FA(){ try{ const token = prompt('请输入当前 2FA 验证码以确认禁用:'); const res = await fetch(API_2FA_DISABLE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})}); const j = await res.json(); if(je.ok) alert('2FA 已禁用'); else alert('禁用失败: '+(j.message||'')); loadSettings(); }catch(e){alert('disable error')} }
+async function disable2FA(){ try{ const token = prompt('请输入当前 2FA 验证码以确认禁用:'); const res = await fetch('/api/2fa/disable',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})}); const j = await res.json(); if(j.ok) alert('2FA 已禁用'); else alert('禁用失败: '+(j.message||'')); loadSettings(); }catch(e){alert('disable error')} }
 
 function viewDetail(id){ alert('查看订单: '+id) }
 
 document.addEventListener('DOMContentLoaded',()=>{
+  // show dashboard
   document.querySelector('.sidebar .icon.active').click();
+  // load admins from localStorage
   loadAdmins();
 });
 </script>

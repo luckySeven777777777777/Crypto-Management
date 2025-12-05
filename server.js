@@ -67,10 +67,16 @@ async function dbSave(path, value) {
   }
 }
 
+// dbPush: push 并返回 key （同时在 push 后写回 id 字段，保证每条记录包含 id）
 async function dbPush(path, value) {
   if (db) {
     const ref = await db.ref(path).push(value);
-    return ref.key;
+    const key = ref.key;
+    // 写回 id 字段（firebase）
+    try {
+      await db.ref(`${path}/${key}`).update({ id: key });
+    } catch(e){ console.warn('write id back failed', e); }
+    return key;
   } else {
     const key = 'k' + Date.now() + Math.floor(Math.random() * 1000);
     const parts = path.split('/').filter(Boolean);
@@ -79,7 +85,8 @@ async function dbPush(path, value) {
       const p = parts[i];
       cur[p] = cur[p] || {};
       if (i === parts.length - 1) {
-        cur[p][key] = value;
+        // 写入并附带 id 字段
+        cur[p][key] = Object.assign({}, value, { id: key });
       } else {
         cur = cur[p];
       }
@@ -96,17 +103,34 @@ function fail(message) { return { ok: false, message: message || 'error' }; }
 // health
 app.get('/api/ping', (req, res) => res.json(ok({ time: Date.now() })));
 
-// user sync (Strikingly -> backend)
+// 原有 user sync（保留） - singular
 app.post('/api/user/sync', async (req, res) => {
   try {
-    const { userId } = req.body || {};
-    if (!userId) return res.json(fail('missing userId'));
-    await dbSave(`/users/${userId}`, { userId, updatedAt: Date.now() });
-    const b = (await dbRead(`/balances/${userId}`)) || null;
-    if (!b) await dbSave(`/balances/${userId}`, { balance: 0 });
+    const { userId, userid } = req.body || {};
+    const uid = userId || userid || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
+    if (!uid) return res.json(fail('missing userId'));
+    await dbSave(`/users/${uid}`, { userId: uid, updatedAt: Date.now() });
+    const b = (await dbRead(`/balances/${uid}`)) || null;
+    if (!b) await dbSave(`/balances/${uid}`, { balance: 0 });
     return res.json(ok());
   } catch (e) {
     console.error('/api/user/sync', e);
+    return res.json(fail('sync error'));
+  }
+});
+
+// 新增 alias：/api/users/sync（plural） 兼容前端多处路径
+app.post('/api/users/sync', async (req, res) => {
+  try {
+    const { userId, userid } = req.body || {};
+    const uid = userId || userid || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
+    if (!uid) return res.json(fail('missing userid'));
+    await dbSave(`/users/${uid}`, { userId: uid, updatedAt: Date.now() });
+    const b = (await dbRead(`/balances/${uid}`)) || null;
+    if (!b) await dbSave(`/balances/${uid}`, { balance: 0 });
+    return res.json(ok());
+  } catch (e) {
+    console.error('/api/users/sync', e);
     return res.json(fail('sync error'));
   }
 });
@@ -123,10 +147,10 @@ app.get('/api/list-users', async (req, res) => {
   }
 });
 
-// balance GET
+// balance GET (兼容 query.userId 或 header)
 app.get('/api/balance', async (req, res) => {
   try {
-    const userId = req.query.userId;
+    const userId = req.query.userId || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
     if (!userId) return res.json(fail('missing userId'));
     const b = (await dbRead(`/balances/${userId}`)) || { balance: 0 };
     return res.json(ok({ balance: Number(b.balance || 0) }));
@@ -139,12 +163,15 @@ app.get('/api/balance', async (req, res) => {
 // balance POST update
 app.post('/api/balance', async (req, res) => {
   try {
-    const { userId, amount } = req.body || {};
-    if (!userId || typeof amount === 'undefined') return res.json(fail('missing params'));
-    const cur = (await dbRead(`/balances/${userId}`)) || { balance: 0 };
+    const { userId, userid, amount } = req.body || {};
+    const uid = userId || userid || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
+    if (!uid || typeof amount === 'undefined') return res.json(fail('missing params'));
+    const cur = (await dbRead(`/balances/${uid}`)) || { balance: 0 };
     const newBalance = Number(cur.balance || 0) + Number(amount);
-    await dbSave(`/balances/${userId}`, { balance: newBalance });
-    await dbPush('/transactions', { userId, amount: Number(amount), timestamp: Date.now(), status: 'processing', type: 'balance_update' });
+    await dbSave(`/balances/${uid}`, { balance: newBalance });
+    const key = await dbPush('/transactions', { userId: uid, amount: Number(amount), timestamp: Date.now(), status: 'processing', type: 'balance_update' });
+    // 确保 transaction 存在 id
+    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, { userId: uid, amount: Number(amount), timestamp: Date.now(), status: 'processing', type: 'balance_update' })); } catch(e){}
     return res.json(ok({ balance: newBalance }));
   } catch (e) {
     console.error('/api/balance POST', e);
@@ -152,11 +179,16 @@ app.post('/api/balance', async (req, res) => {
   }
 });
 
-// proxy transactions read
+// --------- proxy transactions read（保证每条记录返回包含 id 字段） ----------
 app.get('/proxy/transactions', async (req, res) => {
   try {
     const raw = (await dbRead('/transactions')) || {};
-    const list = Object.keys(raw).map(k => raw[k]);
+    // map 保证将 key 作为 id 且保留对象实际字段
+    const list = Object.keys(raw).map(k => {
+      const obj = raw[k] || {};
+      // 以存储内字段优先，但强制返回 id 字段为 key
+      return Object.assign({ id: k }, obj, { id: obj.id || obj._id || k });
+    });
     const { start, end, q, type, status, currency } = req.query || {};
     let filtered = list.slice().sort((a,b)=> (b.timestamp||0)-(a.timestamp||0));
     if (start) { const t = Date.parse(start); if(!isNaN(t)) filtered = filtered.filter(x => (x.timestamp || 0) >= t); }
@@ -172,14 +204,56 @@ app.get('/proxy/transactions', async (req, res) => {
   }
 });
 
-// proxy recharge
+// --------- 兼容前端 /api/order/recharge 与 /proxy/recharge（把写入的记录带 id） ----------
+app.post('/api/order/recharge', async (req, res) => {
+  try {
+    const rec = req.body || {};
+    rec.type = rec.type || 'recharge';
+    rec.timestamp = Date.now();
+    rec.status = rec.status || 'processing';
+    const key = await dbPush('/transactions', rec);
+    // 写回 id 字段（覆盖或补充）
+    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, rec)); } catch(e){ console.warn('save id back failed', e); }
+    if (rec.userId && typeof rec.amount !== 'undefined') {
+      const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
+      await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) + Number(rec.amount) });
+    }
+    return res.json(ok({ orderId: rec.orderId || key }));
+  } catch (e) {
+    console.error('/api/order/recharge', e);
+    return res.json(fail('recharge error'));
+  }
+});
+
+// 兼容 /api/order/withdraw -> 存 transactions 并返回 orderId
+app.post('/api/order/withdraw', async (req, res) => {
+  try {
+    const rec = req.body || {};
+    rec.type = rec.type || 'withdraw';
+    rec.timestamp = Date.now();
+    rec.status = rec.status || 'processing';
+    const key = await dbPush('/transactions', rec);
+    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, rec)); } catch(e){ console.warn('save id back failed', e); }
+    if (rec.userId && typeof rec.amount !== 'undefined') {
+      const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
+      await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) - Number(rec.amount) });
+    }
+    return res.json(ok({ orderId: rec.orderId || key }));
+  } catch (e) {
+    console.error('/api/order/withdraw', e);
+    return res.json(fail('withdraw error'));
+  }
+});
+
+// proxy recharge (保留，为兼容直接使用 proxy 路径的前端)
 app.post('/proxy/recharge', async (req, res) => {
   try {
     const rec = req.body || {};
     rec.type = rec.type || 'recharge';
     rec.timestamp = Date.now();
     rec.status = rec.status || 'processing';
-    await dbPush('/transactions', rec);
+    const key = await dbPush('/transactions', rec);
+    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, rec)); } catch(e){ }
     if (rec.userId && typeof rec.amount !== 'undefined') {
       const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
       await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) + Number(rec.amount) });
@@ -198,7 +272,8 @@ app.post('/proxy/withdraw', async (req, res) => {
     rec.type = rec.type || 'withdraw';
     rec.timestamp = Date.now();
     rec.status = rec.status || 'processing';
-    await dbPush('/transactions', rec);
+    const key = await dbPush('/transactions', rec);
+    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, rec)); } catch(e){ }
     if (rec.userId && typeof rec.amount !== 'undefined') {
       const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
       await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) - Number(rec.amount) });
@@ -221,7 +296,8 @@ app.post('/proxy/transaction/update', async (req, res) => {
     let foundKey = null;
     for (const k of Object.keys(raw || {})) {
       const obj = raw[k];
-      if (obj && (obj.id === transactionId || obj.transactionId === transactionId || obj.orderId === transactionId || k === transactionId)) {
+      if (!obj) continue;
+      if (obj.id === transactionId || obj.transactionId === transactionId || obj.orderId === transactionId || k === transactionId) {
         foundKey = k;
         break;
       }
@@ -233,7 +309,7 @@ app.post('/proxy/transaction/update', async (req, res) => {
     if (!foundKey) return res.json(fail('transaction not found'));
     const tx = raw[foundKey];
     tx.status = status;
-    // If confirmed and has userId & amount, adjust balance if needed (example: confirm recharge already added on create; only for manual flows adjust)
+    // write back
     await dbSave(`/transactions/${foundKey}`, tx);
     return res.json(ok());
   } catch (e) {
