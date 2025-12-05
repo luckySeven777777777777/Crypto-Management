@@ -355,7 +355,7 @@ app.post("/api/admin/order/action", async (req, res) => {
     res.json({ ok: true });
   } catch (e) { console.error(e.message); res.status(500).json({ error: e.message || "server error" }); }
 }
-
+}); 
 // Strikingly user sync
 app.post("/api/users/sync", async (req, res) => {
   try {
