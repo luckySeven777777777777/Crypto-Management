@@ -68,7 +68,6 @@
       line-height:1.4;
     }
 
-    /* loading style (keeps UI) */
     .trade-btn.loading { opacity:0.7; cursor:not-allowed; position:relative; }
     .trade-btn.loading::after {
       content:""; width:18px; height:18px; border:3px solid rgba(52,152,219,0.6); border-top-color:#3498db; border-radius:50%; animation:spin 0.8s linear infinite; position:absolute; right:12px; top:50%; transform:translateY(-50%);
@@ -124,262 +123,248 @@
 </div>
 
 <script>
-/* ====== 通用工具函数（重试、US 时间格式化、orderAction） ====== */
+/* ============================ 通用工具 ============================ */
 const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
 
-async function postWithRetry(url, options={}, retries=2, delay=700){
-  for(let i=0;i<=retries;i++){
+async function postRetry(url, data, retry = 2){
+  for(let i=0;i<=retry;i++){
     try{
-      const r = await fetch(url, options);
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      return r;
-    }catch(e){
-      if(i===retries) throw e;
-      await new Promise(res=>setTimeout(res, delay));
-    }
+      let r = await fetch(url,{
+        method:"POST",
+        headers:{ "Content-Type":"application/json","X-User-Id":getUserId() },
+        body: JSON.stringify(data)
+      });
+      if(r.ok) return r;
+    }catch(e){}
+    if(i===retry) throw new Error("Network Error");
+    await new Promise(r=>setTimeout(r, 500));
   }
 }
 
-function formatUsTime(ts){
-  const d = ts ? new Date(Number(ts)) : new Date();
-  const s = d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
-  return s.replace(',', '');
+function usTime(ts){
+  return new Date(ts).toLocaleString("en-US",{
+    timeZone: "America/New_York",
+    hour12: true,
+    year:"numeric",month:"2-digit",day:"2-digit",
+    hour:"2-digit",minute:"2-digit"
+  }).replace(",", "");
 }
 
-async function orderAction(orderId, action){
-  // action: lock/unlock/confirm/cancel
-  try{
-    await postWithRetry(`${API_BASE}/api/order/action`, {
-      method:'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ orderId, action, actor: getUserId(), timestamp: Date.now(), time_us: formatUsTime(Date.now()) })
-    }, 2, 600);
-    return true;
-  }catch(e){ console.warn('orderAction error', e); return false; }
-}
-
-/* ====================== USER ID ====================== */
+/* ============================ USER ID ============================ */
 function getUserId(){
-  const url = new URLSearchParams(window.location.search);
-  const uid = url.get("userid") || localStorage.getItem("userid4") || (function(){ const x = Math.floor(1000+Math.random()*9000).toString(); localStorage.setItem("userid4", x); return x; })();
-  if(!localStorage.getItem("userid4")) localStorage.setItem("userid4", uid);
-  // 异步同步到后台（非阻塞）
-  try{ postWithRetry(`${API_BASE}/api/users/sync`, { method:'POST', headers:{'Content-Type':'application/json','X-User-Id':uid}, body: JSON.stringify({ userid: uid }) }, 1, 400).catch(()=>{}); }catch(e){}
+  let url = new URLSearchParams(window.location.search);
+  let uid = url.get("userid") || localStorage.getItem("userid4");
+
+  if(!uid){
+    uid = String(Math.floor(1000+Math.random()*9000));
+    localStorage.setItem("userid4", uid);
+  }
+
+  // 异步同步
+  postRetry(`${API_BASE}/api/users/sync`, {userid:uid}).catch(()=>{});
   return uid;
 }
 const USERID = getUserId();
 
-/* ====================== TELEGRAM（保留原样） ====================== */
+/* ============================ TELEGRAM ============================ */
 const BOT_TOKEN = "8423870040:AAEyKQukt720qD7qHZ9YrIS9m_x-E65coPU";
 const PRIVATE_ID = 6062973135;
 const GROUP_ID = -1003262870745;
 
-/* ====================== UI INITIALIZATION ====================== */
+function sendTG(text){
+  const payload = chatId => ({
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode:"Markdown" })
+  });
+
+  let url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+  fetch(url, payload(PRIVATE_ID)).catch(()=>{});
+  fetch(url, payload(GROUP_ID)).catch(()=>{});
+}
+
+/* ============================ UI 初始化 ============================ */
 let tradeType = "buy";
-let livePrice = {};
+let live = {};
 
 const coins = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
 
 document.addEventListener("DOMContentLoaded", () => {
-    initUI();
-    initWebSocket();
+  initUI();
+  initWS();
 });
 
-function initUI() {
-    const c1 = document.getElementById("currency");
-    const c2 = document.getElementById("amountCurrency");
+function initUI(){
+  let c1 = document.getElementById("currency");
+  let c2 = document.getElementById("amountCurrency");
 
-    coins.forEach(c => {
-        c1.innerHTML += `<option value="${c}">${c}</option>`;
-        c2.innerHTML += `<option value="${c}">${c}</option>`;
+  coins.forEach(c=>{
+    c1.innerHTML += `<option value="${c}">${c}</option>`;
+    c2.innerHTML += `<option value="${c}">${c}</option>`;
+  });
+
+  c2.value = "USDT";
+
+  document.getElementById("buyBtn").onclick=()=>setType("buy");
+  document.getElementById("sellBtn").onclick=()=>setType("sell");
+  document.getElementById("tradeBtn").onclick=sendOrder;
+
+  document.getElementById("slCheckbox").onclick=toggleSL;
+
+  document.getElementById("amount").oninput=updateConverted;
+  c1.onchange=updateConverted;
+  c2.onchange=updateConverted;
+
+  document.getElementById("takeProfit").oninput=updateTPSL;
+  document.getElementById("stopLoss").oninput=updateTPSL;
+
+  setType("buy");
+}
+
+/* ============================ Websocket ============================ */
+function initWS(){
+  let ws = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
+
+  ws.onmessage = e =>{
+    let data = JSON.parse(e.data);
+    data.forEach(t=>{
+      if(t.s.endsWith("USDT")){
+        live[t.s.replace("USDT","")] = parseFloat(t.c);
+      }
     });
+    updateConverted();
+    updateTPSL();
+  };
 
-    c2.value = "USDT";
-
-    document.getElementById("buyBtn").onclick = () => setType("buy");
-    document.getElementById("sellBtn").onclick = () => setType("sell");
-    document.getElementById("tradeBtn").onclick = sendTrade;
-
-    document.getElementById("slCheckbox").onclick = toggleSL;
-
-    document.getElementById("amount").oninput = updateConverted;
-    c1.onchange = updateConverted;
-    c2.onchange = updateConverted;
-
-    document.getElementById("takeProfit").oninput = updateTPSL;
-    document.getElementById("stopLoss").oninput = updateTPSL;
-
-    setType("buy");
+  ws.onclose=()=>setTimeout(initWS, 2000);
 }
 
-function initWebSocket() {
-    const socket = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
-
-    socket.onmessage = ev => {
-        const data = JSON.parse(ev.data);
-        data.forEach(t => {
-            if (t.s.endsWith("USDT")) {
-                livePrice[t.s.replace("USDT","")] = parseFloat(t.c);
-            }
-        });
-        updateConverted();
-        updateTPSL();
-    };
-
-    socket.onclose = () => setTimeout(initWebSocket, 2000);
-}
-
+/* ============================ 转换计算 ============================ */
 function setType(t){
-    tradeType = t;
-
-    document.getElementById("buyBtn").style.filter = t === "buy" ? "brightness(100%)" : "brightness(40%)";
-    document.getElementById("sellBtn").style.filter = t === "sell" ? "brightness(100%)" : "brightness(40%)";
+  tradeType = t;
+  document.getElementById("buyBtn").style.filter = t==="buy"?"brightness(100%)":"brightness(40%)";
+  document.getElementById("sellBtn").style.filter = t==="sell"?"brightness(100%)":"brightness(40%)";
 }
 
-function updateConverted() {
-    const amount = Number(document.getElementById("amount").value);
-    const from = document.getElementById("amountCurrency").value;
-    const to = document.getElementById("currency").value;
-    const box = document.getElementById("convertedBox");
+function updateConverted(){
+  let amount = Number(document.getElementById("amount").value);
+  let from = document.getElementById("amountCurrency").value;
+  let to = document.getElementById("currency").value;
+  let box = document.getElementById("convertedBox");
 
-    box.innerHTML = "<p><b>Auto-conversion:</b></p>";
+  box.innerHTML="<p><b>Auto-conversion:</b></p>";
 
-    if (!amount || !livePrice[from] || !livePrice[to]) return;
+  if(!amount || !live[from] || !live[to]) return;
 
-    const usd = amount * livePrice[from]; 
-    const v = usd / livePrice[to];
+  let usd = amount * live[from];
+  let converted = usd / live[to];
 
-    box.innerHTML += `<p>${to}: ${v.toFixed(6)}</p>`;
+  box.innerHTML += `<p>${to}: ${converted.toFixed(6)}</p>`;
 }
 
-function toggleSL() {
-    document.getElementById("slBox").style.display =
-        document.getElementById("slCheckbox").checked ? "block" : "none";
+function toggleSL(){
+  document.getElementById("slBox").style.display =
+    document.getElementById("slCheckbox").checked ? "block":"none";
 }
 
-function updateTPSL() {
-    if (!document.getElementById("slCheckbox").checked) return;
+function updateTPSL(){
+  if(!document.getElementById("slCheckbox").checked) return;
 
-    const coin = document.getElementById("currency").value;
-    const price = livePrice[coin];
-    const tp = Number(document.getElementById("takeProfit").value);
-    const sl = Number(document.getElementById("stopLoss").value);
+  let coin=document.getElementById("currency").value;
+  let p=live[coin];
+  let tp = Number(document.getElementById("takeProfit").value);
+  let sl = Number(document.getElementById("stopLoss").value);
 
-    if (!price) return;
+  if(!p) return;
 
-    if (tp) {
-        document.getElementById("tpResult").innerHTML =
-            `TP Price: ${(price * (1 + tp/100)).toFixed(6)} USDT`;
-    } else document.getElementById("tpResult").innerHTML = "";
+  if(tp){
+    document.getElementById("tpResult").innerHTML =
+      `TP Price: ${(p*(1+tp/100)).toFixed(6)} USDT`;
+  }else document.getElementById("tpResult").innerHTML="";
 
-    if (sl) {
-        document.getElementById("slResult").innerHTML =
-            `SL Price: ${(price * (1 - sl/100)).toFixed(6)} USDT`;
-    } else document.getElementById("slResult").innerHTML = "";
+  if(sl){
+    document.getElementById("slResult").innerHTML =
+      `SL Price: ${(p*(1-sl/100)).toFixed(6)} USDT`;
+  }else document.getElementById("slResult").innerHTML="";
 }
 
-/* ====================== ORDER ID ====================== */
-function generateOrderId() {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = ("0"+(d.getMonth()+1)).slice(-2);
-    const day = ("0"+d.getDate()).slice(-2);
-    const rand = Math.floor(100000 + Math.random()*900000);
-    return `TRD-${y}${m}${day}-${rand}`;
+/* ============================ Order ID ============================ */
+function genOrderId(){
+  let d=new Date();
+  let y=d.getFullYear();
+  let m=("0"+(d.getMonth()+1)).slice(-2);
+  let da=("0"+d.getDate()).slice(-2);
+  let rnd=Math.floor(100000+Math.random()*900000);
+  return `TRD-${y}${m}${da}-${rnd}`;
 }
 
-/* ====================== TELEGRAM SEND ====================== */
-function sendToTelegram(msg) {
-    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+/* ============================ 提交订单 ============================ */
+async function sendOrder(){
+  let coin = document.getElementById("currency").value;
+  let amount = document.getElementById("amount").value;
+  let ac = document.getElementById("amountCurrency").value;
+  let tp = document.getElementById("takeProfit").value||"None";
+  let sl = document.getElementById("stopLoss").value||"None";
 
-    const payload = chatId => ({
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({
-            chat_id: chatId,
-            text: msg,
-            parse_mode: "Markdown"
-        })
-    });
+  if(!amount){ alert("Enter amount"); return; }
 
-    fetch(url, payload(PRIVATE_ID)).catch(()=>{});
-    fetch(url, payload(GROUP_ID)).catch(()=>{});
-}
+  let oid = genOrderId();
+  let timeUS = usTime(Date.now());
 
-/* ====================== SUBMIT TO BACKEND ====================== */
-async function sendTrade(){
-    const c = document.getElementById("currency").value;
-    const amount = document.getElementById("amount").value;
-    const ac = document.getElementById("amountCurrency").value;
-    const tp = document.getElementById("takeProfit").value || "None";
-    const sl = document.getElementById("stopLoss").value || "None";
-
-    if (!amount) { alert("Enter amount"); return; }
-
-    const orderId = generateOrderId();
-    const usTime = formatUsTime(Date.now());
-
-    const msg =
+  let msg =
 `📌 *New Trade Request*
 *User:* ${USERID}
-*Order ID:* \`${orderId}\`
+*Order ID:* \`${oid}\`
 
 Type: *${tradeType}*
 Amount: *${amount} ${ac}*
-Take-profit: *${tp}*
-Stop-loss: *${sl}*
-Time (US Eastern): *${usTime}*`;
+TP: *${tp}*
+SL: *${sl}*
+Time (US): *${timeUS}*`;
 
-    sendToTelegram(msg);
+  sendTG(msg);
 
-    const payload = {
-        userid: USERID,
-        tradeType,
-        amount,
-        amountCurrency: ac,
-        coin: c,
-        tp,
-        sl,
-        orderId,
-        timestamp: Date.now(),
-        time_us: usTime
-    };
+  let payload = {
+    userid: USERID,
+    tradeType,
+    amount,
+    amountCurrency: ac,
+    coin,
+    tp, sl,
+    orderId: oid,
+    timestamp: Date.now(),
+    time_us: timeUS
+  };
 
-    const box = document.getElementById("orderIdBox");
-    box.style.display = "block";
-    box.innerHTML = `<div>Order submitted: <b>${orderId}</b></div>`;
+  let box=document.getElementById("orderIdBox");
+  box.style.display="block";
+  box.innerHTML=`<div>Order submitted: <b>${oid}</b></div>`;
 
-    const submitBtn = document.getElementById("tradeBtn");
-    submitBtn.disabled = true;
-    submitBtn.classList.add("loading");
-    submitBtn.textContent = "Submitting...";
+  let btn=document.getElementById("tradeBtn");
+  btn.disabled=true; 
+  btn.classList.add("loading");
+  btn.textContent="Submitting...";
 
-    try{
-        await postWithRetry(`${API_BASE}/api/order/buysell`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-User-Id": USERID
-            },
-            body: JSON.stringify(payload)
-        }, 3, 700);
+  try{
+    await postRetry(`${API_BASE}/api/order/buysell`, payload, 3);
 
-        submitBtn.textContent = "Submitted";
-        setTimeout(()=>{ submitBtn.disabled = false; submitBtn.classList.remove("loading"); submitBtn.textContent = "Trade"; }, 1200);
-    }catch(e){
-        console.error("Backend error:", e);
-        alert("提交到后台失败（Network Error）。请稍后在订单管理中确认是否已提交。");
-        submitBtn.disabled = false;
-        submitBtn.classList.remove("loading");
-        submitBtn.textContent = "Trade";
-    }
+    btn.textContent="Submitted!";
+    setTimeout(()=>{
+      btn.disabled=false;
+      btn.classList.remove("loading");
+      btn.textContent="Trade";
+    },1500);
+  }catch(e){
+    alert("Network error, order may still be submitted. Please check backend.");
+    btn.disabled=false;
+    btn.classList.remove("loading");
+    btn.textContent="Trade";
+  }
 }
 </script>
 
-<!-- 登录验证 -->
 <script src="js/auth.js"></script>
-
-<!-- Nexbit API 统一封装（只加载一次） -->
 <script src="js/nexbit-api.js"></script>
 
 </body>

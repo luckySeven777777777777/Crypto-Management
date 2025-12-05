@@ -1,9 +1,41 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Deposit Page</title>
+
+  <!-- ======= Strikingly 覆盖防护（只在最顶部加入） ======= -->
+  <style>
+    /* 基础覆盖，防止 Strikingly 全局样式破坏内部布局 */
+    * { box-sizing: border-box !important; }
+
+    html, body {
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: transparent !important;
+      overflow-x: hidden !important;
+    }
+
+    body, div, span, p, h1, h2, h3, h4, h5, h6 {
+      line-height: normal !important;
+      font-size: inherit !important;
+    }
+
+    /* APP 风格容器（最小化控制，仅用于居中 + 限制宽度） */
+    .app-container {
+      width: 100% !important;
+      max-width: 560px !important;
+      margin: 0 auto !important;
+      padding: 0 15px !important;
+    }
+
+    /* 防止 Strikingly 强制改写 max-width */
+    * { max-width: 100% !important; }
+  </style>
+
+  <!-- ========== 下面是你原始的样式（未改动） ========== -->
   <style>
     /* 完全复用你原始样式 —— 未改动 UI 样式 */
     body { font-family: Arial, sans-serif; background: transparent; color:#fff; margin:0; padding:20px;}
@@ -15,7 +47,7 @@
     .dropdown div { padding:10px 12px; cursor:pointer; display:flex; align-items:center; gap:12px; border-radius:6px; transition:0.2s; }
     .dropdown div:hover { background: rgba(50,50,50,0.8); }
     .dropdown img { width:24px; height:24px; object-fit:contain; }
-    input[type=number], input[type=text] { font-family: inherit; font-size:14px; background: rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.3); border-radius:8px; padding:10px 12px; outline:none; width:100%; box-sizing:border-box; }
+    input[type=number], input[type=text] { font-family: inherit; font-size:14px; background: rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.3); border-radius:8px; padding:10px 12px; outline:none; width:100%; box-sizing: border-box; }
     #walletAddressInput { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); }
     #uploadFile { display:none !important; }
     #uploadLabel{ display:block; width:fit-content; padding:10px 14px; background:#00b894; color:#fff; border-radius:8px; cursor:pointer; font-size:14px; }
@@ -30,121 +62,128 @@
     .boost-expired { font-size:13px; color:#ff6b6b; margin-top:6px; }
     .boost-timer { color:#00ffea; margin-top:6px; font-weight:600; }
   </style>
+
+  <!-- 下面是你为了修复 Strikingly 加的第二段样式，我保留不改（仍为原始内容） -->
+  <style>
+    /* 让 Strikingly 不再隐藏页面内容 */
+    html, body {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+        background: #ffffff00 !important;
+    }
+
+    /* 主容器 */
+    .container {
+        width: 100%;
+        max-width: 420px;
+        margin: 0 auto;
+        padding: 15px;
+        font-family: Arial, sans-serif;
+        color: #fff;
+    }
+
+    /* 选择框修复 */
+    .select-box {
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.3);
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 16px;
+        margin-bottom: 10px;
+    }
+
+    /* 输入框修复 */
+    input[type="number"],
+    input[type="text"],
+    input[type="file"] {
+        width: 100%;
+        padding: 10px;
+        font-size: 15px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.4);
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+        margin-top: 5px;
+        margin-bottom: 12px;
+        box-sizing: border-box;
+    }
+
+    /* 上传图片显示 */
+    #uploadedImage {
+        width: 100%;
+        max-height: 260px;
+        border-radius: 10px;
+        margin-top: 10px;
+        object-fit: cover;
+        border: 1px solid rgba(255,255,255,0.4);
+    }
+
+    /* 提交按钮修复 */
+    .submit-btn {
+        width: 100%;
+        padding: 12px;
+        background: #0a84ff;
+        border: none;
+        border-radius: 10px;
+        font-size: 18px;
+        font-weight: bold;
+        color: white;
+        margin-top: 10px;
+        cursor: pointer;
+    }
+
+    .submit-btn:active {
+        background: #006edc;
+    }
+
+    /* Boost 奖励提示 */
+    .boost-note {
+        font-size: 14px;
+        margin-top: 5px;
+        color: #ffe066;
+    }
+
+    /* 金额显示 */
+    #usdtDisplay,
+    #boostDisplay,
+    #totalDisplay {
+        font-size: 16px;
+        font-weight: bold;
+        margin-top: 6px;
+    }
+
+    /* 防止 Strikingly 强行缩放导致只显示半屏 */
+    * {
+        max-width: 100% !important;
+    }
+  </style>
+
 </head>
-<style>
-/* 让 Strikingly 不再隐藏页面内容 */
-html, body {
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow-x: hidden !important;
-    background: #ffffff00 !important;
-}
-
-/* 主容器 */
-.container {
-    width: 100%;
-    max-width: 420px;
-    margin: 0 auto;
-    padding: 15px;
-    font-family: Arial, sans-serif;
-    color: #fff;
-}
-
-/* 选择框修复 */
-.select-box {
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 10px;
-    border-radius: 8px;
-    font-size: 16px;
-    margin-bottom: 10px;
-}
-
-/* 输入框修复 */
-input[type="number"],
-input[type="text"],
-input[type="file"] {
-    width: 100%;
-    padding: 10px;
-    font-size: 15px;
-    border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.4);
-    background: rgba(255,255,255,0.1);
-    color: #fff;
-    margin-top: 5px;
-    margin-bottom: 12px;
-    box-sizing: border-box;
-}
-
-/* 上传图片显示 */
-#uploadedImage {
-    width: 100%;
-    max-height: 260px;
-    border-radius: 10px;
-    margin-top: 10px;
-    object-fit: cover;
-    border: 1px solid rgba(255,255,255,0.4);
-}
-
-/* 提交按钮修复 */
-.submit-btn {
-    width: 100%;
-    padding: 12px;
-    background: #0a84ff;
-    border: none;
-    border-radius: 10px;
-    font-size: 18px;
-    font-weight: bold;
-    color: white;
-    margin-top: 10px;
-    cursor: pointer;
-}
-
-.submit-btn:active {
-    background: #006edc;
-}
-
-/* Boost 奖励提示 */
-.boost-note {
-    font-size: 14px;
-    margin-top: 5px;
-    color: #ffe066;
-}
-
-/* 金额显示 */
-#usdtDisplay,
-#boostDisplay,
-#totalDisplay {
-    font-size: 16px;
-    font-weight: bold;
-    margin-top: 6px;
-}
-
-/* 防止 Strikingly 强行缩放导致只显示半屏 */
-* {
-    max-width: 100% !important;
-}
-</style>
 
 <body>
-  <div class="container">
-    <label>Select Coin</label>
-    <div class="select-box" id="coinSelectBox"><span id="coinSelected">Select a coin</span></div>
-    <label for="amountInput">Enter Amount (USDT)</label>
-    <input type="number" id="amountInput" placeholder="0.00" min="0">
-    <div id="usdtDisplay">USDT: 0.00</div>
-    <div id="boostDisplay" style="display:none; color:#00ff00; font-weight:600;">First Deposit Boost: +0.00</div>
-    <div id="boostHint" style="display:none;"><div id="boostTimerText" class="boost-note">🤖 请在 <span id="boostSeconds">120</span> 秒内充值，否则无法获得首次充值41%奖励</div></div>
-    <div id="totalDisplay">Total: 0.00 USDT</div>
-    <label for="walletAddressInput">Wallet Address</label>
-    <input type="text" id="walletAddressInput" placeholder="Enter your wallet address">
-    <label id="uploadLabel" for="uploadFile">Upload Screenshot</label>
-    <input type="file" id="uploadFile" accept="image/*">
-    <img id="uploadedImage">
-    <div id="uploadNotice">Please upload a screenshot of your wallet deposit first</div>
-    <button id="submitBtn" disabled>Submit</button>
-    <div id="successMsg">Submission Successful!</div>
+  <!-- 仅外包一层 app-container（不改你原始 .container） -->
+  <div class="app-container">
+    <div class="container">
+      <label>Select Coin</label>
+      <div class="select-box" id="coinSelectBox"><span id="coinSelected">Select a coin</span></div>
+      <label for="amountInput">Enter Amount (USDT)</label>
+      <input type="number" id="amountInput" placeholder="0.00" min="0">
+      <div id="usdtDisplay">USDT: 0.00</div>
+      <div id="boostDisplay" style="display:none; color:#00ff00; font-weight:600;">First Deposit Boost: +0.00</div>
+      <div id="boostHint" style="display:none;"><div id="boostTimerText" class="boost-note">🤖 请在 <span id="boostSeconds">120</span> 秒内充值，否则无法获得首次充值41%奖励</div></div>
+      <div id="totalDisplay">Total: 0.00 USDT</div>
+      <label for="walletAddressInput">Wallet Address</label>
+      <input type="text" id="walletAddressInput" placeholder="Enter your wallet address">
+      <label id="uploadLabel" for="uploadFile">Upload Screenshot</label>
+      <input type="file" id="uploadFile" accept="image/*">
+      <img id="uploadedImage">
+      <div id="uploadNotice">Please upload a screenshot of your wallet deposit first</div>
+      <button id="submitBtn" disabled>Submit</button>
+      <div id="successMsg">Submission Successful!</div>
+    </div>
   </div>
+
   <div class="dropdown" id="coinDropdown"></div>
 
 <script>

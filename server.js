@@ -1,366 +1,446 @@
-// server.js - NEXBIT FINAL (Firebase 支持 全接口版 + list-users + transaction status update)
-// 放置于项目根目录：project-root/server.js
-// 必须环境变量：FIREBASE_SERVICE_ACCOUNT (JSON string), FIREBASE_DATABASE_URL
-
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const path = require('path');
-const admin = require('firebase-admin');
-
+// ================== SERVER INIT ==================
+const express = require("express");
 const app = express();
+const cors = require("cors");
+const axios = require("axios");
+
+require("dotenv").config();
+
+app.use(express.json());
 app.use(cors());
-app.use(bodyParser.json());
-const PUBLIC_DIR = path.join(__dirname, 'public');
-app.use(express.static(PUBLIC_DIR));
+app.use(express.urlencoded({ extended: true }));
 
-// Firebase init
-let db = null;
-try {
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT || !process.env.FIREBASE_DATABASE_URL) {
-    console.warn('[SERVER] WARNING: Firebase env not configured, falling back to memory store.');
-  } else {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
-    db = admin.database();
-    console.log('[SERVER] Firebase 初始化成功');
-  }
-} catch (err) {
-  console.error('[SERVER] Firebase 初始化异常：', err);
-}
-
-// memory fallback store
-const memoryStore = { transactions: {}, balances: {}, users: {}, settings: {} };
-
-async function dbRead(path) {
-  if (db) {
-    const snap = await db.ref(path).once('value');
-    return snap.val();
-  } else {
-    const parts = path.split('/').filter(Boolean);
-    let cur = memoryStore;
-    for (const p of parts) {
-      if (!cur[p]) return null;
-      cur = cur[p];
-    }
-    return cur;
-  }
-}
-
-async function dbSave(path, value) {
-  if (db) {
-    await db.ref(path).set(value);
-    return true;
-  } else {
-    const parts = path.split('/').filter(Boolean);
-    let cur = memoryStore;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const p = parts[i];
-      cur[p] = cur[p] || {};
-      cur = cur[p];
-    }
-    cur[parts[parts.length - 1]] = value;
-    return true;
-  }
-}
-
-// dbPush: push 并返回 key （同时在 push 后写回 id 字段，保证每条记录包含 id）
-async function dbPush(path, value) {
-  if (db) {
-    const ref = await db.ref(path).push(value);
-    const key = ref.key;
-    // 写回 id 字段（firebase）
-    try {
-      await db.ref(`${path}/${key}`).update({ id: key });
-    } catch(e){ console.warn('write id back failed', e); }
-    return key;
-  } else {
-    const key = 'k' + Date.now() + Math.floor(Math.random() * 1000);
-    const parts = path.split('/').filter(Boolean);
-    let cur = memoryStore;
-    for (let i = 0; i < parts.length; i++) {
-      const p = parts[i];
-      cur[p] = cur[p] || {};
-      if (i === parts.length - 1) {
-        // 写入并附带 id 字段
-        cur[p][key] = Object.assign({}, value, { id: key });
-      } else {
-        cur = cur[p];
-      }
-    }
-    return key;
-  }
-}
-
-function ok(data) { return Object.assign({ ok: true }, data || {}); }
-function fail(message) { return { ok: false, message: message || 'error' }; }
-
-// ---------- APIs ----------
-
-// health
-app.get('/api/ping', (req, res) => res.json(ok({ time: Date.now() })));
-
-// 原有 user sync（保留） - singular
-app.post('/api/user/sync', async (req, res) => {
-  try {
-    const { userId, userid } = req.body || {};
-    const uid = userId || userid || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    if (!uid) return res.json(fail('missing userId'));
-    await dbSave(`/users/${uid}`, { userId: uid, updatedAt: Date.now() });
-    const b = (await dbRead(`/balances/${uid}`)) || null;
-    if (!b) await dbSave(`/balances/${uid}`, { balance: 0 });
-    return res.json(ok());
-  } catch (e) {
-    console.error('/api/user/sync', e);
-    return res.json(fail('sync error'));
-  }
-});
-
-// 新增 alias：/api/users/sync（plural） 兼容前端多处路径
-app.post('/api/users/sync', async (req, res) => {
-  try {
-    const { userId, userid } = req.body || {};
-    const uid = userId || userid || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    if (!uid) return res.json(fail('missing userid'));
-    await dbSave(`/users/${uid}`, { userId: uid, updatedAt: Date.now() });
-    const b = (await dbRead(`/balances/${uid}`)) || null;
-    if (!b) await dbSave(`/balances/${uid}`, { balance: 0 });
-    return res.json(ok());
-  } catch (e) {
-    console.error('/api/users/sync', e);
-    return res.json(fail('sync error'));
-  }
-});
-
-// list users
-app.get('/api/list-users', async (req, res) => {
-  try {
-    const users = (await dbRead('/users')) || {};
-    const arr = Object.keys(users).map(k => users[k]);
-    return res.json(ok({ users: arr }));
-  } catch (e) {
-    console.error('/api/list-users', e);
-    return res.json(ok({ users: [] }));
-  }
-});
-
-// balance GET (兼容 query.userId 或 header)
-app.get('/api/balance', async (req, res) => {
-  try {
-    const userId = req.query.userId || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    if (!userId) return res.json(fail('missing userId'));
-    const b = (await dbRead(`/balances/${userId}`)) || { balance: 0 };
-    return res.json(ok({ balance: Number(b.balance || 0) }));
-  } catch (e) {
-    console.error('/api/balance GET', e);
-    return res.json(fail('read balance error'));
-  }
-});
-
-// balance POST update
-app.post('/api/balance', async (req, res) => {
-  try {
-    const { userId, userid, amount } = req.body || {};
-    const uid = userId || userid || req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()];
-    if (!uid || typeof amount === 'undefined') return res.json(fail('missing params'));
-    const cur = (await dbRead(`/balances/${uid}`)) || { balance: 0 };
-    const newBalance = Number(cur.balance || 0) + Number(amount);
-    await dbSave(`/balances/${uid}`, { balance: newBalance });
-    const key = await dbPush('/transactions', { userId: uid, amount: Number(amount), timestamp: Date.now(), status: 'processing', type: 'balance_update' });
-    // 确保 transaction 存在 id
-    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, { userId: uid, amount: Number(amount), timestamp: Date.now(), status: 'processing', type: 'balance_update' })); } catch(e){}
-    return res.json(ok({ balance: newBalance }));
-  } catch (e) {
-    console.error('/api/balance POST', e);
-    return res.json(fail('balance update error'));
-  }
-});
-
-// --------- proxy transactions read（保证每条记录返回包含 id 字段） ----------
-app.get('/proxy/transactions', async (req, res) => {
-  try {
-    const raw = (await dbRead('/transactions')) || {};
-    // map 保证将 key 作为 id 且保留对象实际字段
-    const list = Object.keys(raw).map(k => {
-      const obj = raw[k] || {};
-      // 以存储内字段优先，但强制返回 id 字段为 key
-      return Object.assign({ id: k }, obj, { id: obj.id || obj._id || k });
-    });
-    const { start, end, q, type, status, currency } = req.query || {};
-    let filtered = list.slice().sort((a,b)=> (b.timestamp||0)-(a.timestamp||0));
-    if (start) { const t = Date.parse(start); if(!isNaN(t)) filtered = filtered.filter(x => (x.timestamp || 0) >= t); }
-    if (end) { const t = Date.parse(end); if(!isNaN(t)) filtered = filtered.filter(x => (x.timestamp || 0) <= (t + 24*3600*1000)); }
-    if (q) { const qq = q.toString().toLowerCase(); filtered = filtered.filter(x => (`${x.orderId||x.id||''} ${x.userId||x.user||''} ${x.wallet||x.address||''}`).toLowerCase().indexOf(qq)!==-1); }
-    if (type) filtered = filtered.filter(x => (x.type||'').toString().toLowerCase().indexOf(type.toString().toLowerCase()) !== -1);
-    if (status) filtered = filtered.filter(x => (x.status||'').toString().toLowerCase() === status.toString().toLowerCase());
-    if (currency) filtered = filtered.filter(x => (x.currency||x.coin||'').toString().toLowerCase() === currency.toString().toLowerCase());
-    return res.json(filtered);
-  } catch (e) {
-    console.error('/proxy/transactions', e);
-    return res.json([]);
-  }
-});
-
-// --------- 兼容前端 /api/order/recharge 与 /proxy/recharge（把写入的记录带 id） ----------
-app.post('/api/order/recharge', async (req, res) => {
-  try {
-    const rec = req.body || {};
-    rec.type = rec.type || 'recharge';
-    rec.timestamp = Date.now();
-    rec.status = rec.status || 'processing';
-    const key = await dbPush('/transactions', rec);
-    // 写回 id 字段（覆盖或补充）
-    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, rec)); } catch(e){ console.warn('save id back failed', e); }
-    if (rec.userId && typeof rec.amount !== 'undefined') {
-      const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
-      await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) + Number(rec.amount) });
-    }
-    return res.json(ok({ orderId: rec.orderId || key }));
-  } catch (e) {
-    console.error('/api/order/recharge', e);
-    return res.json(fail('recharge error'));
-  }
-});
-
-// 兼容 /api/order/withdraw -> 存 transactions 并返回 orderId
-app.post('/api/order/withdraw', async (req, res) => {
-  try {
-    const rec = req.body || {};
-    rec.type = rec.type || 'withdraw';
-    rec.timestamp = Date.now();
-    rec.status = rec.status || 'processing';
-    const key = await dbPush('/transactions', rec);
-    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, rec)); } catch(e){ console.warn('save id back failed', e); }
-    if (rec.userId && typeof rec.amount !== 'undefined') {
-      const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
-      await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) - Number(rec.amount) });
-    }
-    return res.json(ok({ orderId: rec.orderId || key }));
-  } catch (e) {
-    console.error('/api/order/withdraw', e);
-    return res.json(fail('withdraw error'));
-  }
-});
-
-// proxy recharge (保留，为兼容直接使用 proxy 路径的前端)
-app.post('/proxy/recharge', async (req, res) => {
-  try {
-    const rec = req.body || {};
-    rec.type = rec.type || 'recharge';
-    rec.timestamp = Date.now();
-    rec.status = rec.status || 'processing';
-    const key = await dbPush('/transactions', rec);
-    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, rec)); } catch(e){ }
-    if (rec.userId && typeof rec.amount !== 'undefined') {
-      const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
-      await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) + Number(rec.amount) });
-    }
-    return res.json(ok());
-  } catch (e) {
-    console.error('/proxy/recharge', e);
-    return res.json(fail('recharge error'));
-  }
-});
-
-// proxy withdraw
-app.post('/proxy/withdraw', async (req, res) => {
-  try {
-    const rec = req.body || {};
-    rec.type = rec.type || 'withdraw';
-    rec.timestamp = Date.now();
-    rec.status = rec.status || 'processing';
-    const key = await dbPush('/transactions', rec);
-    try { await dbSave(`/transactions/${key}`, Object.assign({ id: key }, rec)); } catch(e){ }
-    if (rec.userId && typeof rec.amount !== 'undefined') {
-      const cur = (await dbRead(`/balances/${rec.userId}`)) || { balance: 0 };
-      await dbSave(`/balances/${rec.userId}`, { balance: Number(cur.balance || 0) - Number(rec.amount) });
-    }
-    return res.json(ok());
-  } catch (e) {
-    console.error('/proxy/withdraw', e);
-    return res.json(fail('withdraw error'));
-  }
-});
-
-// update transaction status (lock/confirm/cancel)
-// POST /proxy/transaction/update { transactionId, status } 
-app.post('/proxy/transaction/update', async (req, res) => {
-  try {
-    const { transactionId, status } = req.body || {};
-    if (!transactionId || !status) return res.json(fail('missing params'));
-    const raw = (await dbRead('/transactions')) || {};
-    // find key by matching object content (memory mode or firebase)
-    let foundKey = null;
-    for (const k of Object.keys(raw || {})) {
-      const obj = raw[k];
-      if (!obj) continue;
-      if (obj.id === transactionId || obj.transactionId === transactionId || obj.orderId === transactionId || k === transactionId) {
-        foundKey = k;
-        break;
-      }
-    }
-    if (!foundKey) {
-      // try treat transactionId as key directly
-      if ((raw || {})[transactionId]) foundKey = transactionId;
-    }
-    if (!foundKey) return res.json(fail('transaction not found'));
-    const tx = raw[foundKey];
-    tx.status = status;
-    // write back
-    await dbSave(`/transactions/${foundKey}`, tx);
-    return res.json(ok());
-  } catch (e) {
-    console.error('/proxy/transaction/update', e);
-    return res.json(fail('update error'));
-  }
-});
-
-// settings
-app.get('/api/settings', async (req, res) => {
-  try {
-    const s = (await dbRead('/settings')) || {};
-    return res.json(ok(s));
-  } catch (e) {
-    console.error('/api/settings GET', e);
-    return res.json(fail('settings read error'));
-  }
-});
-app.post('/api/settings', async (req, res) => {
-  try {
-    await dbSave('/settings', req.body || {});
-    return res.json(ok());
-  } catch (e) {
-    console.error('/api/settings POST', e);
-    return res.json(fail('settings save error'));
-  }
-});
-
-// admin login example
-app.post('/api/admin/login', async (req, res) => {
-  try {
-    const { user, pass } = req.body || {};
-    if (!user || !pass) return res.json({ success: false });
-    const s = (await dbRead('/settings')) || {};
-    if (s.loginUser === user && s.loginPassword === pass) return res.json({ success: true });
-    if (user === 'admin' && (!s.loginPassword || s.loginPassword === pass)) return res.json({ success: true });
-    return res.json({ success: false });
-  } catch (e) {
-    console.error('/api/admin/login', e);
-    return res.json({ success: false });
-  }
-});
-
-app.get('*', (req, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
-});
-
-// start server
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`[SERVER] NEXBIT server running on port ${PORT}`);
+
+// ================== ADMIN ACCOUNT ==================
+const ADMIN_USER = process.env.ADMIN_USER || "admin";
+const ADMIN_PASS = process.env.ADMIN_PASS || "123456";
+
+// ================== FIREBASE ==================
+const admin = require("firebase-admin");
+
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: process.env.FIREBASE_DATABASE_URL
 });
-process.on('uncaughtException', err => console.error('uncaughtException', err));
-process.on('unhandledRejection', reason => console.error('unhandledRejection', reason));
+
+const db = admin.database();
+
+// ================== UTILS ==================
+function now() {
+  return Date.now();
+}
+
+function usTime(ts) {
+  return new Date(ts).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    hour12: true,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).replace(",", "");
+}
+
+function genOrderId(prefix) {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = ("0" + (d.getMonth() + 1)).slice(-2);
+  const day = ("0" + d.getDate()).slice(-2);
+  const r = Math.floor(100000 + Math.random() * 900000);
+  return `${prefix}-${y}${m}${day}-${r}`;
+}
+
+// ================== Telegram Bots ==================
+const TG = {
+  recharge: {
+    token: process.env.RECHARGE_BOT_TOKEN,
+    user: process.env.RECHARGE_USER_CHAT_ID,
+    group: process.env.RECHARGE_GROUP_CHAT_ID
+  },
+  withdraw: {
+    token: process.env.WITHDRAW_BOT_TOKEN,
+    user: process.env.WITHDRAW_USER_CHAT_ID,
+    group: process.env.WITHDRAW_GROUP_CHAT_ID
+  },
+  trade: {
+    token: process.env.TRADE_BOT_TOKEN,
+    user: process.env.TRADE_USER_CHAT_ID,
+    group: process.env.TRADE_GROUP_CHAT_ID
+  }
+};
+
+// ====== Telegram Sender ======
+async function sendTG(bot, text) {
+  try {
+    const url = `https://api.telegram.org/bot${bot.token}/sendMessage`;
+
+    const payload = {
+      parse_mode: "Markdown",
+      text
+    };
+
+    // user
+    await axios.post(url, { ...payload, chat_id: bot.user }).catch(() => {});
+
+    // group
+    await axios.post(url, { ...payload, chat_id: bot.group }).catch(() => {});
+  } catch (e) {
+    console.log("TG send error:", e.message);
+  }
+}
+
+// ================== RECHARGE API ==================
+app.post("/api/order/recharge", async (req, res) => {
+  try {
+    const data = req.body;
+    const ts = now();
+
+    const orderId = data.orderId || genOrderId("RCH");
+
+    const payload = {
+      ...data,
+      orderId,
+      timestamp: ts,
+      time_us: usTime(ts),
+      status: "pending"
+    };
+
+    // save to firebase
+    await db.ref("orders/recharge/" + orderId).set(payload);
+
+    // Telegram notify
+    await sendTG(TG.recharge, 
+`💰 *New Recharge*
+User: ${data.userid}
+Order: \`${orderId}\`
+Amount: *${data.amount}* ${data.coin}
+Wallet: ${data.wallet || "-"}
+Time (US): *${payload.time_us}*
+`);
+
+    return res.json({ ok: true, orderId });
+  } catch (e) {
+    console.log("recharge error:", e);
+    return res.status(500).json({ error: "server error" });
+  }
+});
+
+
+// ================== WITHDRAW API ==================
+app.post("/api/order/withdraw", async (req, res) => {
+  try {
+    const data = req.body;
+    const ts = now();
+    const orderId = data.orderId || genOrderId("WDL");
+
+    const payload = {
+      ...data,
+      orderId,
+      timestamp: ts,
+      time_us: usTime(ts),
+      status: "pending"
+    };
+
+    // save
+    await db.ref("orders/withdraw/" + orderId).set(payload);
+
+    // telegram notify
+    await sendTG(TG.withdraw, 
+`🏧 *New Withdrawal*
+User: ${data.userid}
+Order: \`${orderId}\`
+Amount: *${data.amount}* ${data.coin}
+Wallet: ${data.wallet || "-"}
+Hash: ${data.hash || "-"}
+Time (US): *${payload.time_us}*
+`);
+
+    return res.json({ ok: true, orderId });
+  } catch (e) {
+    console.log("withdraw error:", e);
+    return res.status(500).json({ error: "server error" });
+  }
+});
+
+
+// ================== BUYSELL API ==================
+app.post("/api/order/buysell", async (req, res) => {
+  try {
+    const data = req.body;
+    const ts = now();
+    const orderId = data.orderId || genOrderId("BS");
+
+    const payload = {
+      ...data,
+      orderId,
+      timestamp: ts,
+      time_us: usTime(ts),
+      status: "pending"
+    };
+
+    // save
+    await db.ref("orders/buysell/" + orderId).set(payload);
+
+    // telegram notify
+    await sendTG(TG.trade, 
+`📊 *BuySell Order*
+User: ${data.userid}
+Order: \`${orderId}\`
+
+Type: *${data.tradeType || data.type}*
+Amount: *${data.amount}* ${data.amountCurrency || "-"}
+
+Coin: *${data.coin}*
+TP: *${data.tp || "None"}*
+SL: *${data.sl || "None"}*
+
+Time (US): *${payload.time_us}*
+`);
+
+    return res.json({ ok: true, orderId });
+  } catch (e) {
+    console.log("buysell error:", e);
+    return res.status(500).json({ error: "server error" });
+  }
+});
+
+
+// ================== RECHARGE LIST ==================
+app.get("/api/order/recharge/list", async (req, res) => {
+  const snap = await db.ref("orders/recharge").once("value");
+  res.json(snap.val() || []);
+});
+
+// ================== WITHDRAW LIST ==================
+app.get("/api/order/withdraw/list", async (req, res) => {
+  const snap = await db.ref("orders/withdraw").once("value");
+  res.json(snap.val() || []);
+});
+
+// ================== BUYSELL LIST ==================
+app.get("/api/order/buysell/list", async (req, res) => {
+  const snap = await db.ref("orders/buysell").once("value");
+  res.json(snap.val() || []);
+});
+
+// ================== BUYSELL API END ==================
+// ================== ADMIN LOGIN ==================
+app.post("/api/admin/login", (req, res) => {
+  const { username, password } = req.body;
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
+    return res.json({ ok: true, token: "admin-ok" });
+  }
+  return res.status(403).json({ error: "Invalid admin credentials" });
+});
+
+
+// ================== LIST USERS ==================
+app.get("/api/admin/list-users", async (req, res) => {
+  try {
+    const snap = await db.ref("users").once("value");
+    const users = snap.val() || {};
+
+    const list = Object.keys(users).map(uid => ({
+      userid: uid,
+      balance: users[uid].balance || 0,
+      created: users[uid].created || "",
+      updated: users[uid].updated || ""
+    }));
+
+    return res.json({ ok: true, users: list });
+  } catch (err) {
+    console.error("list-users error:", err);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+
+// ================== ADMIN ORDER ACTIONS ==================
+async function updateOrderAndNotify(path, orderId, newStatus, tgInfo) {
+  const ref = db.ref(`${path}/${orderId}`);
+  const snap = await ref.once("value");
+  if (!snap.exists()) throw new Error("Order not found");
+
+  const order = snap.val();
+  await ref.update({ status: newStatus });
+
+  // Telegram notify
+  await sendTG(tgInfo, 
+`⚠️ *Order Status Updated*
+Order: \`${orderId}\`
+User: ${order.userid}
+Status: *${newStatus.toUpperCase()}*
+Time (US): ${usTime(now())}
+`);
+
+  return true;
+}
+
+// CONFIRM
+app.post("/api/admin/order/confirm", async (req, res) => {
+  try {
+    const { type, orderId } = req.body;
+
+    const tgType =
+      type === "recharge" ? TG.recharge :
+      type === "withdraw" ? TG.withdraw :
+      TG.trade;
+
+    await updateOrderAndNotify(`orders/${type}`, orderId, "confirmed", tgType);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("confirm error", e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// CANCEL
+app.post("/api/admin/order/cancel", async (req, res) => {
+  try {
+    const { type, orderId } = req.body;
+
+    const tgType =
+      type === "recharge" ? TG.recharge :
+      type === "withdraw" ? TG.withdraw :
+      TG.trade;
+
+    await updateOrderAndNotify(`orders/${type}`, orderId, "cancelled", tgType);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("cancel error", e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+
+// LOCK
+app.post("/api/admin/order/lock", async (req, res) => {
+  try {
+    const { type, orderId } = req.body;
+
+    const tgType =
+      type === "recharge" ? TG.recharge :
+      type === "withdraw" ? TG.withdraw :
+      TG.trade;
+
+    await updateOrderAndNotify(`orders/${type}`, orderId, "locked", tgType);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("lock error", e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// UNLOCK
+app.post("/api/admin/order/unlock", async (req, res) => {
+  try {
+    const { type, orderId } = req.body;
+
+    const tgType =
+      type === "recharge" ? TG.recharge :
+      type === "withdraw" ? TG.withdraw :
+      TG.trade;
+
+    await updateOrderAndNotify(`orders/${type}`, orderId, "unlocked", tgType);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("unlock error", e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+
+// ============= STRIKINGLY USER SYNC =============
+app.post("/api/users/sync", async (req, res) => {
+  try {
+    const { userid } = req.body;
+    if (!userid) return res.json({ ok: false });
+
+    const ts = now();
+    const ref = db.ref("users/" + userid);
+
+    await ref.update({
+      userid,
+      updated: usTime(ts),
+      created: (await ref.child("created").once("value")).val() || usTime(ts),
+      balance: (await ref.child("balance").once("value")).val() || 0
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.log("sync error:", err);
+    return res.json({ ok: false });
+  }
+});
+
+
+// ============= GET BALANCE =============
+app.get("/api/user/balance", async (req, res) => {
+  try {
+    const userid = req.headers["x-user-id"];
+    if (!userid) return res.status(400).json({ error: "userid missing" });
+
+    const snap = await db.ref("users/" + userid + "/balance").once("value");
+    res.json({ ok: true, balance: snap.val() || 0 });
+  } catch (e) {
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+
+// ============= UPDATE BALANCE =============
+app.post("/api/user/balance/update", async (req, res) => {
+  try {
+    const { userid, balance } = req.body;
+    await db.ref("users/" + userid).update({ balance });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "server error" });
+  }
+});
+// ================== 订单列表（管理后台获取全部订单） ==================
+app.get("/api/admin/orders", async (req, res) => {
+  try {
+    const rechargeSnap = await db.ref("orders/recharge").once("value");
+    const withdrawSnap = await db.ref("orders/withdraw").once("value");
+    const tradeSnap = await db.ref("orders/buysell").once("value");
+
+    res.json({
+      ok: true,
+      recharge: rechargeSnap.val() || {},
+      withdraw: withdrawSnap.val() || {},
+      buysell: tradeSnap.val() || {}
+    });
+
+  } catch (err) {
+    console.error("orders fetch error:", err);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+
+// ================== HEALTH CHECK ==================
+app.get("/", (_req, res) => {
+  res.send("NEXBIT Backend Running");
+});
+
+
+// ================== ERROR HANDLING ==================
+app.use((err, req, res, next) => {
+  console.error("SERVER ERROR:", err.stack);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+
+// ================== START SERVER ==================
+app.listen(PORT, () => {
+  console.log(`🚀 NEXBIT backend running on port ${PORT}`);
+});
