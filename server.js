@@ -21,7 +21,6 @@ app.use(express.static(path.join(__dirname, "public")));
 // ------------------------
 // Firebase Init
 // ------------------------
-
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
@@ -34,7 +33,6 @@ const db = admin.database();
 // ------------------------
 // Helper functions
 // ------------------------
-
 function generateOrderId() {
   return "TX-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
@@ -65,7 +63,6 @@ async function sendToTelegram(type, text) {
 
     if (!token || !groupId) return;
 
-    // 推送到群
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -76,7 +73,6 @@ async function sendToTelegram(type, text) {
       })
     });
 
-    // 推送到管理员
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -86,23 +82,19 @@ async function sendToTelegram(type, text) {
         parse_mode: "Markdown"
       })
     });
-
   } catch (err) {
     console.log("Telegram Error:", err);
   }
 }
 
 // -----------------------------------------------------------
-//      ★★★★★ 关键新增 API：同步用户到 Firebase ★★★★★ 
+//      ★★★★★ 用户同步 API ★★★★★
 // -----------------------------------------------------------
-
 app.post("/api/user/sync", async (req, res) => {
   try {
     const userid = getUserId(req);
 
-    const userRef = db.ref(`users/${userid}`);
-
-    await userRef.update({
+    await db.ref(`users/${userid}`).update({
       userid,
       wallet: "",
       level: "normal",
@@ -119,24 +111,19 @@ app.post("/api/user/sync", async (req, res) => {
 // ------------------------
 // User Balance API
 // ------------------------
-
 app.post("/api/balance", async (req, res) => {
   try {
     const userid = getUserId(req);
-
     const snapshot = await db.ref(`users/${userid}/balance`).once("value");
-    const balance = snapshot.val() || 0;
-
-    res.json({ success: true, balance });
+    res.json({ success: true, balance: snapshot.val() || 0 });
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ------------------------
-// Recharge Order
-// ------------------------
-
+// -----------------------------------------------------------
+//      ★★★★★ 充值订单 ★★★★★
+// -----------------------------------------------------------
 app.post("/api/order/recharge", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -157,21 +144,20 @@ app.post("/api/order/recharge", async (req, res) => {
 
     await db.ref("transactions").push(data);
 
-    sendToTelegram("recharge",
+    sendToTelegram(
+      "recharge",
       `🔔 *充值申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}\n地址: ${wallet}`
     );
 
     res.json({ success: true, orderId });
-
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ------------------------
-// Withdraw Order
-// ------------------------
-
+// -----------------------------------------------------------
+//      ★★★★★ 提款订单 ★★★★★
+// -----------------------------------------------------------
 app.post("/api/order/withdraw", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -192,21 +178,20 @@ app.post("/api/order/withdraw", async (req, res) => {
 
     await db.ref("transactions").push(data);
 
-    sendToTelegram("withdraw",
+    sendToTelegram(
+      "withdraw",
       `📤 *提款申请*\n用户: ${userid}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
     );
 
     res.json({ success: true, orderId });
-
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ------------------------
-// Buy/Sell Trade Order
-// ------------------------
-
+// -----------------------------------------------------------
+//      ★★★★★ 买卖订单 ★★★★★
+// -----------------------------------------------------------
 app.post("/api/order/buysell", async (req, res) => {
   try {
     const userid = getUserId(req);
@@ -227,22 +212,20 @@ app.post("/api/order/buysell", async (req, res) => {
 
     await db.ref("transactions").push(data);
 
-    sendToTelegram("trade",
+    sendToTelegram(
+      "trade",
       `💱 *买卖订单*\n用户: ${userid}\n方向: ${side}\n金额: ${amount} ${coin}\n订单号: ${orderId}`
     );
 
     res.json({ success: true, orderId });
-
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
 // -----------------------------------------------------------
-//      ★★★★★ 管理后台 API ★★★★★
+//      ★★★★★ 管理后台 API （正式接口） ★★★★★
 // -----------------------------------------------------------
-
-// 获取所有用户
 app.get("/api/admin/users", async (req, res) => {
   try {
     const users = (await db.ref("users").once("value")).val() || {};
@@ -252,7 +235,6 @@ app.get("/api/admin/users", async (req, res) => {
   }
 });
 
-// 获取所有交易
 app.get("/api/admin/transactions", async (req, res) => {
   try {
     const tx = (await db.ref("transactions").once("value")).val() || {};
@@ -262,10 +244,34 @@ app.get("/api/admin/transactions", async (req, res) => {
   }
 });
 
+// -----------------------------------------------------------
+//      ★★★★★ 兼容后台旧版 UI 的 API ★★★★★
+// -----------------------------------------------------------
+app.get("/proxy/users", async (req, res) => {
+  try {
+    const users = (await db.ref("users").once("value")).val() || {};
+    res.json({ success: true, users });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/proxy/transactions", async (req, res) => {
+  try {
+    const tx = (await db.ref("transactions").once("value")).val() || {};
+    res.json({ success: true, transactions: tx });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/api/settings", (req, res) => {
+  res.json({ success: true });
+});
+
 // ------------------------
 // RUN SERVER
 // ------------------------
-
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log("Server running on port", PORT);
