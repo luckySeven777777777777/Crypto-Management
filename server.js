@@ -1,8 +1,5 @@
 /**
- * server.js — NEXBIT 完整统一版（最终）
- *
- * （与我之前给你的完整版本一致，包含 Firebase 可选支持 / 内存回退，
- *  静态 public 托管，以及完整的 API 列表）
+ * server.js — NEXBIT 完整统一版（最终） - 修订版（增加静态映射 + preflight 支持）
  *
  * 环境变量：
  *  - FIREBASE_SERVICE_ACCOUNT (可选) : 整个 service account JSON 字符串
@@ -25,13 +22,53 @@ app.use(helmet());
 app.use(bodyParser.json({ limit: '8mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// 允许所有 CORS（简化 Strikingly / 前端跨域访问）
+// 保留凭据配置以备将来需要，但目前允许任意 origin
 app.use(cors({
   origin: (origin, cb) => { cb(null, true); },
   credentials: true
 }));
+// 明确允许所有 preflight OPTIONS 请求
+app.options('*', cors());
 
 /* 静态文件 public */
 app.use(express.static(path.join(__dirname, 'public')));
+
+// 为了兼容前端可能使用根路径引用的脚本，显式映射这些文件到 public/js 下
+app.get('/nexbit-api.js', (req, res) => {
+  const p = path.join(__dirname, 'public', 'js', 'nexbit-api.js');
+  return res.sendFile(p, err => {
+    if (err) {
+      console.warn('[server] /nexbit-api.js not found ->', p);
+      res.status(404).send('');
+    }
+  });
+});
+app.get('/auth.js', (req, res) => {
+  const p = path.join(__dirname, 'public', 'js', 'auth.js');
+  return res.sendFile(p, err => {
+    if (err) {
+      console.warn('[server] /auth.js not found ->', p);
+      res.status(404).send('');
+    }
+  });
+});
+// 也提供 /js/ 前缀（express.static 已处理，但这里做双重保险）
+app.get('/js/nexbit-api.js', (req, res) => {
+  const p = path.join(__dirname, 'public', 'js', 'nexbit-api.js');
+  return res.sendFile(p, err => {
+    if (err) { res.status(404).send(''); }
+  });
+});
+app.get('/js/auth.js', (req, res) => {
+  const p = path.join(__dirname, 'public', 'js', 'auth.js');
+  return res.sendFile(p, err => {
+    if (err) { res.status(404).send(''); }
+  });
+});
+
+// 避免 favicon 404 干扰日志
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 /* Firebase 初始化（可选） */
 let useFirebase = false;
@@ -196,7 +233,9 @@ function requireAdmin(req, res, next) {
 
 /* logging */
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  // log with potential user header for debugging (Strikingly sends X-User-Id)
+  const uid = req.headers['x-user-id'] || req.headers['x-user-id'.toLowerCase()] || '';
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} user:${uid}`);
   next();
 });
 
@@ -252,6 +291,7 @@ app.get('/api/balance/:userId', async (req, res) => {
   }
 });
 
+/* Orders endpoints (unchanged) */
 app.post('/api/order/recharge', async (req, res) => {
   try {
     const { userid, userId, coin, amount, wallet, ...rest } = req.body || {};
@@ -416,6 +456,7 @@ app.post('/api/settings', requireAdmin, async (req, res) => {
   }
 });
 
+// 默认首页展示管理后台（保持你原来的文件）
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard-brand.html'));
 });
