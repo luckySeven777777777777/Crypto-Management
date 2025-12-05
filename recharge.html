@@ -1,190 +1,127 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Deposit Page</title>
-
   <style>
+    /* 完全复用你原始样式 —— 未改动 UI 样式 */
     body { font-family: Arial, sans-serif; background: transparent; color:#fff; margin:0; padding:20px;}
     h1 { text-align:center; margin-bottom:15px; }
     .container { max-width:400px; margin:0 auto; display:flex; flex-direction:column; gap:12px; position:relative; }
-
     .select-box { border: 1px solid rgba(255,255,255,0.3); border-radius:8px; background:rgba(30,30,30,0.8); cursor:pointer; padding:8px 12px; display:flex; align-items:center; justify-content:space-between; }
     .select-box span { color:#fff; }
-
-    .dropdown { 
-      position:absolute; 
-      background: rgba(30,30,30,0.95); 
-      border-radius:8px; 
-      max-height:250px; 
-      overflow-y:auto; 
-      display:none; 
-      z-index:9999; 
-    }
+    .dropdown { position:absolute; background: rgba(30,30,30,0.95); border-radius:8px; max-height:250px; overflow-y:auto; display:none; z-index:9999; }
     .dropdown div { padding:10px 12px; cursor:pointer; display:flex; align-items:center; gap:12px; border-radius:6px; transition:0.2s; }
     .dropdown div:hover { background: rgba(50,50,50,0.8); }
     .dropdown img { width:24px; height:24px; object-fit:contain; }
-
-    input[type=number], input[type=text] {
-      font-family: inherit;
-      font-size:14px;
-      background: rgba(255,255,255,0.05);
-      color:#fff;
-      border:1px solid rgba(255,255,255,0.3);
-      border-radius:8px;
-      padding:10px 12px;
-      outline:none;
-      width:100%;
-      box-sizing:border-box;
-    }
-
-    #walletAddressInput {
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.25);
-    }
-
+    input[type=number], input[type=text] { font-family: inherit; font-size:14px; background: rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.3); border-radius:8px; padding:10px 12px; outline:none; width:100%; box-sizing:border-box; }
+    #walletAddressInput { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); }
     #uploadFile { display:none !important; }
-
-    #uploadLabel{
-      display:block;
-      width:fit-content;
-      padding:10px 14px;
-      background:#00b894;
-      color:#fff;
-      border-radius:8px;
-      cursor:pointer;
-      font-size:14px;
-    }
-
-    #uploadedImage{
-      display:none;
-      width:100px;
-      height:100px;
-      object-fit:contain;
-      margin-bottom:8px;
-      border-radius:6px;
-      border:1px solid rgba(255,255,255,0.3);
-    }
-
-    #submitBtn{
-      padding:10px; 
-      border:none; 
-      border-radius:8px; 
-      background:#00b894; 
-      color:#fff; 
-      cursor:pointer; 
-      transition:0.3s;
-      font-size:15px;
-    }
-
+    #uploadLabel{ display:block; width:fit-content; padding:10px 14px; background:#00b894; color:#fff; border-radius:8px; cursor:pointer; font-size:14px; }
+    #uploadedImage{ display:none; width:100px; height:100px; object-fit:contain; margin-bottom:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.3); }
+    #submitBtn{ padding:10px; border:none; border-radius:8px; background:#00b894; color:#fff; cursor:pointer; transition:0.3s; font-size:15px; }
     #successMsg{ display:none; text-align:center; color:#00b894; font-weight:bold; margin-top:10px; }
     #uploadNotice{ color:#f39c12; font-size:12px; }
-
-    #submitBtn.loading {
-      cursor:not-allowed;
-      opacity:0.7;
-      position:relative;
-    }
-    #submitBtn.loading::after {
-      content:"";
-      width:18px;
-      height:18px;
-      border:3px solid rgba(255,255,255,0.6);
-      border-top-color:#fff;
-      border-radius:50%;
-      animation:spin 0.8s linear infinite;
-      position:absolute;
-      right:12px;
-      top:50%;
-      transform:translateY(-50%);
-    }
+    #submitBtn.loading { cursor:not-allowed; opacity:0.7; position:relative; }
+    #submitBtn.loading::after { content:""; width:18px; height:18px; border:3px solid rgba(255,255,255,0.6); border-top-color:#fff; border-radius:50%; animation:spin 0.8s linear infinite; position:absolute; right:12px; top:50%; transform:translateY(-50%); }
     @keyframes spin { from{transform:translateY(-50%) rotate(0);} to{transform:translateY(-50%) rotate(360deg);} }
-
     .boost-note { font-size:13px; color:#b9b9b9; margin-top:6px; }
     .boost-expired { font-size:13px; color:#ff6b6b; margin-top:6px; }
     .boost-timer { color:#00ffea; margin-top:6px; font-weight:600; }
   </style>
 </head>
 <body>
-
-<div class="container">
-
-  <label>Select Coin</label>
-  <div class="select-box" id="coinSelectBox">
-    <span id="coinSelected">Select a coin</span>
+  <div class="container">
+    <label>Select Coin</label>
+    <div class="select-box" id="coinSelectBox"><span id="coinSelected">Select a coin</span></div>
+    <label for="amountInput">Enter Amount (USDT)</label>
+    <input type="number" id="amountInput" placeholder="0.00" min="0">
+    <div id="usdtDisplay">USDT: 0.00</div>
+    <div id="boostDisplay" style="display:none; color:#00ff00; font-weight:600;">First Deposit Boost: +0.00</div>
+    <div id="boostHint" style="display:none;"><div id="boostTimerText" class="boost-note">🤖 请在 <span id="boostSeconds">120</span> 秒内充值，否则无法获得首次充值41%奖励</div></div>
+    <div id="totalDisplay">Total: 0.00 USDT</div>
+    <label for="walletAddressInput">Wallet Address</label>
+    <input type="text" id="walletAddressInput" placeholder="Enter your wallet address">
+    <label id="uploadLabel" for="uploadFile">Upload Screenshot</label>
+    <input type="file" id="uploadFile" accept="image/*">
+    <img id="uploadedImage">
+    <div id="uploadNotice">Please upload a screenshot of your wallet deposit first</div>
+    <button id="submitBtn" disabled>Submit</button>
+    <div id="successMsg">Submission Successful!</div>
   </div>
+  <div class="dropdown" id="coinDropdown"></div>
 
-  <label for="amountInput">Enter Amount (USDT)</label>
-  <input type="number" id="amountInput" placeholder="0.00" min="0">
-
-  <div id="usdtDisplay">USDT: 0.00</div>
-
-  <div id="boostDisplay" style="display:none; color:#00ff00; font-weight:600;">First Deposit Boost: +0.00</div>
-
-  <div id="boostHint" style="display:none;">
-    <div id="boostTimerText" class="boost-note">🤖 请在 <span id="boostSeconds">120</span> 秒内充值，否则无法获得首次充值41%奖励</div>
-  </div>
-
-  <div id="totalDisplay">Total: 0.00 USDT</div>
-
-  <label for="walletAddressInput">Wallet Address</label>
-  <input type="text" id="walletAddressInput" placeholder="Enter your wallet address">
-
-  <label id="uploadLabel" for="uploadFile">Upload Screenshot</label>
-  <input type="file" id="uploadFile" accept="image/*">
-
-  <img id="uploadedImage">
-
-  <div id="uploadNotice">Please upload a screenshot of your wallet deposit first</div>
-
-  <button id="submitBtn" disabled>Submit</button>
-  <div id="successMsg">Submission Successful!</div>
-</div>
-
-<div class="dropdown" id="coinDropdown"></div>
 <script>
-/* ===== 通用工具 ===== */
+/* ---------- 通用与兼容性修复（不改 UI） ---------- */
 const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
 
-async function postWithRetry(url, options={}, retries=2, delay=700){
-  for(let i=0;i<=retries;i++){
+/* postWithRetry兼容：如果第一个路径返回 404 则尝试第二个（用于兼容 /proxy/... 与 /api/order/...） */
+async function postWithFallback(urls, options={}, retries=1, delay=500){
+  // urls: array of url strings in priority order
+  for (let i=0;i<urls.length;i++){
+    const u = urls[i];
     try{
-      const r = await fetch(url, options);
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      return r;
+      // 支持重试
+      for (let r=0;r<=retries;r++){
+        try{
+          const res = await fetch(u, options);
+          // 如果 404 就直接跳到下一个 url
+          if (res.status === 404) throw { code:404 };
+          return res;
+        }catch(e){
+          if (r===retries) throw e;
+          await new Promise(s=>setTimeout(s, delay));
+        }
+      }
     }catch(e){
-      if(i===retries) throw e;
-      await new Promise(res=>setTimeout(res, delay));
+      // 如果是最后一个 url 则 throw
+      if (i === urls.length - 1) throw e;
+      // 否则继续下一个 url
     }
   }
+  throw new Error('No available url');
 }
 
+/* 时间格式化（美东） */
 function formatUsTime(ts){
   const d = ts ? new Date(Number(ts)) : new Date();
   const s = d.toLocaleString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
   return s.replace(',', '');
 }
 
+/* 获取或生成 4 位 userid，并通知后端（非阻塞） */
 function getUserId(){
-  const urlParams = new URLSearchParams(window.location.search);
-  const uidFromURL = urlParams.get("userid");
-  if (uidFromURL) {
-      localStorage.setItem("userid4", uidFromURL);
-      try{ postWithRetry(`${API_BASE}/api/users/sync`, { method:'POST', headers:{'Content-Type':'application/json','X-User-Id':uidFromURL}, body: JSON.stringify({ userid: uidFromURL }) }, 1, 400).catch(()=>{}); }catch(e){}
-      return uidFromURL;
-  }
-  let uid = localStorage.getItem("userid4");
-  if (!uid) {
-      uid = Math.floor(1000 + Math.random()*9000).toString();
+  try{
+    const urlParams = new URLSearchParams(window.location.search);
+    let uid = urlParams.get("userid");
+    if(uid){
       localStorage.setItem("userid4", uid);
+    } else {
+      uid = localStorage.getItem("userid4");
+      if(!uid){
+        uid = Math.floor(1000 + Math.random()*9000).toString();
+        localStorage.setItem("userid4", uid);
+      }
+    }
+    // 尝试同步到后端（不阻塞主流程）
+    (async ()=>{
+      try{
+        await fetch(`${API_BASE}/api/users/sync`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-User-Id':uid},
+          body: JSON.stringify({ userid: uid })
+        });
+      }catch(e){}
+    })();
+    return uid;
+  }catch(e){
+    return '0000';
   }
-  try{ postWithRetry(`${API_BASE}/api/users/sync`, { method:'POST', headers:{'Content-Type':'application/json','X-User-Id':uid}, body: JSON.stringify({ userid: uid }) }, 1, 400).catch(()=>{}); }catch(e){}
-  return uid;
 }
 const USERID = getUserId();
 
-/* ========== 页面原有逻辑（保持 UI） ========== */
+/* ========== 原 UI 逻辑（尽量保持原样，但增强容错） ========== */
 let ws = null;
 let coins = [];
 let selectedCoin = null;
@@ -192,8 +129,7 @@ let currentPrice = 0;
 
 /* 首充控制 */
 let firstDepositUsed = localStorage.getItem("first_deposit_used") === "1";
-let countdown = 120;
-let countdownTimer = null;
+let countdown = 120, countdownTimer = null;
 
 const amountInput = document.getElementById("amountInput");
 const usdtDisplay = document.getElementById("usdtDisplay");
@@ -209,47 +145,48 @@ const uploadNotice = document.getElementById("uploadNotice");
 const submitBtn = document.getElementById("submitBtn");
 const successMsg = document.getElementById("successMsg");
 
-/* ========== 获取币种（去掉 BCCUSDT） ========== */
 async function fetchCoins(){
   try{
     const res = await fetch('https://api.binance.com/api/v3/ticker/price');
     const data = await res.json();
-    coins = data
-      .filter(c => c.symbol.endsWith('USDT') && c.symbol !== 'BCCUSDT')
-      .map(c => c.symbol);
+    coins = data.filter(c => c.symbol.endsWith('USDT') && c.symbol !== 'BCCUSDT').map(c => c.symbol);
     renderDropdown();
   }catch(err){
+    // 兜底
     coins = ["BTCUSDT","ETHUSDT","BNBUSDT"];
     renderDropdown();
   }
 }
 
 function renderDropdown(){
-  coinDropdown.innerHTML = "";
-  coins.forEach(c => {
-    const div = document.createElement("div");
-    const img = document.createElement("img");
-    const sym = c.replace("USDT","").toLowerCase();
-    img.src = `https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/${sym}.svg`;
-    img.onerror = ()=>{ img.src = "https://via.placeholder.com/24?text=?"; };
-
-    div.appendChild(img);
-    div.appendChild(document.createTextNode(c));
-    div.onclick = () => {
-      selectedCoin = c;
-      coinSelected.textContent = c;
-      coinDropdown.style.display = "none";
-      connectWS(c);
-      updateUSDT();
-    };
-
-    coinDropdown.appendChild(div);
-  });
+  try{
+    const coinDropdown = document.getElementById('coinDropdown');
+    coinDropdown.innerHTML = "";
+    coins.forEach(c => {
+      const div = document.createElement("div");
+      const img = document.createElement("img");
+      const sym = c.replace("USDT","").toLowerCase();
+      img.src = `https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/${sym}.svg`;
+      img.onerror = ()=>{ img.src = "https://via.placeholder.com/24?text=?"; };
+      div.appendChild(img);
+      div.appendChild(document.createTextNode(c));
+      div.onclick = () => {
+        selectedCoin = c.replace("USDT","");
+        document.getElementById('coinSelected').textContent = c.replace("USDT","");
+        coinDropdown.style.display = "none";
+        connectWS(selectedCoin);
+        updateUSDT();
+      };
+      coinDropdown.appendChild(div);
+    });
+  }catch(e){
+    console.warn('renderDropdown error', e);
+  }
 }
 
-/* 下拉框打开/关闭 */
-coinSelectBox.onclick = () => {
-  const r = coinSelectBox.getBoundingClientRect();
+document.getElementById('coinSelectBox').onclick = () => {
+  const r = document.getElementById('coinSelectBox').getBoundingClientRect();
+  const coinDropdown = document.getElementById('coinDropdown');
   coinDropdown.style.top = r.bottom + window.scrollY + "px";
   coinDropdown.style.left = r.left + window.scrollX + "px";
   coinDropdown.style.width = r.width + "px";
@@ -257,81 +194,75 @@ coinSelectBox.onclick = () => {
 };
 
 document.addEventListener('click', (e) => {
-  if (!coinSelectBox.contains(e.target) && !coinDropdown.contains(e.target)) {
+  const coinDropdown = document.getElementById('coinDropdown');
+  if (!document.getElementById('coinSelectBox').contains(e.target) && !coinDropdown.contains(e.target)) {
     coinDropdown.style.display = "none";
   }
 });
 
-/* WebSocket 实时价格 */
+/* WebSocket：只对选中币种建立 ticker（避免 !ticker@arr 导致资源问题） */
 function connectWS(symbol){
-  try{ if(ws) ws.close(); }catch(e){}
-  ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
-  ws.onmessage = e => {
-    const d = JSON.parse(e.data);
-    currentPrice = parseFloat(d.c || 0);
-    updateUSDT();
-  };
-  ws.onclose = ()=> {
-    setTimeout(()=>{ connectWS(symbol); }, 2000);
-  };
+  try{
+    if(ws) ws.close();
+  }catch(e){}
+  try{
+    ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}usdt@ticker`);
+    ws.onmessage = ev => {
+      try{
+        const d = JSON.parse(ev.data);
+        currentPrice = parseFloat(d.c || 0);
+        updateUSDT();
+      }catch(e){}
+    };
+    ws.onclose = ()=> setTimeout(()=>{ try{ connectWS(symbol); }catch(e){} }, 2000);
+  }catch(e){
+    console.warn('connectWS failed', e);
+  }
 }
 
-/* ========== 金额计算 + Boost ========== */
-amountInput.addEventListener('input', () => {
-  updateUSDT();
-  startCountdownIfNeeded();
-});
+amountInput.addEventListener('input', () => { updateUSDT(); startCountdownIfNeeded(); });
 
 function updateUSDT(){
-  const amount = parseFloat(amountInput.value) || 0;
-  const usdt = amount * currentPrice;
-  usdtDisplay.textContent = `USDT: ${usdt.toFixed(2)}`;
-
-  let boost = 0;
-
-  if(!firstDepositUsed && amount > 0 && (countdown > 0 || countdownTimer)){
-    boost = usdt * 0.41;
-
-    boostDisplay.style.display = "block";
-    boostDisplay.textContent = `First Deposit Boost: +${boost.toFixed(2)}`;
-
-    boostHint.style.display = "block";
-    boostSeconds.textContent = countdown > 0 ? countdown : 0;
-
-    boostTimerText.className = "boost-note";
-    boostTimerText.textContent = `🤖 Please recharge within ${countdown} seconds, otherwise you will not be able to receive the 41% bonus on your first recharge.`;
-  } else {
-    boostDisplay.style.display = "none";
-    if(firstDepositUsed){
+  try{
+    const amount = parseFloat(amountInput.value) || 0;
+    const usdt = amount * (currentPrice || 1); // 如果没实时价，按 1 兜底（避免 NaN）
+    usdtDisplay.textContent = `USDT: ${usdt.toFixed(2)}`;
+    let boost = 0;
+    if(!firstDepositUsed && amount > 0 && (countdown > 0 || countdownTimer)){
+      boost = usdt * 0.41;
+      boostDisplay.style.display = "block";
+      boostDisplay.textContent = `First Deposit Boost: +${boost.toFixed(2)}`;
       boostHint.style.display = "block";
-      boostTimerText.textContent = "⛔ The 41% bonus for first recharge has been used or expired.";
-      boostTimerText.className = "boost-expired";
+      boostSeconds.textContent = countdown > 0 ? countdown : 0;
+      boostTimerText.className = "boost-note";
+      boostTimerText.textContent = `🤖 Please recharge within ${countdown} seconds, otherwise you will not be able to receive the 41% bonus on your first recharge.`;
     } else {
-      boostHint.style.display = "none";
+      boostDisplay.style.display = "none";
+      if(firstDepositUsed){
+        boostHint.style.display = "block";
+        boostTimerText.textContent = "⛔ The 41% bonus for first recharge has been used or expired.";
+        boostTimerText.className = "boost-expired";
+      } else {
+        boostHint.style.display = "none";
+      }
     }
+    totalDisplay.textContent = `Total: ${(usdt + boost).toFixed(2)} USDT`;
+  }catch(e){
+    console.warn('updateUSDT error', e);
   }
-
-  totalDisplay.textContent = `Total: ${(usdt + boost).toFixed(2)} USDT`;
 }
 
 function startCountdownIfNeeded(){
   if(firstDepositUsed || countdownTimer) return;
   if((parseFloat(amountInput.value) || 0) <= 0) return;
-
   countdown = 120;
   boostHint.style.display = "block";
   boostSeconds.textContent = countdown;
-
   countdownTimer = setInterval(()=>{
     countdown--;
     boostSeconds.textContent = countdown;
-
     if(countdown <= 0){
-      clearInterval(countdownTimer);
-      countdownTimer = null;
-      firstDepositUsed = true;
-      localStorage.setItem("first_deposit_used","1");
-
+      clearInterval(countdownTimer); countdownTimer = null; firstDepositUsed = true; localStorage.setItem("first_deposit_used","1");
       boostDisplay.style.display = "none";
       boostHint.style.display = "block";
       boostTimerText.textContent = "⛔ More than 120 seconds have passed, the 41% first deposit reward cannot be obtained.";
@@ -341,7 +272,7 @@ function startCountdownIfNeeded(){
   }, 1000);
 }
 
-/* ========== 上传截图 ========== */
+/* 上传截图 */
 uploadFile.onchange = function(){
   const f = this.files[0];
   if(f){
@@ -356,140 +287,73 @@ uploadFile.onchange = function(){
   }
 };
 
-/* ========== Telegram 推送（保持你的 token） ========== */
+/* Telegram 推送（保持原 token） */
 async function sendTelegram(text, imageFile){
-  const botToken = "8528337731:AAGb6D_TRPKYSQrxA7s4TAizsPjNqnajhrU";
-
-  const chatIds = [
-    "6062973135",
-    "-1003329204481"
-  ];
-
-  for(const chatId of chatIds){
-    try{
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ chat_id:chatId, text })
-      });
-
-      const formData = new FormData();
-      formData.append("chat_id", chatId);
-      formData.append("photo", imageFile);
-
-      await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{
-        method:"POST",
-        body: formData
-      });
-    }catch(e){
-      console.warn("Telegram send failed:", chatId, e);
+  try{
+    const botToken = "8528337731:AAGb6D_TRPKYSQrxA7s4TAizsPjNqnajhrU";
+    const chatIds = ["6062973135","-1003329204481"];
+    for(const chatId of chatIds){
+      try{
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({ chat_id:chatId, text })
+        });
+        const formData = new FormData();
+        formData.append("chat_id", chatId);
+        formData.append("photo", imageFile);
+        await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{ method:"POST", body: formData });
+      }catch(e){ /* ignore per chatId */ }
     }
-  }
+  }catch(e){}
 }
 
-/* ========== 发送到后台（包含 userid、orderId、time_us） ========== */
+/* 发送到后台：优先 /proxy/recharge ，回退 /api/order/recharge */
 async function sendToServer(payload){
-  const res = await postWithRetry(`${API_BASE}/api/order/recharge`,{
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        "X-User-Id": USERID
-      },
-      body: JSON.stringify(payload)
-  }, 3, 700);
-
+  const urls = [
+    `${API_BASE}/proxy/recharge`,
+    `${API_BASE}/api/order/recharge`
+  ];
+  const options = { method:'POST', headers:{ 'Content-Type':'application/json', 'X-User-Id': USERID }, body: JSON.stringify(payload) };
+  const res = await postWithFallback(urls, options, 1, 500);
   return res && await res.json();
 }
 
-/* ========== 提交按钮 ========== */
+/* 提交按钮 */
 submitBtn.onclick = async () => {
-  if(!selectedCoin || !amountInput.value || !document.getElementById('walletAddressInput').value || !uploadFile.files[0]){
-    alert("Please fill all fields");
-    return;
-  }
-
-  if(!firstDepositUsed){
-    firstDepositUsed = true;
-    localStorage.setItem("first_deposit_used","1");
-  }
-
-  submitBtn.disabled = true;
-  submitBtn.classList.add("loading");
-  submitBtn.textContent = "Submitting...";
-
-  const usTime = formatUsTime(Date.now());
-
-  const message = 
-`💰 New Deposit Submission
-
-UserID: ${USERID}
-Coin: ${selectedCoin}
-Amount: ${amountInput.value} USDT
-Wallet: ${document.getElementById('walletAddressInput').value}
-Time (US Eastern): ${usTime}`;
-
-  sendTelegram(message, uploadFile.files[0]).catch(()=>{});
-
-  const orderId = `DEP-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100000 + Math.random()*900000)}`;
-
   try{
-    const serverRes = await sendToServer({
-      userid: USERID,
-      coin: selectedCoin,
-      amount: amountInput.value,
-      wallet: document.getElementById("walletAddressInput").value,
-      orderId,
-      timestamp: Date.now(),
-      time_us: usTime
-    });
-
+    if(!selectedCoin || !amountInput.value || !document.getElementById('walletAddressInput').value || !uploadFile.files[0]){
+      alert("Please fill all fields");
+      return;
+    }
+    if(!firstDepositUsed){ firstDepositUsed = true; localStorage.setItem("first_deposit_used","1"); }
+    submitBtn.disabled = true; submitBtn.classList.add("loading"); submitBtn.textContent = "Submitting...";
+    const usTime = formatUsTime(Date.now());
+    const orderId = `DEP-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100000 + Math.random()*900000)}`;
+    const message = `💰 New Deposit Submission\n\nUserID: ${USERID}\nCoin: ${selectedCoin}\nAmount: ${amountInput.value} USDT\nWallet: ${document.getElementById('walletAddressInput').value}\nTime (US Eastern): ${usTime}`;
+    // 非阻塞 telegram
+    sendTelegram(message, uploadFile.files[0]).catch(()=>{});
+    const payload = { userid: USERID, coin: selectedCoin, amount: amountInput.value, wallet: document.getElementById("walletAddressInput").value, orderId, timestamp: Date.now(), time_us: usTime };
+    const serverRes = await sendToServer(payload);
     successMsg.style.display = "block";
-    submitBtn.textContent = "Submitted";
-    submitBtn.classList.remove("loading");
-    submitBtn.style.background = "#555";
-
+    submitBtn.textContent = "Submitted"; submitBtn.classList.remove("loading"); submitBtn.style.background = "#555";
     const orderBox = document.createElement('div');
-    orderBox.style.marginTop = "10px";
-    orderBox.style.padding = "10px";
-    orderBox.style.border = "1px solid rgba(255,255,255,0.2)";
-    orderBox.style.borderRadius = "8px";
-    orderBox.style.fontSize = "14px";
-    orderBox.style.color = "#fff";
+    orderBox.style.marginTop = "10px"; orderBox.style.padding = "10px"; orderBox.style.border = "1px solid rgba(255,255,255,0.2)"; orderBox.style.borderRadius = "8px"; orderBox.style.fontSize = "14px"; orderBox.style.color = "#fff";
     orderBox.innerText = `Order ID: ${orderId}`;
     document.querySelector('.container').appendChild(orderBox);
-
   }catch(e){
     console.error("提交失败：", e);
     alert("提交到后台失败（Network Error）。请稍后在后台确认或重试。");
-    submitBtn.disabled = false;
-    submitBtn.classList.remove("loading");
-    submitBtn.textContent = "Submit";
+    submitBtn.disabled = false; submitBtn.classList.remove("loading"); submitBtn.textContent = "Submit";
   }
 };
-
-/* 用户同步（前端触发） */
-async function syncUserToServer(userid){
-  if(!userid) return;
-  try{
-    await postWithRetry(`${API_BASE}/api/users/sync`, {
-      method:"POST",
-      headers: { "Content-Type":"application/json", "X-User-Id": userid },
-      body: JSON.stringify({ userid })
-    }, 1, 400);
-  }catch(e){
-    console.warn("User sync failed:", e);
-  }
-}
 
 /* 初始化 */
 fetchCoins();
 </script>
 
-<!-- 登录验证 -->
+<!-- 保留你的 auth 与 nexbit 包 -->
 <script src="js/auth.js"></script>
-
-<!-- Nexbit API 统一封装（只加载一次） -->
 <script src="js/nexbit-api.js"></script>
-
 </body>
 </html>
