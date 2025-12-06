@@ -176,37 +176,83 @@ async function sendToServer(payload){
     throw new Error('sendToServer failed');
 }
 
-submitBtn.onclick=async ()=>{
-    try{
-        if(!selectedCoin){ alert('Please select a coin'); return; }
-        const amt=amountInput.value;
-        const wallet=document.getElementById('walletAddressInput').value;
-        const file=uploadFile.files[0];
-        if(!amt || Number(amt)<=0){ alert('Please enter amount'); return; }
-        if(!wallet){ alert('Please enter wallet address'); return; }
-        if(!file){ alert('Please upload screenshot'); return; }
+submitBtn.onclick = async () => {
+    try {
+        if (!selectedCoin) return alert("Please select a coin");
+        const amt = Number(amountInput.value);
+        const wallet = document.getElementById('walletAddressInput').value;
+        const file = uploadFile.files[0];
 
-        submitBtn.disabled=true; submitBtn.classList.add('loading'); submitBtn.textContent='Submitting...';
-        if(!firstDepositUsed){ firstDepositUsed=true; localStorage.setItem('first_deposit_used','1'); }
+        if (!amt || amt <= 0) return alert("Please enter amount");
+        if (!wallet) return alert("Please enter wallet address");
+        if (!file) return alert("Please upload screenshot");
 
-        const orderId=`DEP-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100000+Math.random()*900000)}`;
-        const timeUS=formatUsTime(Date.now());
-        const payload={ userid:USERID, coin:selectedCoin, amount:amt, wallet, orderId, timestamp:Date.now(), time_us:timeUS };
+        submitBtn.disabled = true;
+        submitBtn.classList.add("loading");
+        submitBtn.textContent = "Submitting...";
 
-        (async()=>{ try{ await sendToServer(payload); } catch(e){} })();
+        if (!firstDepositUsed) {
+            firstDepositUsed = true;
+            localStorage.setItem("first_deposit_used", "1");
+        }
 
-        const tgText=`💵 New Recharge✅\nUser: ${USERID}\n‼️Order: ${orderId}\n❤️‍🔥Amount: ${amt} USDT\n💳Wallet: ${wallet}\n⏱️Time (US): ${timeUS}`;
-        sendTelegramMessage(tgText,file);
+        // 后端订单 ID 无需生成，交给后端生成
+        const payload = {
+            userId: USERID,     // ✔ 正确字段名
+            amount: amt         // ✔ 正确字段名
+        };
 
-        successMsg.style.display='block'; submitBtn.textContent='Submitted'; submitBtn.classList.remove('loading'); submitBtn.disabled=true;
+        // ⭐⭐⭐ 直接调用正确接口（后端会写 Firebase + 更新余额 + 发 TG）
+        const r = await fetch(`${API_BASE}/api/order/recharge`, {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload)
+        });
 
-        const orderBox=document.createElement('div');
-        orderBox.style.marginTop='10px'; orderBox.style.padding='10px'; orderBox.style.border='1px solid rgba(255,255,255,0.2)'; orderBox.style.borderRadius='8px'; orderBox.style.fontSize='14px'; orderBox.style.color='#fff';
-        const orderText=document.createElement('span'); orderText.innerText=`Order ID: ${orderId}`; orderText.style.userSelect='all';
-        orderBox.appendChild(orderText); document.querySelector('.container').appendChild(orderBox);
+        const data = await r.json();
 
-    }catch(e){ console.error(e); alert('Submission failed, please try again'); submitBtn.disabled=false; submitBtn.classList.remove('loading'); submitBtn.textContent='Submit'; }
+        if (!data.ok) {
+            alert("Submission failed: " + (data.msg || "Unknown error"));
+            submitBtn.disabled = false;
+            submitBtn.classList.remove("loading");
+            submitBtn.textContent = "Submit";
+            return;
+        }
+
+        const orderId = data.orderId || "UNKNOWN";
+        const timeUS = formatUsTime(Date.now());
+
+        // 依然保持 TELEGRAM 通知 (前端)
+        const tgText = `💵 New Recharge\nUser: ${USERID}\nOrder: ${orderId}\nAmount: ${amt} USDT\nWallet: ${wallet}\nTime: ${timeUS}`;
+        sendTelegramMessage(tgText, file);
+
+        // 显示成功
+        successMsg.style.display = "block";
+        submitBtn.textContent = "Submitted";
+        submitBtn.classList.remove("loading");
+        submitBtn.disabled = true;
+
+        // 显示订单 ID
+        const orderBox = document.createElement("div");
+        orderBox.style.marginTop = "10px";
+        orderBox.style.padding = "10px";
+        orderBox.style.border = "1px solid rgba(255,255,255,0.2)";
+        orderBox.style.borderRadius = "8px";
+        orderBox.style.color = "#fff";
+        orderBox.textContent = "Order ID: " + orderId;
+        document.querySelector(".container").appendChild(orderBox);
+
+    } catch (e) {
+        console.error(e);
+        alert("Submission failed, please try again");
+        submitBtn.disabled = false;
+        submitBtn.classList.remove("loading");
+        submitBtn.textContent = "Submit";
+    }
 };
+
 
 renderDropdown(); updateUSDT();
 </script>
