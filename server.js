@@ -1,8 +1,3 @@
-// ======================================================
-// NEXBIT FINAL STRUCTURED SERVER.JS
-// (Strikingly + Dashboard + Firebase + Telegram ready)
-// ======================================================
-
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
@@ -133,6 +128,9 @@ async function saveOrder(type, data) {
   const ts = now();
   const id = data.orderId || genOrderId(type.toUpperCase());
   const payload = { ...data, orderId: id, timestamp: ts, time_us: usTime(ts), status: "pending" };
+
+  console.log("Saving order:", payload);  // Log for debugging
+
   await db.ref(`orders/${type}/${id}`).set(payload);
   return id;
 }
@@ -232,4 +230,18 @@ app.post("/api/transaction/update", async (req, res) => {
 });
 
 // ======================================================
+// ✅ PROXY ROUTES FOR FRONTEND
+// ======================================================
+app.post("/proxy/:orderType", async (req, res) => {
+  const orderType = req.params.orderType;
+  const validTypes = ["recharge", "withdraw", "buysell"];
+  if (validTypes.includes(orderType)) {
+    const id = await saveOrder(orderType, req.body);
+    if (!id) return res.json({ ok: true, orderId: "local-" + now() });
+    res.json({ ok: true, orderId: id });
+  } else {
+    res.status(400).json({ ok: false, error: "Invalid order type" });
+  }
+});
+
 app.listen(PORT, () => console.log("🚀 Server running on", PORT));
