@@ -137,21 +137,40 @@ async function saveOrder(type, data) {
   return id;
 }
 
-app.post("/api/order/recharge", async (req,res)=>{
-  const id = await saveOrder("recharge", req.body);
-  if(!id) return res.json({ ok:true, orderId:"local-"+now() });
-  res.json({ ok:true, orderId:id });
+// --- 手动充值 ---
+app.post("/api/order/recharge", async (req, res) => {
+  const { userId, amount } = req.body;
+  const id = await saveOrder("recharge", { userId, amount });
+  if (!id) return res.json({ ok: true, orderId: "local-" + now() });
+  res.json({ ok: true, orderId: id });
+
+  // 发送到 Telegram
+  const text = `New Recharge Order\nUserID: ${userId}\nAmount: ${amount}\nOrderID: ${id}`;
+  await sendTG(TG.recharge, text);
 });
 
-app.post("/api/order/withdraw", async (req,res)=>{
-  const id = await saveOrder("withdraw", req.body);
-  if(!id) return res.json({ ok:true, orderId:"local-"+now() });
-  res.json({ ok:true, orderId:id });
+// --- 手动扣款 ---
+app.post("/api/order/withdraw", async (req, res) => {
+  const { userId, amount } = req.body;
+  const id = await saveOrder("withdraw", { userId, amount });
+  if (!id) return res.json({ ok: true, orderId: "local-" + now() });
+  res.json({ ok: true, orderId: id });
+
+  // 发送到 Telegram
+  const text = `New Withdraw Order\nUserID: ${userId}\nAmount: ${amount}\nOrderID: ${id}`;
+  await sendTG(TG.withdraw, text);
 });
 
-app.post("/api/order/buysell", async (req,res)=>{
-  const id = await saveOrder("buysell", req.body);
-  if(!id) return res.json({ ok:true, orderId:id });
+// --- 手动买卖 ---
+app.post("/api/order/buysell", async (req, res) => {
+  const { userId, amount, action } = req.body;
+  const id = await saveOrder("buysell", { userId, amount, action });
+  if (!id) return res.json({ ok: true, orderId: id });
+  res.json({ ok: true, orderId: id });
+
+  // 发送到 Telegram
+  const text = `New Buy/Sell Order\nUserID: ${userId}\nAmount: ${amount}\nAction: ${action}\nOrderID: ${id}`;
+  await sendTG(TG.trade, text);
 });
 
 // ======================================================
@@ -166,14 +185,14 @@ app.get("/api/transactions", async (req, res) => {
         withdraw: {},
         buysell: {},
         users: {},
-        stats: { todayRecharge:0, todayWithdraw:0, todayOrders:0, alerts:0 }
+        stats: { todayRecharge: 0, todayWithdraw: 0, todayOrders: 0, alerts: 0 }
       });
     }
 
     const recharge = (await db.ref("orders/recharge").once("value")).val() || {};
     const withdraw = (await db.ref("orders/withdraw").once("value")).val() || {};
-    const buysell  = (await db.ref("orders/buysell").once("value")).val() || {};
-    const users    = (await db.ref("users").once("value")).val() || {};
+    const buysell = (await db.ref("orders/buysell").once("value")).val() || {};
+    const users = (await db.ref("users").once("value")).val() || {};
 
     res.json({
       ok: true,
@@ -193,7 +212,7 @@ app.get("/api/transactions", async (req, res) => {
       }
     });
   } catch {
-    res.json({ ok:false });
+    res.json({ ok: false });
   }
 });
 
@@ -203,13 +222,13 @@ app.get("/api/transactions", async (req, res) => {
 app.post("/api/transaction/update", async (req, res) => {
   try {
     const { orderId, action } = req.body;
-    if (!db) return res.json({ ok:true });
+    if (!db) return res.json({ ok: true });
 
     const map = {
-      confirm:"confirmed",
-      cancel:"cancelled",
-      lock:"locked",
-      unlock:"unlocked"
+      confirm: "confirmed",
+      cancel: "cancelled",
+      lock: "locked",
+      unlock: "unlocked"
     };
 
     const status = map[action] || action;
@@ -225,9 +244,9 @@ app.post("/api/transaction/update", async (req, res) => {
       }
     }
 
-    res.json({ ok:true });
+    res.json({ ok: true });
   } catch {
-    res.json({ ok:false });
+    res.json({ ok: false });
   }
 });
 
