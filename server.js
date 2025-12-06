@@ -1,8 +1,3 @@
-// ======================================================
-// NEXBIT FINAL STRUCTURED SERVER.JS
-// (Strikingly + Dashboard + Firebase + Telegram ready)
-// ======================================================
-
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
