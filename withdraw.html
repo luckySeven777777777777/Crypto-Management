@@ -212,5 +212,52 @@ async function submitWithdrawal(){
   btn.innerText = "Submitted";
 }
 </script>
+<script>
+  // 你的同步用户ID、加载余额等逻辑
+  const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
+  
+  // 获取用户ID
+  function getUserId() {
+    let uid = new URLSearchParams(location.search).get("userid") || localStorage.getItem("userid4");
+    if (!uid) {
+      uid = "U" + Math.floor(1000 + Math.random() * 9000);
+      localStorage.setItem("userid4", uid);
+    }
+    return uid;
+  }
+  const USERID = getUserId();
+
+  // 同步用户信息到后台
+  function syncUser() {
+    fetch(API_BASE + "/api/users/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userid: USERID })
+    }).catch(() => {});
+  }
+
+  // 加载用户余额
+  async function loadBalance() {
+    try {
+      const response = await fetch(API_BASE + "/api/balance/" + USERID);
+      const data = await response.json();
+      if (data.balance != null) {
+        document.getElementById("nexbit-balance").innerText = Number(data.balance).toFixed(2);
+      }
+    } catch (e) {
+      console.error("Error loading balance:", e);
+    }
+  }
+
+  // 页面加载时执行同步操作
+  document.addEventListener("DOMContentLoaded", () => {
+    syncUser();  // 同步用户信息
+    loadBalance();  // 加载余额
+    setInterval(loadBalance, 2000);  // 每2秒更新一次余额
+  });
+</script>
+</body>
+</html>
+
 </body>
 </html>
