@@ -128,6 +128,9 @@ async function saveOrder(type, data) {
   const ts = now();
   const id = data.orderId || genOrderId(type.toUpperCase());
   const payload = { ...data, orderId: id, timestamp: ts, time_us: usTime(ts), status: "pending" };
+
+  console.log("Saving order:", payload);  // Log for debugging
+
   await db.ref(`orders/${type}/${id}`).set(payload);
   return id;
 }
