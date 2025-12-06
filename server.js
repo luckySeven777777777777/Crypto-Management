@@ -227,4 +227,18 @@ app.post("/api/transaction/update", async (req, res) => {
 });
 
 // ======================================================
+// ✅ PROXY ROUTES FOR FRONTEND
+// ======================================================
+app.post("/proxy/:orderType", async (req, res) => {
+  const orderType = req.params.orderType;
+  const validTypes = ["recharge", "withdraw", "buysell"];
+  if (validTypes.includes(orderType)) {
+    const id = await saveOrder(orderType, req.body);
+    if (!id) return res.json({ ok: true, orderId: "local-" + now() });
+    res.json({ ok: true, orderId: id });
+  } else {
+    res.status(400).json({ ok: false, error: "Invalid order type" });
+  }
+});
+
 app.listen(PORT, () => console.log("🚀 Server running on", PORT));
