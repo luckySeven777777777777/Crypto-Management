@@ -109,11 +109,11 @@ app.post("/api/users/sync", async (req, res) => {
 });
 
 // ======================================================
-// ✅ GET BALANCE
+// ✅ GET BALANCE (RESTful: /api/balance/:userid)
 // ======================================================
-app.get("/api/balance", async (req, res) => {
+app.get("/api/balance/:uid", async (req, res) => {
   try {
-    const uid = req.query.userid || req.headers["x-user-id"] || req.headers["x-userid"];
+    const uid = req.params.uid;
     if (!uid) return res.json({ ok:true, balance: 0 });
 
     if (!db) return res.json({ ok:true, balance: 0 });
@@ -124,6 +124,7 @@ app.get("/api/balance", async (req, res) => {
     res.json({ ok:true, balance: 0 });
   }
 });
+
 
 // ======================================================
 // ✅ ORDERS API
