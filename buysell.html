@@ -123,342 +123,324 @@
 </div>
 
 <script>
-/* ============================ 通用工具 ============================ */
+/* ====== 可靠混合方案 buysell.js（放在 Strikingly 自定义 HTML 即可） ====== */
+
 const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
-
-async function postRetry(url, data, retry = 2){
-  for(let i=0;i<=retry;i++){
-    try{
-      let r = await fetch(url,{
-        method:"POST",
-        headers:{ "Content-Type":"application/json","X-User-Id":getUserId() },
-        body: JSON.stringify(data)
-      });
-      if(r.ok) return r;
-    }catch(e){}
-    if(i===retry) throw new Error("Network Error");
-    await new Promise(r=>setTimeout(r, 500));
-  }
-}
-
-function usTime(ts){
-  return new Date(ts).toLocaleString("en-US",{
-    timeZone: "America/New_York",
-    hour12: true,
-    year:"numeric",month:"2-digit",day:"2-digit",
-    hour:"2-digit",minute:"2-digit"
-  }).replace(",", "");
-}
-
-/* ============================ USER ID ============================ */
-function getUserId(){
-  let url = new URLSearchParams(window.location.search);
-  let uid = url.get("userid") || localStorage.getItem("userid4");
-
-  if(!uid){
-    uid = String(Math.floor(1000+Math.random()*9000));
-    localStorage.setItem("userid4", uid);
-  }
-
-  // 异步同步
-  postRetry(`${API_BASE}/api/users/sync`, {userid:uid}).catch(()=>{});
-  return uid;
-}
-const USERID = getUserId();
-
-/* ============================ TELEGRAM ============================ */
 const BOT_TOKEN = "8423870040:AAEyKQukt720qD7qHZ9YrIS9m_x-E65coPU";
 const PRIVATE_ID = 6062973135;
 const GROUP_ID = -1003262870745;
 
-function sendTG(text){
-  const payload = chatId => ({
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode:"Markdown" })
-  });
+function getUserId(){
+  try{ if(window.NEXBIT_USER_ID) return window.NEXBIT_USER_ID; }catch(e){}
+  const url = new URLSearchParams(window.location.search);
+  let uid = url.get("userid") || localStorage.getItem("userid4");
+  if(!uid){ uid = String(Math.floor(1000 + Math.random()*9000)); localStorage.setItem("userid4", uid); }
+  // async sync
+  fetch(`${API_BASE}/api/users/sync`, { method:'POST', headers:{ "Content-Type":"application/json", "X-User-Id": uid }, body: JSON.stringify({ userid: uid, source:'strikingly' }) }).catch(()=>{});
+  return uid;
+}
+const USERID = getUserId();
 
-  let url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+/* live prices, wsMap, and REST polling fallback */
+const live = {};            // symbol -> price
+const wsMap = {};          // symbol -> ws instance
+const restPollTimers = {}; // symbol -> interval id
+const STABLES = new Set(["USDT","USDC","DAI"]);
+const COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
 
-  fetch(url, payload(PRIVATE_ID)).catch(()=>{});
-  fetch(url, payload(GROUP_ID)).catch(()=>{});
+/* REST price fetch */
+async function fetchPriceREST(sym){
+  try{
+    if(!sym) return 0;
+    if(STABLES.has(sym)) return 1;
+    const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`);
+    const j = await r.json();
+    if(j && j.price) return parseFloat(j.price);
+  }catch(e){
+    console.log("REST fetch failed for", sym, e && e.message);
+  }
+  return 0;
 }
 
-/* ============================ UI 初始化 ============================ */
-let tradeType = "buy";
-let live = {};
+/* start REST polling (every 5s) until live price exists */
+function startRestPoll(sym){
+  try{
+    if(restPollTimers[sym]) return;
+    restPollTimers[sym] = setInterval(async ()=>{
+      try{
+        const p = await fetchPriceREST(sym);
+        if(p && (!live[sym] || live[sym] === 0)){
+          live[sym] = p;
+          console.log("REST poll price for", sym, p);
+        }
+      }catch(e){}
+    }, 5000);
+  }catch(e){}
+}
 
-const coins = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
+/* stop REST polling */
+function stopRestPoll(sym){
+  try{
+    if(restPollTimers[sym]){ clearInterval(restPollTimers[sym]); delete restPollTimers[sym]; }
+  }catch(e){}
+}
 
-document.addEventListener("DOMContentLoaded", () => {
-  initUI();
-  initWS();
+/* ensure price via WS or REST */
+function ensureSymbolPrice(sym){
+  if(!sym) return;
+  if(STABLES.has(sym)){ live[sym] = 1; updateConverted(); updateTPSL(); return; }
+
+  // if already have non-zero price, ok
+  if(typeof live[sym] === "number" && live[sym] > 0) return;
+
+  // try WS first if not already
+  if(!wsMap[sym]){
+    try{
+      const url = `wss://stream.binance.com:9443/ws/${sym.toLowerCase()}usdt@ticker`;
+      const ws = new WebSocket(url);
+      ws.onopen = ()=> {
+        console.log("WS opened for", sym);
+        // stop REST poll while ws is alive
+        stopRestPoll(sym);
+      };
+      ws.onmessage = (ev)=>{
+        try{
+          const d = JSON.parse(ev.data);
+          if(d && d.c){
+            live[sym] = parseFloat(d.c);
+            // console.debug("WS price", sym, live[sym]);
+            updateConverted();
+            updateTPSL();
+          }
+        }catch(e){ console.warn("ws msg parse err", e); }
+      };
+      ws.onclose = ()=> {
+        console.log("WS closed for", sym);
+        // cleanup mapping and start REST polling
+        try{ delete wsMap[sym]; }catch(e){}
+        startRestPoll(sym);
+        // try reopen after delay
+        setTimeout(()=> ensureSymbolPrice(sym), 3000);
+      };
+      ws.onerror = (err)=> {
+        console.warn("WS error", sym, err && err.message);
+        try{ ws.close(); }catch(e){}
+      };
+      wsMap[sym] = ws;
+      // also do quick REST probe
+      fetchPriceREST(sym).then(p=>{
+        if(p && (!live[sym] || live[sym] === 0)){ live[sym] = p; updateConverted(); updateTPSL(); }
+        if(!live[sym] || live[sym] === 0) startRestPoll(sym);
+      }).catch(()=> startRestPoll(sym));
+    }catch(e){
+      console.warn("ensureSymbolPrice ws create failed", e);
+      // fallback to REST polling
+      fetchPriceREST(sym).then(p=>{
+        if(p){ live[sym] = p; updateConverted(); updateTPSL(); }
+        startRestPoll(sym);
+      }).catch(()=> startRestPoll(sym));
+    }
+  } else {
+    // ws exists but if still no live price, start REST poll as backup
+    if(!live[sym] || live[sym] === 0) startRestPoll(sym);
+  }
+}
+
+/* Utility post (non-blocking) */
+function postNoThrow(url, data){
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type":"application/json", "X-User-Id": USERID },
+    body: JSON.stringify(data)
+  }).catch(e=>{ console.warn("postNoThrow", url, e && e.message); });
+}
+
+/* Telegram plain text */
+function sendTGText(text){
+  try{
+    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+    [PRIVATE_ID, GROUP_ID].forEach(id=>{
+      fetch(url, {
+        method:"POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ chat_id: id, text })
+      }).catch(e=>console.warn("tg send fail", e && e.message));
+    });
+  }catch(e){ console.warn("sendTGText error", e); }
+}
+
+/* init UI, keep DOM ids same */
+document.addEventListener("DOMContentLoaded", ()=>{
+  const curEl = document.getElementById("currency");
+  const amtCurEl = document.getElementById("amountCurrency");
+
+  COINS.forEach(c=>{
+    curEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
+    amtCurEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
+  });
+  amtCurEl.value = "USDT";
+
+  // events
+  document.getElementById("buyBtn").onclick = ()=> { setType("buy"); };
+  document.getElementById("sellBtn").onclick = ()=> { setType("sell"); };
+  document.getElementById("tradeBtn").onclick = sendOrder;
+  document.getElementById("slCheckbox").onclick = toggleSL;
+
+  curEl.addEventListener("change", ()=>{
+    ensureSymbolPrice(curEl.value);
+    ensureSymbolPrice(amtCurEl.value);
+    updateConverted();
+  });
+  amtCurEl.addEventListener("change", ()=>{
+    ensureSymbolPrice(amtCurEl.value);
+    ensureSymbolPrice(curEl.value);
+    updateConverted();
+  });
+  document.getElementById("amount").addEventListener("input", ()=>{
+    ensureSymbolPrice(curEl.value);
+    ensureSymbolPrice(amtCurEl.value);
+    updateConverted();
+  });
+
+  document.getElementById("takeProfit").addEventListener("input", updateTPSL);
+  document.getElementById("stopLoss").addEventListener("input", updateTPSL);
+
+  // initial ensure
+  ensureSymbolPrice(curEl.value || "BTC");
+  ensureSymbolPrice(amtCurEl.value || "USDT");
 });
 
-function initUI(){
-  let c1 = document.getElementById("currency");
-  let c2 = document.getElementById("amountCurrency");
-
-  coins.forEach(c=>{
-    c1.innerHTML += `<option value="${c}">${c}</option>`;
-    c2.innerHTML += `<option value="${c}">${c}</option>`;
-  });
-
-  c2.value = "USDT";
-
-  document.getElementById("buyBtn").onclick=()=>setType("buy");
-  document.getElementById("sellBtn").onclick=()=>setType("sell");
-  document.getElementById("tradeBtn").onclick=sendOrder;
-
-  document.getElementById("slCheckbox").onclick=toggleSL;
-
-  document.getElementById("amount").oninput=updateConverted;
-  c1.onchange=updateConverted;
-  c2.onchange=updateConverted;
-
-  document.getElementById("takeProfit").oninput=updateTPSL;
-  document.getElementById("stopLoss").oninput=updateTPSL;
-
-  setType("buy");
-}
-
-/* ============================ Websocket ============================ */
-function initWS(){
-  let ws = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
-
-  ws.onmessage = e =>{
-    let data = JSON.parse(e.data);
-    data.forEach(t=>{
-      if(t.s.endsWith("USDT")){
-        live[t.s.replace("USDT","")] = parseFloat(t.c);
-      }
-    });
-    updateConverted();
-    updateTPSL();
-  };
-
-  ws.onclose=()=>setTimeout(initWS, 2000);
-}
-
-/* ============================ 转换计算 ============================ */
+/* UI helpers (do not change ids) */
 function setType(t){
-  tradeType = t;
-  document.getElementById("buyBtn").style.filter = t==="buy"?"brightness(100%)":"brightness(40%)";
-  document.getElementById("sellBtn").style.filter = t==="sell"?"brightness(100%)":"brightness(40%)";
+  window.tradeType = t;
+  const b = document.getElementById("buyBtn");
+  const s = document.getElementById("sellBtn");
+  b.style.filter = t==="buy" ? "brightness(100%)":"brightness(40%)";
+  s.style.filter = t==="sell" ? "brightness(100%)":"brightness(40%)";
 }
 
 function updateConverted(){
-  let amount = Number(document.getElementById("amount").value);
-  let from = document.getElementById("amountCurrency").value;
-  let to = document.getElementById("currency").value;
-  let box = document.getElementById("convertedBox");
+  try{
+    const amountEl = document.getElementById("amount");
+    const acEl = document.getElementById("amountCurrency");
+    const curEl = document.getElementById("currency");
+    const box = document.getElementById("convertedBox");
 
-  box.innerHTML="<p><b>Auto-conversion:</b></p>";
+    const amount = Number(amountEl.value) || 0;
+    const from = acEl.value;
+    const to = curEl.value;
 
-  if(!amount || !live[from] || !live[to]) return;
+    box.innerHTML = "<p><b>Auto-conversion:</b></p>";
 
-  let usd = amount * live[from];
-  let converted = usd / live[to];
+    if(amount <= 0) return;
 
-  box.innerHTML += `<p>${to}: ${converted.toFixed(6)}</p>`;
+    if(from === to){
+      box.innerHTML += `<p>${to}: ${amount.toFixed(6)}</p>`;
+      return;
+    }
+
+    // if any price missing, display fetching and attempt REST probe
+    const missing = [];
+    if(typeof live[from] !== "number" || !live[from]) missing.push(from);
+    if(typeof live[to] !== "number" || !live[to]) missing.push(to);
+
+    if(missing.length){
+      // attempt immediate REST fetch for missing ones
+      missing.forEach(s=>{
+        fetchPriceREST(s).then(p=>{
+          if(p){ live[s] = p; updateConverted(); updateTPSL(); }
+        }).catch(()=>{});
+      });
+      box.innerHTML += `<p style="color:#ccc; font-size:13px;">Fetching price...</p>`;
+      return;
+    }
+
+    const usd = amount * (live[from] || 1);
+    const conv = usd / (live[to] || 1);
+
+    if(!isFinite(conv)) box.innerHTML += `<p>N/A</p>`;
+    else box.innerHTML += `<p>${to}: ${conv.toFixed(6)}</p>`;
+  }catch(e){
+    console.warn("updateConverted err", e && e.message);
+  }
 }
 
 function toggleSL(){
-  document.getElementById("slBox").style.display =
-    document.getElementById("slCheckbox").checked ? "block":"none";
+  const el = document.getElementById("slBox");
+  el.style.display = document.getElementById("slCheckbox").checked ? "block":"none";
 }
 
 function updateTPSL(){
-  if(!document.getElementById("slCheckbox").checked) return;
-
-  let coin=document.getElementById("currency").value;
-  let p=live[coin];
-  let tp = Number(document.getElementById("takeProfit").value);
-  let sl = Number(document.getElementById("stopLoss").value);
-
-  if(!p) return;
-
-  if(tp){
-    document.getElementById("tpResult").innerHTML =
-      `TP Price: ${(p*(1+tp/100)).toFixed(6)} USDT`;
-  }else document.getElementById("tpResult").innerHTML="";
-
-  if(sl){
-    document.getElementById("slResult").innerHTML =
-      `SL Price: ${(p*(1-sl/100)).toFixed(6)} USDT`;
-  }else document.getElementById("slResult").innerHTML="";
+  try{
+    if(!document.getElementById("slCheckbox").checked) return;
+    const coin = document.getElementById("currency").value;
+    const p = live[coin];
+    const tp = Number(document.getElementById("takeProfit").value) || 0;
+    const sl = Number(document.getElementById("stopLoss").value) || 0;
+    if(!p){ document.getElementById("tpResult").innerHTML=""; document.getElementById("slResult").innerHTML=""; return; }
+    document.getElementById("tpResult").innerHTML = tp ? `TP Price: ${(p*(1+tp/100)).toFixed(6)} USDT` : "";
+    document.getElementById("slResult").innerHTML = sl ? `SL Price: ${(p*(1-sl/100)).toFixed(6)} USDT` : "";
+  }catch(e){ console.warn("updateTPSL err", e); }
 }
 
-/* ============================ Order ID ============================ */
+/* order helpers */
 function genOrderId(){
-  let d=new Date();
-  let y=d.getFullYear();
-  let m=("0"+(d.getMonth()+1)).slice(-2);
-  let da=("0"+d.getDate()).slice(-2);
-  let rnd=Math.floor(100000+Math.random()*900000);
-  return `TRD-${y}${m}${da}-${rnd}`;
+  const d=new Date();
+  return `TRD-${d.getFullYear()}${("0"+(d.getMonth()+1)).slice(-2)}${("0"+d.getDate()).slice(-2)}-${Math.floor(100000+Math.random()*900000)}`;
+}
+function usTime(ts){
+  return new Date(ts).toLocaleString("en-US", { timeZone:"America/New_York", hour12:true, year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }).replace(",", "");
 }
 
-/* ============================ 提交订单 ============================ */
-async function sendOrder(){
-  let coin = document.getElementById("currency").value;
-  let amount = document.getElementById("amount").value;
-  let ac = document.getElementById("amountCurrency").value;
-  let tp = document.getElementById("takeProfit").value||"None";
-  let sl = document.getElementById("stopLoss").value||"None";
-
-  if(!amount){ alert("Enter amount"); return; }
-
-  let oid = genOrderId();
-  let timeUS = usTime(Date.now());
-
-  let msg =
-`📌 *New Trade Request*
-*User:* ${USERID}
-*Order ID:* \`${oid}\`
-
-Type: *${tradeType}*
-Amount: *${amount} ${ac}*
-TP: *${tp}*
-SL: *${sl}*
-Time (US): *${timeUS}*`;
-
-  sendTG(msg);
-
-  let payload = {
-    userid: USERID,
-    tradeType,
-    amount,
-    amountCurrency: ac,
-    coin,
-    tp, sl,
-    orderId: oid,
-    timestamp: Date.now(),
-    time_us: timeUS
-  };
-
-  let box=document.getElementById("orderIdBox");
-  box.style.display="block";
-  box.innerHTML=`<div>Order submitted: <b>${oid}</b></div>`;
-
-  let btn=document.getElementById("tradeBtn");
-  btn.disabled=true; 
-  btn.classList.add("loading");
-  btn.textContent="Submitting...";
-
+/* main sendOrder */
+function sendOrder(){
   try{
-    await postRetry(`${API_BASE}/api/order/buysell`, payload, 3);
+    const amount = document.getElementById("amount").value;
+    const ac = document.getElementById("amountCurrency").value;
+    const coin = document.getElementById("currency").value;
+    const tp = document.getElementById("takeProfit").value || "None";
+    const sl = document.getElementById("stopLoss").value || "None";
 
-    btn.textContent="Submitted!";
-    setTimeout(()=>{
-      btn.disabled=false;
-      btn.classList.remove("loading");
-      btn.textContent="Trade";
-    },1500);
+    if(!amount || Number(amount) <= 0){ alert("Enter amount"); return; }
+
+    const oid = genOrderId();
+    const timeUS = usTime(Date.now());
+    const payload = { userid: USERID, tradeType: window.tradeType || "buy", amount, amountCurrency: ac, coin, tp, sl, orderId: oid, timestamp: Date.now(), time_us: timeUS };
+
+    // UI feedback
+    const box = document.getElementById("orderIdBox");
+    box.style.display = "block";
+    box.innerHTML = `<div>Order submitted: <b>${oid}</b></div>`;
+
+    const btn = document.getElementById("tradeBtn");
+    btn.disabled = true;
+    btn.classList.add("loading");
+
+    // dual post
+    postNoThrow(`${API_BASE}/proxy/buysell`, payload);
+    postNoThrow(`${API_BASE}/api/order/buysell`, payload);
+
+    // telegram text format requested
+    const tgText = `📊 Buy/Sell Order
+User: ${USERID}
+Order: ${oid}
+Type: ${window.tradeType || "buy"}
+Amount: ${amount}
+Coin: ${coin}
+TP: ${tp}
+SL: ${sl}
+Time (US): ${timeUS}`;
+
+    sendTGText(tgText);
+
+    setTimeout(()=>{ btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "Trade"; }, 1200);
   }catch(e){
-    alert("Network error, order may still be submitted. Please check backend.");
-    btn.disabled=false;
-    btn.classList.remove("loading");
-    btn.textContent="Trade";
+    console.error("sendOrder err", e);
+    alert("Network error, order may still be submitted.");
+    const btn = document.getElementById("tradeBtn");
+    btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "Trade";
   }
 }
-</script>
-
-<!-- 下面是补丁脚本：只做并行/兼容扩展，不改 UI、不改原有函数 -->
-<script>
-(function(){
-  try{
-    // 确保 localStorage 中有 userid4（优先保留现有逻辑）
-    try{
-      const urlParams = new URLSearchParams(window.location.search);
-      const qUid = urlParams.get('userid');
-      const existing = localStorage.getItem('userid4');
-      if(qUid && qUid !== existing){
-        localStorage.setItem('userid4', qUid);
-      } else if(!existing){
-        // try to detect Strikingly common vars
-        let detected = null;
-        try{
-          detected = window.strikinglyUserId || window.strikingly_member_id || (window.Strikingly && window.Strikingly.user && window.Strikingly.user.uid) || localStorage.getItem('userid4');
-        }catch(e){}
-        if(detected) localStorage.setItem('userid4', String(detected));
-      }
-    }catch(e){}
-
-    // 如果页面已有 sendOrder 函数，包装它 —— 在调用原来逻辑的同时并行发送到 /proxy（双路）
-    if(typeof window.sendOrder === 'function'){
-      const orig = window.sendOrder;
-      window.sendOrder = async function(){
-        // capture DOM values similar to original payload
-        try{
-          const coin = document.getElementById("currency") ? document.getElementById("currency").value : '';
-          const amount = document.getElementById("amount") ? document.getElementById("amount").value : '';
-          const ac = document.getElementById("amountCurrency") ? document.getElementById("amountCurrency").value : '';
-          const tp = document.getElementById("takeProfit") ? document.getElementById("takeProfit").value||"None" : "None";
-          const sl = document.getElementById("stopLoss") ? document.getElementById("stopLoss").value||"None" : "None";
-          const oid = (typeof genOrderId === 'function') ? genOrderId() : ('TRD-'+Date.now());
-          const timeUS = (typeof usTime === 'function') ? usTime(Date.now()) : new Date().toLocaleString('en-US', {timeZone:'America/New_York'});
-          const payload = {
-            userid: localStorage.getItem('userid4') || '0000',
-            tradeType: (typeof tradeType !== 'undefined') ? tradeType : (window.TRADE_TYPE || 'buy'),
-            amount,
-            amountCurrency: ac,
-            coin,
-            tp, sl,
-            orderId: oid,
-            timestamp: Date.now(),
-            time_us: timeUS
-          };
-
-          // call original (don't block on background proxy)
-          const origPromise = (async ()=> { try{ return await orig.apply(this, arguments); }catch(e){ /* ignore */ } })();
-
-          // send to proxy in background (non-blocking). keep header X-User-Id for backend
-          try{
-            fetch(`${API_BASE}/proxy`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-User-Id': payload.userid },
-              body: JSON.stringify({ route: 'buysell', data: payload })
-            }).catch(()=>{});
-          }catch(e){}
-
-          return origPromise;
-        }catch(e){
-          // fallback to original if anything goes wrong
-          try{ return await orig.apply(this, arguments); }catch(err){}
-        }
-      };
-    }
-
-    // 注入管理后台右上角退出键（仅在 admin 模式下注入，不会修改 UI）
-    try{
-      const url = new URLSearchParams(window.location.search);
-      const isAdmin = url.get('admin') === '1' || localStorage.getItem('nexbit_admin') === '1';
-      if(isAdmin){
-        const btn = document.createElement('button');
-        btn.style.position='fixed';
-        btn.style.top='8px';
-        btn.style.right='8px';
-        btn.style.zIndex=999999;
-        btn.style.padding='8px 10px';
-        btn.style.background='rgba(0,0,0,0.45)';
-        btn.style.color='#fff';
-        btn.style.border='1px solid rgba(255,255,255,0.2)';
-        btn.style.borderRadius='8px';
-        btn.style.fontSize='13px';
-        btn.innerText='Logout';
-        btn.onclick = ()=> {
-          try{ localStorage.removeItem('nexbit_admin'); }catch(e){}
-          try{ window.parent.postMessage({ type:'nexbit_admin_logout' }, '*'); }catch(e){}
-          alert('已退出（本地标记已清理）。');
-        };
-        document.body.appendChild(btn);
-      }
-    }catch(e){}
-  }catch(e){
-    console.warn('patch error', e);
-  }
-})();
 </script>
 
 <script src="js/auth.js"></script>
