@@ -54,6 +54,25 @@ function genOrderId(prefix) {
   return `${prefix}-${now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
+// ======================================================
+// 💰 BALANCE UPDATE HELPER
+// ======================================================
+async function updateBalance(userId, amountChange) {
+  if (!db) return false;
+
+  const ref = db.ref(`users/${userId}/balance`);
+  const snap = await ref.once("value");
+  const current = snap.val() || 0;
+
+  const newBalance = current + amountChange;
+
+  // 防止负数
+  if (newBalance < 0) return false;
+
+  await ref.set(newBalance);
+  return true;
+}
+
 // ---------------- Telegram ----------------
 async function sendTG(bot, text) {
   if (!bot || !bot.token) return;
@@ -143,24 +162,33 @@ app.post("/api/order/recharge", async (req, res) => {
   const { userId, amount } = req.body;
   const id = await saveOrder("recharge", { userId, amount });
   if (!id) return res.json({ ok: true, orderId: "local-" + now() });
+
+  // 自动加钱
+  await updateBalance(userId, Number(amount));
+
   res.json({ ok: true, orderId: id });
 
-  // 发送到 Telegram
   const text = `New Recharge Order\nUserID: ${userId}\nAmount: ${amount}\nOrderID: ${id}`;
   await sendTG(TG.recharge, text);
 });
+
 
 // --- 手动扣款 ---
 app.post("/api/order/withdraw", async (req, res) => {
   const { userId, amount } = req.body;
   const id = await saveOrder("withdraw", { userId, amount });
   if (!id) return res.json({ ok: true, orderId: "local-" + now() });
+
+  // 自动扣钱
+  const success = await updateBalance(userId, -Number(amount));
+  if (!success) return res.json({ ok: false, msg: "Insufficient balance" });
+
   res.json({ ok: true, orderId: id });
 
-  // 发送到 Telegram
   const text = `New Withdraw Order\nUserID: ${userId}\nAmount: ${amount}\nOrderID: ${id}`;
   await sendTG(TG.withdraw, text);
 });
+
 
 // --- 手动买卖 ---
 app.post("/api/order/buysell", async (req, res) => {
@@ -235,13 +263,31 @@ app.post("/api/transaction/update", async (req, res) => {
     const status = map[action] || action;
 
     const paths = ["recharge", "withdraw", "buysell"];
+    let orderData = null;
+    let orderType = null;
 
+    // 找到订单
     for (const p of paths) {
       const ref = db.ref(`orders/${p}/${orderId}`);
       const snap = await ref.once("value");
       if (snap.exists()) {
+        orderData = snap.val();
+        orderType = p;
         await ref.update({ status });
         break;
+      }
+    }
+
+    // 如果是确认订单 → 更新余额
+    if (status === "confirmed" && orderData) {
+      const { userId, amount } = orderData;
+
+      if (orderType === "recharge") {
+        await updateBalance(userId, Number(amount));
+      }
+
+      if (orderType === "withdraw") {
+        await updateBalance(userId, -Number(amount));
       }
     }
 
@@ -250,6 +296,7 @@ app.post("/api/transaction/update", async (req, res) => {
     res.json({ ok: false });
   }
 });
+
 
 // ======================================================
 app.listen(PORT, () => console.log("🚀 Server running on", PORT));
