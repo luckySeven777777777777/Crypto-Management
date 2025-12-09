@@ -1,19 +1,15 @@
 {
-  "name": "nexbit-backend",
+  "name": "nexbit-server-final",
   "version": "1.0.0",
-  "description": "NEXBIT Fullstack Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.6.8",
+    "axios": "^1.4.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
+    "dotenv": "^16.0.0",
     "express": "^4.18.2",
     "firebase-admin": "^11.10.1"
-  },
-  "engines": {
-    "node": ">=18.x"
   }
 }

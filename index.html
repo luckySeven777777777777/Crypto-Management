@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Nexbit Wallet Widget (Strikingly)</title>
+<style>
+  :root{--bg:transparent;--text:#ffffff;--muted:#bfbfbf;--accent:#00ff88}
+  body{margin:0;background:var(--bg);font-family:Arial, Helvetica, sans-serif;color:var(--text)}
+  .wallet-wrap{width:100%;max-width:420px;margin:20px auto;padding:16px 12px;text-align:center;background:transparent}
+  #wallet-amount{font-size:48px;font-weight:700;margin-bottom:10px}
+  .info-row{display:flex;justify-content:center;gap:14px;font-size:16px;margin-top:8px}
+  .chip{padding:6px 14px;border-radius:12px;background:rgba(0,255,0,0.08);color:var(--accent);font-weight:700;min-width:70px;text-align:center}
+  #wallet-status{font-size:12px;color:var(--muted);margin-top:6px}
+  .small{font-size:12px;color:var(--muted);margin-top:8px}
+  .button{display:inline-block;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.06);color:var(--text);cursor:pointer;margin-top:8px}
+  /* make it transparent-friendly for Strikingly */
+</style>
+</head>
+<body>
+<div class="wallet-wrap" id="wallet-widget" data-user-id="USER_ID_HERE" data-api-base="https://YOUR-RAILWAY-DOMAIN">
+  <div id="wallet-amount">$0.00</div>
+
+  <div class="info-row">
+    <div id="wallet-deposit-amt" class="chip">+$0</div>
+    <div id="wallet-deposit-pct" class="chip">+%0</div>
+  </div>
+
+  <div id="wallet-status">同步中...</div>
+  <div class="small">自动同步每 10 秒 · 如需手动刷新请按下</div>
+  <div class="button" id="wallet-refresh">刷新</div>
+</div>
+
+<script>
+/*
+  Nexbit Strikingly Widget (vanilla JS)
+  - Put this single file into the Strikingly HTML block
+  - Replace: data-user-id and data-api-base attributes
+  - data-api-base must be your Railway app URL, e.g. https://crypto-management-production-xxxxx.up.railway.app
+*/
+
+(function(){
+  const root = document.getElementById("wallet-widget");
+  if(!root) return console.warn("wallet-widget not found");
+  const uid = root.dataset.userId || "";
+  const API = (root.dataset.apiBase || "").replace(/\/$/,"");
+  const elAmount = document.getElementById("wallet-amount");
+  const elAmtChip = document.getElementById("wallet-deposit-amt");
+  const elPctChip = document.getElementById("wallet-deposit-pct");
+  const elStatus = document.getElementById("wallet-status");
+  const btnRefresh = document.getElementById("wallet-refresh");
+
+  if(!API || API.includes("YOUR-RAILWAY-DOMAIN")) {
+    elStatus.innerText = "请设置 data-api-base 到你的 Railway 域名";
+    return;
+  }
+  if(!uid || uid==="USER_ID_HERE") {
+    elStatus.innerText = "请设置 data-user-id 为用户 ID";
+    return;
+  }
+
+  // Helper: safe parse float and format money
+  function fmtMoney(n){
+    if(typeof n!=="number") n = Number(n) || 0;
+    return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  }
+
+  // Fetch balance (GET /api/balance/:uid)
+  async function fetchBalance(){
+    try{
+      elStatus.innerText = "同步中...";
+      const res = await fetch(API + "/api/balance/" + encodeURIComponent(uid));
+      const j = await res.json();
+      // server returns { ok:true, balance: NUMBER } OR { success:true, balance: NUMBER }
+      const balance = (j.balance!==undefined)? Number(j.balance) : (j.data && j.data.balance) ? Number(j.data.balance):0;
+      updateUI(balance);
+      elStatus.innerText = "已同步：" + new Date().toLocaleTimeString();
+    }catch(err){
+      console.error("fetchBalance error", err);
+      elStatus.innerText = "同步失败";
+    }
+  }
+
+  // Call sync endpoint so server registers the user (POST /api/users/sync)
+  async function syncUser(){
+    try{
+      await fetch(API + "/api/users/sync", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ userId: uid })
+      });
+    }catch(e){/* ignore */}
+  }
+
+  // UI update with simple delta animation
+  let last = 0;
+  function updateUI(balance){
+    const delta = Number(balance) - Number(last || 0);
+    const pct = last ? ((delta / last) * 100) : 0;
+    elAmount.innerText = "$" + fmtMoney(balance);
+    elAmtChip.innerText = (delta>=0?"+":"") + fmtMoney(delta);
+    elPctChip.innerText = (pct>=0?"+":"") + Math.abs(pct).toFixed(2) + "%";
+    last = balance;
+  }
+
+  // initial sync + fetch
+  syncUser().then(fetchBalance);
+
+  // poll every 10 seconds
+  const interval = setInterval(fetchBalance, 10000);
+
+  // manual refresh button
+  btnRefresh.addEventListener("click", function(){
+    fetchBalance();
+  });
+
+  // expose for debugging
+  window.NEXBIT = { fetchBalance, syncUser, API, uid };
+})();
+</script>
+</body>
+</html>
