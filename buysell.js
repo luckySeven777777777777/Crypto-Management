@@ -4,7 +4,7 @@ async function loadBuySellPage() {
     const tbody = document.querySelector("#tblBuySell tbody");
     tbody.innerHTML = "<tr><td colspan='8'>Loading...</td></tr>";
 
-    const list = await loadBuySell();
+    const list = await loadBuySell();  // 已在 nexbit-api.js 内定义
 
     tbody.innerHTML = "";
 
@@ -26,8 +26,7 @@ async function loadBuySellPage() {
 
 document.addEventListener("DOMContentLoaded", loadBuySellPage);
 
-// 关键修复：避免覆盖其他 SSE 监听
-if (!window._buysellEventAdded) {
-    window._buysellEventAdded = true;
-    window.addEventListener("orderEvent", loadBuySellPage);
-}
+// SSE 自动刷新
+window.onOrderEvent = function () {
+    loadBuySellPage();
+};

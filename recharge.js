@@ -1,10 +1,10 @@
-// withdraw.js
+// recharge.js
 
-async function loadWithdrawPage() {
-    const tbody = document.querySelector("#tblWithdraw tbody");
+async function loadRechargePage() {
+    const tbody = document.querySelector("#tblRecharge tbody");
     tbody.innerHTML = "<tr><td colspan='8'>Loading...</td></tr>";
 
-    const list = await loadWithdraw();
+    const list = await loadRecharge(); // 来自 nexbit-api.js
 
     tbody.innerHTML = "";
 
@@ -24,9 +24,9 @@ async function loadWithdrawPage() {
     });
 }
 
-document.addEventListener("DOMContentLoaded", loadWithdrawPage);
+document.addEventListener("DOMContentLoaded", loadRechargePage);
 
 // SSE 自动刷新
 window.onOrderEvent = function () {
-    loadWithdrawPage();
+    loadRechargePage();
 };
