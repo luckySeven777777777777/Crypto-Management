@@ -1,10 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Crypto Trade (Single Submit Fix)</title>
-  <style>
+<style>
     body { font-family: Arial; background: transparent; color: white; padding:20px; margin:0; }
     .container { max-width:450px; margin:0 auto; width:100%; }
     h2 { text-align:center; margin-bottom:20px; }
@@ -14,39 +8,72 @@
     .sell-btn { border-color:#e67e22; color:#e67e22; }
 
     input, select {
-      width:100%; padding:12px; margin-top:8px; border-radius:8px; border:1px solid #ccc;
-      background: transparent !important; color:white !important; font-size:16px; box-sizing:border-box;
+      width:100%;
+      padding:12px;
+      margin-top:8px;
+      border-radius:8px;
+      border:1px solid #ccc;
+      background: transparent !important;
+      color:white !important;
+      font-size:16px;
+      box-sizing:border-box;
     }
-    select option { background: white !important; color: black !important; }
 
-    .trade-btn {
-      width:100%; padding:12px; border-radius:8px; border:2px solid #3498db;
-      background:transparent; color:#3498db; margin-top:20px; cursor:pointer; font-size:16px;
+    select option {
+      background: white !important;
+      color: black !important;
+    }
+
+    .trade-btn { 
+        width:100%; 
+        padding:12px; 
+        border-radius:8px; 
+        border:2px solid #3498db; 
+        background:transparent; 
+        color:#3498db; 
+        margin-top:20px; 
+        cursor:pointer; 
+        font-size:16px;
     }
 
     .adjusted-box p { margin:5px 0; }
-    .stop-box input[type="number"] { width:48%; display:inline-block; margin-right:4%; margin-top:5px; }
 
-    #orderIdBox {
-      margin-top:15px; padding:12px; border:1px solid #aaa; border-radius:8px;
-      font-size:15px; display:none;
+    .stop-box input[type="number"] {
+      width:48%;
+      display:inline-block;
+      margin-right:4%;
+      margin-top:5px;
     }
 
-    .hint-cn { margin-top:6px; color:#bbb; font-size:12px; line-height:1.4; }
+    #orderIdBox {
+      margin-top:15px;
+      padding:12px;
+      border:1px solid #aaa;
+      border-radius:8px;
+      font-size:15px;
+      display:none;
+    }
+
+    .hint-cn {
+      margin-top:6px;
+      color:#bbb;
+      font-size:12px;
+      line-height:1.4;
+    }
 
     .trade-btn.loading { opacity:0.7; cursor:not-allowed; position:relative; }
     .trade-btn.loading::after {
-      content:""; width:18px; height:18px; border:3px solid rgba(52,152,219,0.6);
-      border-top-color:#3498db; border-radius:50%; animation:spin 0.8s linear infinite;
-      position:absolute; right:12px; top:50%; transform:translateY(-50%);
+      content:""; width:18px; height:18px; border:3px solid rgba(52,152,219,0.6); border-top-color:#3498db; border-radius:50%; animation:spin 0.8s linear infinite; position:absolute; right:12px; top:50%; transform:translateY(-50%);
     }
     @keyframes spin { from{transform:translateY(-50%) rotate(0);} to{transform:translateY(-50%) rotate(360deg);} }
-  </style>
-</head>
-<body>
+</style>
+
 <div class="container">
+
   <div id="orderIdBox"></div>
+
   <h2></h2>
+
   <div class="transaction-type">
     <button class="btn buy-btn" id="buyBtn">Buy</button>
     <button class="btn sell-btn" id="sellBtn">Sell</button>
@@ -66,178 +93,22 @@
   </div>
 
   <div class="stop-box">
-    <label><input type="checkbox" id="slCheckbox"> Enable Stop-loss/Take-profit</label>
+    <label>
+      <input type="checkbox" id="slCheckbox"> 
+      Enable Stop-loss/Take-profit
+    </label>
+
     <div id="slBox" style="display:none; margin-top:6px;">
-      <input type="number" id="takeProfit" placeholder="TP %">
-      <input type="number" id="stopLoss" placeholder="SL %">
-      <div id="tpResult" style="color:#7ed957; margin-top:6px;"></div>
-      <div id="slResult" style="color:#ff8c69;"></div>
+        <input type="number" id="takeProfit" placeholder="TP %">
+        <input type="number" id="stopLoss" placeholder="SL %">
+
+        <div id="tpResult" style="color:#7ed957; margin-top:6px;"></div>
+        <div id="slResult" style="color:#ff8c69;"></div>
     </div>
   </div>
 
   <button class="trade-btn" id="tradeBtn">Trade</button>
 
-  <p class="hint-cn">🤖 Please ensure you have completed your deposit...</p>
+  <p class="hint-cn">🤖 Please ensure you have completed your deposit.</p>
+
 </div>
-
-<script>
-/* === Only submit once fix === */
-let submitting = false;
-
-/* Original code kept, only edited sendOrder() */
-
-const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
-const BOT_TOKEN = "8423870040:AAEyKQukt720qD7qHZ9YrIS9m_x-E65coPU";
-const PRIVATE_ID = 6062973135;
-const GROUP_ID = -1003262870745;
-
-function getUserId(){
-  try{ if(window.NEXBIT_USER_ID) return window.NEXBIT_USER_ID; }catch(e){}
-  const url = new URLSearchParams(window.location.search);
-  let uid = url.get("userid") || localStorage.getItem("userid4");
-  if(!uid){ uid = String(Math.floor(1000 + Math.random()*9000)); localStorage.setItem("userid4", uid); }
-  fetch(`${API_BASE}/api/users/sync`, { method:'POST', headers:{ "Content-Type":"application/json", "X-User-Id": uid }, body: JSON.stringify({ userid: uid, source:'strikingly' }) }).catch(()=>{});
-  return uid;
-}
-const USERID = getUserId();
-
-const live = {}; const wsMap = {}; const restPollTimers = {}; const STABLES = new Set(["USDT","USDC","DAI"]);
-const COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
-
-async function fetchPriceREST(sym){ try{ if(!sym) return 0; if(STABLES.has(sym)) return 1; const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`); const j = await r.json(); if(j && j.price) return parseFloat(j.price);}catch(e){} return 0; }
-function startRestPoll(sym){ if(restPollTimers[sym]) return; restPollTimers[sym] = setInterval(async ()=>{ const p = await fetchPriceREST(sym); if(p && (!live[sym] || live[sym]===0)){ live[sym] = p; updateConverted(); updateTPSL(); } }, 5000); }
-function stopRestPoll(sym){ if(restPollTimers[sym]){ clearInterval(restPollTimers[sym]); delete restPollTimers[sym]; }}
-function ensureSymbolPrice(sym){ if(!sym)return; if(STABLES.has(sym)){ live[sym]=1; updateConverted(); updateTPSL(); return; } if(typeof live[sym]==="number" && live[sym]>0) return;
-  if(!wsMap[sym]){
-    try{
-      const url = `wss://stream.binance.com:9443/ws/${sym.toLowerCase()}usdt@ticker`;
-      const ws = new WebSocket(url);
-      ws.onopen = ()=>{ stopRestPoll(sym); };
-      ws.onmessage = ev=>{ try{ const d = JSON.parse(ev.data); if(d && d.c){ live[sym] = parseFloat(d.c); updateConverted(); updateTPSL(); }}catch(e){} };
-      ws.onclose = ()=>{ delete wsMap[sym]; startRestPoll(sym); setTimeout(()=> ensureSymbolPrice(sym),3000); };
-      ws.onerror = ()=>{ try{ ws.close(); }catch(e){} };
-      wsMap[sym] = ws;
-      fetchPriceREST(sym).then(p=>{ if(p && (!live[sym]||live[sym]===0)){ live[sym]=p; updateConverted(); updateTPSL(); } if(!live[sym]||live[sym]===0) startRestPoll(sym); });
-    }catch(e){ fetchPriceREST(sym).then(p=>{ if(p){ live[sym]=p; updateConverted(); updateTPSL(); } startRestPoll(sym); }); }
-  } else {
-    if(!live[sym] || live[sym]===0) startRestPoll(sym);
-  }
-}
-
-function postNoThrow(url,data){ return fetch(url,{ method:"POST", headers:{"Content-Type":"application/json","X-User-Id":USERID}, body:JSON.stringify(data)}).catch(()=>{}); }
-function sendTGText(text){ const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`; [PRIVATE_ID,GROUP_ID].forEach(id=>{ fetch(url,{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ chat_id:id, text })}).catch(()=>{}); }); }
-
-document.addEventListener("DOMContentLoaded", ()=>{
-  const curEl = document.getElementById("currency"); const amtCurEl = document.getElementById("amountCurrency");
-  COINS.forEach(c=>{ curEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`); amtCurEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`); });
-  amtCurEl.value="USDT";
-  document.getElementById("buyBtn").onclick = ()=> setType("buy");
-  document.getElementById("sellBtn").onclick = ()=> setType("sell");
-  document.getElementById("tradeBtn").onclick = sendOrder;
-  document.getElementById("slCheckbox").onclick = toggleSL;
-  curEl.addEventListener("change", ()=>{ ensureSymbolPrice(curEl.value); ensureSymbolPrice(amtCurEl.value); updateConverted(); });
-  amtCurEl.addEventListener("change", ()=>{ ensureSymbolPrice(amtCurEl.value); ensureSymbolPrice(curEl.value); updateConverted(); });
-  document.getElementById("amount").addEventListener("input", ()=>{ ensureSymbolPrice(curEl.value); ensureSymbolPrice(amtCurEl.value); updateConverted(); });
-  document.getElementById("takeProfit").addEventListener("input", updateTPSL);
-  document.getElementById("stopLoss").addEventListener("input", updateTPSL);
-  ensureSymbolPrice(curEl.value||"BTC"); ensureSymbolPrice(amtCurEl.value||"USDT");
-});
-
-function setType(t){ window.tradeType = t; const b=document.getElementById("buyBtn"); const s=document.getElementById("sellBtn"); b.style.filter=t==="buy"?"brightness(100%)":"brightness(40%)"; s.style.filter=t==="sell"?"brightness(100%)":"brightness(40%)"; }
-function updateConverted(){ try{ const amountEl=document.getElementById("amount"); const acEl=document.getElementById("amountCurrency"); const curEl=document.getElementById("currency"); const box=document.getElementById("convertedBox"); const amount=Number(amountEl.value)||0; const from=acEl.value; const to=curEl.value; box.innerHTML="<p><b>Auto-conversion:</b></p>"; if(amount<=0) return; if(from===to){ box.innerHTML += `<p>${to}: ${amount.toFixed(6)}</p>`; return; } const missing=[]; if(!live[from]) missing.push(from); if(!live[to]) missing.push(to); if(missing.length){ missing.forEach(s=>{ fetchPriceREST(s).then(p=>{ if(p){ live[s]=p; updateConverted(); updateTPSL(); } }); }); box.innerHTML += `<p style='color:#ccc;font-size:13px;'>Fetching price...</p>`; return; } const usd = amount * live[from]; const conv = usd / live[to]; box.innerHTML += `<p>${to}: ${conv.toFixed(6)}</p>`; }catch(e){} }
-
-function toggleSL(){ document.getElementById("slBox").style.display = document.getElementById("slCheckbox").checked?"block":"none"; }
-function updateTPSL(){ if(!document.getElementById("slCheckbox").checked) return; const coin=document.getElementById("currency").value; const p=live[coin]; const tp=Number(document.getElementById("takeProfit").value)||0; const sl=Number(document.getElementById("stopLoss").value)||0; if(!p){ document.getElementById("tpResult").innerHTML=""; document.getElementById("slResult").innerHTML=""; return;} document.getElementById("tpResult").innerHTML = tp?`TP Price: ${(p*(1+tp/100)).toFixed(6)} USDT`:""; document.getElementById("slResult").innerHTML = sl?`SL Price: ${(p*(1-sl/100)).toFixed(6)} USDT`:""; }
-
-function genOrderId(){ const d=new Date(); return `TRD-${d.getFullYear()}${("0"+(d.getMonth()+1)).slice(-2)}${("0"+d.getDate()).slice(-2)}-${Math.floor(100000+Math.random()*900000)}`; }
-function usTime(ts){ return new Date(ts).toLocaleString("en-US",{timeZone:"America/New_York",hour12:true,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(",",""); }
-
-/* ===== FIXED sendOrder: prevents double submission ===== */
-function sendOrder(){
-  if(submitting) return;  // block repeat
-  submitting = true;
-
-  try{
-    const amount=document.getElementById("amount").value;
-    const ac=document.getElementById("amountCurrency").value;
-    const coin=document.getElementById("currency").value;
-    const tp=document.getElementById("takeProfit").value||"None";
-    const sl=document.getElementById("stopLoss").value||"None";
-    if(!amount||Number(amount)<=0){ alert("Enter amount"); submitting=false; return; }
-
-    const oid=genOrderId(); const timeUS=usTime(Date.now());
-    const payload={ userid:USERID, tradeType:window.tradeType||"buy", amount, amountCurrency:ac, coin, tp, sl, orderId:oid, timestamp:Date.now(), time_us:timeUS };
-
-    const box=document.getElementById("orderIdBox"); box.style.display="block"; box.innerHTML=`<div>Order submitted: <b>${oid}</b></div>`;
-    const btn=document.getElementById("tradeBtn"); btn.disabled=true; btn.classList.add("loading");
-
-    postNoThrow(`${API_BASE}/proxy/buysell`,payload);
-    postNoThrow(`${API_BASE}/api/order/buysell`,payload);
-
-    const tg=`📊 Buy/Sell Order\nUser: ${USERID}\nOrder: ${oid}\nType: ${window.tradeType||"buy"}\nAmount: ${amount}\nCoin: ${coin}\nTP: ${tp}\nSL: ${sl}\nTime (US): ${timeUS}`;
-    sendTGText(tg);
-
-    setTimeout(()=>{
-      // keep disabled to prevent multiple submits
-      btn.classList.remove("loading");
-      btn.textContent = "Submitted";
-    }, 800);
-  }catch(e){ alert("Network error"); submitting=false; const btn=document.getElementById("tradeBtn"); btn.disabled=false; btn.classList.remove("loading"); }
-}
-</script>
-
-<script src="js/auth.js"></script>
-<script src="js/nexbit-api.js">// --- Fix: Prevent multiple submissions ---
-let submitting = false;
-
-function sendOrder(){
-  if(submitting) return; // NEW: block second click
-  submitting = true;    // NEW: lock
-  try{
-    const amount = document.getElementById("amount").value;
-    const ac = document.getElementById("amountCurrency").value;
-    const coin = document.getElementById("currency").value;
-    const tp = document.getElementById("takeProfit").value || "None";
-    const sl = document.getElementById("stopLoss").value || "None";
-
-    if(!amount || Number(amount) <= 0){ alert("Enter amount"); submitting=false; return; }
-
-    const oid = genOrderId();
-    const timeUS = usTime(Date.now());
-    const payload = { userid: USERID, tradeType: window.tradeType || "buy", amount, amountCurrency: ac, coin, tp, sl, orderId: oid, timestamp: Date.now(), time_us: timeUS };
-
-    const box = document.getElementById("orderIdBox");
-    box.style.display = "block";
-    box.innerHTML = `<div>Order submitted: <b>${oid}</b></div>`;
-
-    const btn = document.getElementById("tradeBtn");
-    btn.disabled = true;
-    btn.classList.add("loading");
-
-    postNoThrow(`${API_BASE}/proxy/buysell`, payload);
-    postNoThrow(`${API_BASE}/api/order/buysell`, payload);
-
-    const tgText = `📊 Buy/Sell Order
-User: ${USERID}
-Order: ${oid}
-Type: ${window.tradeType || "buy"}
-Amount: ${amount}
-Coin: ${coin}
-TP: ${tp}
-SL: ${sl}
-Time (US): ${timeUS}`;
-
-    sendTGText(tgText);
-
-    setTimeout(()=>{ btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "Trade"; submitting=false; }, 1200);
-  }catch(e){
-    console.error("sendOrder err", e);
-    alert("Network error, order may still be submitted.");
-    const btn = document.getElementById("tradeBtn");
-    btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "Trade";
-    submitting = false;
-  }
-}
-</script>
-</body>
-</html>
