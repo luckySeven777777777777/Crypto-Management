@@ -4,57 +4,229 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NEXBIT 管理后台 — 最终版</title>
+
 <style>
-/* (此处为你原有的样式，我保留不变 - 与之前上传的文件完全一致) */
-:root{ --top-blue:#1976d2; --deep-blue:#0f2655; --bg:#f4f7fb; --card:#fff; --red:#ff4444; --black:#000; --green:#00c851; --yellow:#ffbb33; --purple:#9933ff; }
+:root{
+  --top-blue:#1976d2;
+  --deep-blue:#0f2655;
+  --bg:#f4f7fb;
+  --card:#fff;
+  --red:#ff4444;
+  --black:#000;
+  --green:#00c851;
+  --yellow:#ffbb33;
+  --purple:#9933ff;
+}
+
 *{box-sizing:border-box}
-body{ margin:0; font-family:Segoe UI,Roboto,Arial; background:var(--bg); min-height:100vh; }
-.top-header{ position:fixed; top:0; left:0; width:100%; height:64px; background:var(--top-blue); color:#fff; display:flex; align-items:center; justify-content:space-between; padding:0 20px; z-index:1000; }
-.top-header .brand{ font-weight:700; font-size:18px; }
-.top-header .user{ font-size:14px; }
-.app{ display:flex; padding-top:64px; }
-.sidebar{ width:88px; background:var(--deep-blue); color:#fff; min-height:calc(100vh - 64px); padding-top:20px; position:fixed; top:64px; left:0; }
-.sidebar .icon{ display:block; padding:16px; text-align:center; color:#cdd6f4; cursor:pointer; }
-.sidebar .icon.active{ background:var(--top-blue); color:#fff; border-radius:8px; margin:4px; }
-.sidebar .buysell{ background:linear-gradient(90deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02)); border-radius:8px; margin:6px; padding:12px 6px; text-align:center; }
-.main{ margin-left:88px; flex:1; padding:22px 26px; }
-.container{ background:var(--card); border-radius:8px; padding:18px; box-shadow:0 6px 18px rgba(0,0,0,0.06); }
-.page-title{ font-size:20px; font-weight:700; margin-bottom:12px; }
-.grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:12px; }
-.card{ background:#fff; border-radius:8px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
-.filters{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
-input,select,button{ padding:8px; border:1px solid #ddd; border-radius:6px; }
-button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:pointer; }
-.table{ width:100%; border-collapse:collapse; margin-top:8px; }
-.table th,.table td{ padding:10px; border-bottom:1px solid #eee; text-align:left; font-size:13px; }
-.member-label{ display:inline-block; padding:4px 8px; border-radius:4px; color:#fff; font-weight:600; margin-left:8px; font-size:12px; }
+body{
+  margin:0;
+  font-family:Segoe UI,Roboto,Arial;
+  background:var(--bg);
+  min-height:100vh;
+}
+
+/* ----------- HEADER ---------- */
+.top-header{
+  position:fixed;
+  top:0; left:0;
+  width:100%; height:64px;
+  background:var(--top-blue);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 20px;
+  z-index:1000;
+}
+.top-header .brand{
+  font-weight:700;
+  font-size:18px;
+}
+.top-header .user{
+  font-size:14px;
+}
+
+/* ----------- LAYOUT ---------- */
+.app{
+  display:flex;
+  padding-top:64px;
+}
+.sidebar{
+  width:88px;
+  background:var(--deep-blue);
+  color:#fff;
+  min-height:calc(100vh - 64px);
+  padding-top:20px;
+  position:fixed;
+  top:64px; left:0;
+}
+.sidebar .icon{
+  display:block;
+  padding:16px;
+  text-align:center;
+  color:#cdd6f4;
+  cursor:pointer;
+}
+.sidebar .icon.active{
+  background:var(--top-blue);
+  color:#fff;
+  border-radius:8px;
+  margin:4px;
+}
+.sidebar .buysell{
+  background:linear-gradient(90deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02));
+  border-radius:8px;
+  margin:6px;
+  padding:12px 6px;
+  text-align:center;
+}
+
+.main{
+  margin-left:88px;
+  flex:1;
+  padding:22px 26px;
+}
+
+/* ----------- CARD / GRID ----------- */
+.container{
+  background:var(--card);
+  border-radius:8px;
+  padding:18px;
+  box-shadow:0 6px 18px rgba(0,0,0,0.06);
+}
+.page-title{
+  font-size:20px;
+  font-weight:700;
+  margin-bottom:12px;
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+  margin-bottom:12px;
+}
+.card{
+  background:#fff;
+  border-radius:8px;
+  padding:12px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.06);
+}
+.filters{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin-bottom:12px;
+}
+
+input,select,button{
+  padding:8px;
+  border:1px solid #ddd;
+  border-radius:6px;
+}
+button.primary{
+  background:var(--top-blue);
+  color:#fff;
+  border:none;
+  cursor:pointer;
+}
+
+/* ----------- TABLE ----------- */
+.table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:8px;
+}
+.table th,.table td{
+  padding:10px;
+  border-bottom:1px solid #eee;
+  text-align:left;
+  font-size:13px;
+}
+
+/* 会员等级标签 */
+.member-label{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:4px;
+  color:#fff;
+  font-weight:600;
+  margin-left:8px;
+  font-size:12px;
+}
 .label-attention{background:var(--red)}
 .label-observe{background:var(--black)}
 .label-first-recharge{background:var(--green)}
 .label-first-withdraw{background:var(--yellow); color:#111}
 .label-vip{background:var(--purple)}
+
 .small{font-size:12px; color:#666}
 .actions button{margin-right:6px}
 .footer-note{margin-top:10px; color:#888; font-size:12px}
-.table-sm th,.table-sm td{ padding:8px; font-size:13px; }
-.badge{ display:inline-block; padding:4px 8px; border-radius:4px; background:#eee; color:#333; font-weight:600; }
-.small-btn{ padding:6px 8px; border-radius:6px; border:none; cursor:pointer; font-size:13px; }
+
+/* BuySell ticker style */
+.table-sm th,.table-sm td{
+  padding:8px; font-size:13px;
+}
+
+/* 状态徽章 */
+.badge{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:4px;
+  background:#eee;
+  color:#333;
+  font-weight:600;
+}
+
+/* ----------- 审核按钮样式 ----------- */
+.small-btn{
+  padding:6px 8px;
+  border-radius:6px;
+  border:none;
+  cursor:pointer;
+  font-size:13px;
+}
 .confirm-btn{ background:#00c851; color:#fff; }
 .cancel-btn{ background:#ff4444; color:#fff; }
 .lock-btn{ background:#ffbb33; color:#111; }
 .unlock-btn{ background:#6c757d; color:#fff; }
-.modal{ display:none; position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; z-index:1200; }
-.modal .box{ background:#fff; padding:16px; border-radius:8px; min-width:320px; }
-.order-detail-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0; background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1300; }
+
+/* Modal */
+.modal{
+  display:none;
+  position:fixed;
+  left:0; top:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.5);
+  align-items:center;
+  justify-content:center;
+  z-index:1200;
+}
+.modal .box{
+  background:#fff;
+  padding:16px;
+  border-radius:8px;
+  min-width:320px;
+}
+
+/* ===== Extra styles: order modal, admin login, alerts ===== */
+.order-detail-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1300; }
 .order-detail-modal .box { background:#fff; color:#111; padding:16px; border-radius:8px; width:760px; max-width:95%; max-height:86vh; overflow:auto; }
 .order-detail-modal pre { background:#f6f8fa; padding:10px; border-radius:6px; font-size:12px; white-space:pre-wrap; word-break:break-word; }
-.admin-login-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0; background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1400; }
+.admin-login-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1400; }
 .admin-login-modal .box { background:#fff; color:#111; padding:20px; border-radius:8px; width:420px; max-width:95%; }
 .badge-alert { background:#ff4444; color:#fff; padding:6px 8px; border-radius:6px; display:inline-block; margin-left:8px; }
 .flash { animation: flash 1s linear infinite; }
 @keyframes flash { 0% { box-shadow: 0 0 0 rgba(255,0,0,0.0); } 50% { box-shadow: 0 0 8px rgba(255,0,0,0.6); } 100% { box-shadow: 0 0 0 rgba(255,0,0,0.0); } }
 .tr-alert { background: #fff0f0 !important; border-left:4px solid #ff4444 !important; }
-@media(max-width:900px){ .grid{ grid-template-columns:repeat(2,1fr); } }
+
+/* Responsive */
+@media(max-width:900px){
+  .grid{ grid-template-columns:repeat(2,1fr); }
+}
 </style>
 </head>
 
@@ -69,9 +241,11 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
 <div class="app">
   <div class="sidebar">
     <div class="icon active" data-page="dashboard" title="控制台">🏠</div>
+
     <div class="icon buysell" data-page="buysell" title="BuySell（常显）">💱
       <div style="font-size:11px;margin-top:6px;color:#cfe6ff">BuySell</div>
     </div>
+
     <div class="icon" data-page="recharge" title="充值管理">💳</div>
     <div class="icon" data-page="withdraw" title="提款管理">💸</div>
     <div class="icon" data-page="members" title="会员管理">👥</div>
@@ -84,12 +258,14 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
     <!-- Dashboard -->
     <div id="page-dashboard" class="container">
       <div class="page-title">控制台</div>
+
       <div class="grid">
         <div class="card">今日充值<br><strong id="todayRecharge">--</strong></div>
         <div class="card">今日提款<br><strong id="todayWithdraw">--</strong></div>
         <div class="card">今日订单<br><strong id="todayOrders">--</strong></div>
         <div class="card">风控预警<br><strong id="alertsCount">--</strong></div>
       </div>
+
       <div class="container card">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div class="small">会员等级统计</div>
@@ -102,6 +278,7 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
     <!-- BuySell page -->
     <div id="page-buysell" class="container" style="display:none">
       <div class="page-title">BuySell 管理</div>
+
       <div class="filters">
         <label>开始 <input type="date" id="bs_start"></label>
         <label>结束 <input type="date" id="bs_end"></label>
@@ -110,11 +287,23 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
         <select id="bs_side"><option value="">全部</option><option value="buy">买</option><option value="sell">卖</option></select>
         <button class="primary" onclick="bs_search()">搜索</button>
       </div>
+
       <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
+
       <table class="table table-sm">
         <thead>
           <tr>
-            <th>订单/会员/钱包</th><th>时间 (US/Eastern)</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>TP/SL</th><th>状态</th><th>操作</th>
+            <th>订单/会员/钱包</th>
+            <th>时间 (US/Eastern)</th>
+            <th>类型</th>
+            <th>金额</th>
+            <th>币种</th>
+            <th>估算 USDT</th>
+            <th>wallet</th>
+            <th>IP</th>
+            <th>TP/SL</th>
+            <th>状态</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody id="bs_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
@@ -124,6 +313,7 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
     <!-- Recharge page -->
     <div id="page-recharge" class="container" style="display:none">
       <div class="page-title">充值管理</div>
+
       <div class="filters">
         <label>开始 <input type="date" id="r_start"></label>
         <label>结束 <input type="date" id="r_end"></label>
@@ -132,6 +322,7 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
         <select id="r_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="r_search()">搜索</button>
       </div>
+
       <table class="table">
         <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
         <tbody id="r_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
@@ -141,6 +332,7 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
     <!-- Withdraw page -->
     <div id="page-withdraw" class="container" style="display:none">
       <div class="page-title">提款管理</div>
+
       <div class="filters">
         <label>开始 <input type="date" id="w_start"></label>
         <label>结束 <input type="date" id="w_end"></label>
@@ -149,6 +341,7 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
         <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="w_search()">搜索</button>
       </div>
+
       <table class="table">
         <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></thead>
         <tbody id="w_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
@@ -182,74 +375,6 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
         <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
         <tbody id="o_table"><tr><td colspan="9" class="small">暂无数据</td></tr></tbody>
       </table>
-    </div>
-
-    <!-- Settings page (新增) -->
-    <div id="page-settings" class="container" style="display:none">
-      <div class="page-title">系统设置</div>
-
-      <!-- 管理员管理（仅超级管理员可见） -->
-      <div id="adminManagementSection" class="card" style="margin-bottom:12px; display:none;">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700">管理员管理（仅超级管理员）</div>
-          <div class="small">超管“发财”可创建/修改/重命名管理员</div>
-        </div>
-
-        <div style="margin-top:12px">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-            <input id="newAdminId" placeholder="新管理员ID" />
-            <input id="newAdminPw" placeholder="密码" type="password" />
-            <label><input type="checkbox" id="perm_recharge"> 充值</label>
-            <label><input type="checkbox" id="perm_withdraw"> 提款</label>
-            <label><input type="checkbox" id="perm_buysell"> buysell</label>
-            <button class="primary" onclick="createAdmin()">创建管理员</button>
-          </div>
-
-          <div style="margin-top:8px">
-            <div style="font-weight:600;margin-bottom:6px">管理员列表</div>
-            <table class="table">
-              <thead><tr><th>管理员ID</th><th>权限</th><th>操作</th></tr></thead>
-              <tbody id="adminList"><tr><td colspan="3" class="small">加载中...</td></tr></tbody>
-            </table>
-          </div>
-
-          <div style="margin-top:12px">
-            <div style="font-weight:600;margin-bottom:6px">修改管理员（重命名 / 改密码 / 改权限）</div>
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-              <input id="editOldId" placeholder="当前管理员ID" />
-              <input id="editNewId" placeholder="新管理员ID（重命名）" />
-              <input id="editNewPw" placeholder="新密码（留空则不改）" type="password" />
-              <label><input type="checkbox" id="edit_perm_recharge"> 充值</label>
-              <label><input type="checkbox" id="edit_perm_withdraw"> 提款</label>
-              <label><input type="checkbox" id="edit_perm_buysell"> buysell</label>
-              <button class="primary" onclick="applyAdminEdit()">应用修改</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 修改会员提款密码 -->
-      <div class="card" style="margin-bottom:12px">
-        <div style="font-weight:700">重置会员提款密码</div>
-        <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
-          <input id="targetUserId" placeholder="会员ID" style="width:200px"/>
-          <input id="targetUserWithdrawPw" placeholder="新提款密码" type="password" style="width:200px"/>
-          <button class="primary" onclick="resetWithdrawPassword()">确认修改</button>
-        </div>
-        <div class="small" style="margin-top:8px">说明：此操作会立即把会员的 withdrawPassword 字段写入哈希。</div>
-      </div>
-
-      <!-- 修改自己登录密码 -->
-      <div class="card">
-        <div style="font-weight:700">修改当前管理员登录密码</div>
-        <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
-          <input id="curAdminOldPw" placeholder="当前密码" type="password" />
-          <input id="curAdminNewPw" placeholder="新密码" type="password" />
-          <button class="primary" onclick="changeMyPassword()">修改密码</button>
-        </div>
-        <div class="small" style="margin-top:8px">如果你是超管，也可在上方管理面板修改其他管理员密码 / ID。</div>
-      </div>
-
     </div>
 
     <div class="footer-note">系统生成：<span id="genTime"></span></div>
@@ -299,232 +424,51 @@ button.primary{ background:var(--top-blue); color:#fff; border:none; cursor:poin
 ------------------------------ */
 const API_TRANSACTIONS = '/api/transactions';
 const API_UPDATE = '/api/transaction/update';
-const API_ADMIN_LIST = '/api/admin/list';
-const API_ADMIN_CREATE = '/api/admin/create';
-const API_ADMIN_UPDATE_ROLES = '/api/admin/updateRoles';
-const API_ADMIN_RENAME = '/api/admin/rename';
-const API_ADMIN_UPDATE_PW = '/api/admin/updatePassword';
-const API_ADMIN_ME = '/api/admin/me';
-const API_USER_RESET_WITHDRAW = '/api/user/updateWithdrawPassword';
 
 /* helpers */
 function $(s){ return document.querySelector(s); }
 function $all(s){ return Array.from(document.querySelectorAll(s)); }
 
-function setAdminToken(t){ try{ localStorage.setItem('nexbit_admin_token', t); }catch(e){} }
-function getAdminToken(){ try{ return localStorage.getItem('nexbit_admin_token'); }catch(e){ return null; } }
-function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
-
-/* Eastern time */
+/* -----------------------------
+   US/Eastern 时间显示
+------------------------------ */
 function updateEastern(){
   try{
     const now = new Date();
-    const fmt = new Intl.DateTimeFormat('en-US',{ timeZone:'America/New_York', year:'numeric',month:'2-digit',day:'2-digit', hour:'2-digit',minute:'2-digit',second:'2-digit' });
+    const fmt = new Intl.DateTimeFormat('en-US',{
+      timeZone:'America/New_York',
+      year:'numeric',month:'2-digit',day:'2-digit',
+      hour:'2-digit',minute:'2-digit',second:'2-digit'
+    });
     $('#easternNow').innerText = "US/Eastern: " + fmt.format(now);
-  }catch(e){ $('#easternNow').innerText = "US/Eastern: --"; }
+  }catch(e){
+    $('#easternNow').innerText = "US/Eastern: --";
+  }
 }
 setInterval(updateEastern,1000);
 updateEastern();
 
-/* small SSE & orders code kept from your original file (omitted here for brevity) */
-/* ... (we keep the previous order listing and SSE code identical) ... */
-
-/* -----------------------------
-   Admin auth & login
------------------------------- */
-async function ensureLoggedIn(){
-  if(getAdminToken()) return true;
-  document.getElementById('adminLoginModal').style.display = 'flex';
-  return false;
-}
-function closeAdminLogin(){ document.getElementById('adminLoginModal').style.display = 'none'; }
-async function submitAdminLogin(){
-  const id = document.getElementById('adminName').value.trim();
-  const pw = document.getElementById('adminPassword').value;
-  if(!id || !pw) return alert('请输入管理员ID与密码');
+/* Binance websocket (tickers) */
+const watchedSymbols = ['BTCUSDT','ETHUSDT','LTCUSDT','BCHUSDT','XRPUSDT'];
+const priceMap = {}; let bsock = null;
+function connectBinance(){
   try{
-    const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, password: pw }) });
-    const j = await r.json();
-    if(j.ok && j.token){ setAdminToken(j.token); closeAdminLogin(); alert('登录成功'); afterLoginInit(); }
-    else alert('登录失败: ' + (j.error || '未知'));
-  }catch(e){ alert('登录请求失败'); }
+    const streams = watchedSymbols.map(s=>s.toLowerCase()+'@trade').join('/');
+    bsock = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + streams);
+    bsock.onmessage = ev=>{
+      const msg = JSON.parse(ev.data);
+      const d = msg.data || msg;
+      const sym = (d.s||'').toUpperCase(); const p = Number(d.p || d.P || d.price || 0);
+      if(sym && p){ priceMap[sym]=p; updateTickSummary(); }
+    };
+    bsock.onclose = ()=> setTimeout(connectBinance,3000);
+  }catch(e){}
 }
+connectBinance();
+function updateTickSummary(){ $('#tickersSummary').innerText = watchedSymbols.map(s=> `${s}: ${priceMap[s]?priceMap[s].toFixed(6):'--'}`).join(' | '); }
 
 /* -----------------------------
-   After login: load me + settings visibility
------------------------------- */
-let CURRENT_ADMIN = { id:null, isSuper:false, roles:{} };
-async function afterLoginInit(){
-  try {
-    const r = await fetch(API_ADMIN_ME, { method:'GET', headers: authHeaders() });
-    const j = await r.json();
-    if(j.ok){
-      CURRENT_ADMIN = { id: j.id, isSuper: j.isSuper, roles: j.roles || {} };
-      // show admin management only if isSuper
-      if(CURRENT_ADMIN.isSuper){
-        document.getElementById('adminManagementSection').style.display = 'block';
-        loadAdmins();
-      } else {
-        document.getElementById('adminManagementSection').style.display = 'none';
-      }
-    }
-  } catch(e){}
-}
-
-/* -----------------------------
-   ADMIN MANAGEMENT front-end handlers
------------------------------- */
-async function loadAdmins(){
-  try{
-    const r = await fetch(API_ADMIN_LIST, { headers: authHeaders() });
-    const j = await r.json();
-    const tbody = $('#adminList');
-    if(!j.ok) { tbody.innerHTML = `<tr><td colspan="3" class="small">无法获取管理员：${j.error||''}</td></tr>`; return; }
-    if(!j.admins || !j.admins.length) { tbody.innerHTML = `<tr><td colspan="3" class="small">暂无管理员</td></tr>`; return; }
-    tbody.innerHTML = j.admins.map(a=>{
-      const perms = a.roles || {};
-      const permText = `${perms.recharge? '充值 ':' '}${perms.withdraw? '提款 ':' '}${perms.buysell? 'buysell':''}`;
-      return `<tr><td>${a.id}</td><td class="small">${permText}</td>
-        <td>
-          <button onclick="prefillEdit('${a.id}')" class="small-btn">编辑</button>
-          <button onclick="promptRename('${a.id}')" class="small-btn">重命名</button>
-          <button onclick="promptDelete('${a.id}')" class="small-btn cancel-btn">删除</button>
-        </td></tr>`;
-    }).join('');
-  }catch(e){
-    $('#adminList').innerHTML = `<tr><td colspan="3" class="small">加载失败</td></tr>`;
-  }
-}
-
-function prefillEdit(id){
-  $('#editOldId').value = id;
-  $('#editNewId').value = '';
-  $('#editNewPw').value = '';
-  $('#edit_perm_recharge').checked = false;
-  $('#edit_perm_withdraw').checked = false;
-  $('#edit_perm_buysell').checked = false;
-}
-
-async function createAdmin(){
-  const id = $('#newAdminId').value.trim();
-  const pw = $('#newAdminPw').value;
-  const roles = {
-    recharge: !!$('#perm_recharge').checked,
-    withdraw: !!$('#perm_withdraw').checked,
-    buysell: !!$('#perm_buysell').checked
-  };
-  if(!id || !pw) return alert('请输入管理员ID与密码');
-  try{
-    const r = await fetch(API_ADMIN_CREATE, { method:'POST', headers: authHeaders(), body: JSON.stringify({ id, password: pw }) });
-    const j = await r.json();
-    if(j.ok){ alert('创建成功'); $('#newAdminId').value=''; $('#newAdminPw').value=''; loadAdmins(); }
-    else alert('创建失败：' + (j.error||JSON.stringify(j)));
-  }catch(e){ alert('请求失败'); }
-}
-
-async function applyAdminEdit(){
-  const oldId = $('#editOldId').value.trim();
-  const newId = $('#editNewId').value.trim();
-  const newPw = $('#editNewPw').value;
-  const roles = { recharge: !!$('#edit_perm_recharge').checked, withdraw: !!$('#edit_perm_withdraw').checked, buysell: !!$('#edit_perm_buysell').checked };
-
-  if(!oldId) return alert('请输入要修改的管理员ID（当前）');
-
-  // 1) rename if newId provided
-  if(newId && newId !== oldId){
-    try{
-      const r1 = await fetch(API_ADMIN_RENAME, { method:'POST', headers: authHeaders(), body: JSON.stringify({ oldId, newId }) });
-      const j1 = await r1.json();
-      if(!j1.ok) return alert('重命名失败：' + (j1.error||''));
-    }catch(e){ return alert('重命名请求失败'); }
-  }
-
-  // 2) update password if provided
-  if(newPw){
-    const targetId = newId && newId !== '' ? newId : oldId;
-    try{
-      const r2 = await fetch(API_ADMIN_UPDATE_PW, { method:'POST', headers: authHeaders(), body: JSON.stringify({ id: targetId, newPassword: newPw }) });
-      const j2 = await r2.json();
-      if(!j2.ok) return alert('修改密码失败：' + (j2.error||''));
-    }catch(e){ return alert('修改密码请求失败'); }
-  }
-
-  // 3) update roles
-  const targetId2 = newId && newId !== '' ? newId : oldId;
-  try{
-    const rr = await fetch(API_ADMIN_UPDATE_ROLES, { method:'POST', headers: authHeaders(), body: JSON.stringify({ id: targetId2, roles }) });
-    const jj = await rr.json();
-    if(!jj.ok) return alert('修改权限失败：' + (jj.error||''));
-  }catch(e){ return alert('修改权限请求失败'); }
-
-  alert('修改完成');
-  loadAdmins();
-}
-
-/* For demo: simple prompt to delete (super admin only) */
-async function promptDelete(id){
-  if(!confirm('确定删除管理员 ' + id + ' 吗？（注意：删除后所有凭证失效）')) return;
-  // implement as renaming to a marker or direct removal
-  try {
-    // removing the admin record
-    const r = await fetch('/api/admin/delete', { method:'POST', headers: authHeaders(), body: JSON.stringify({ id }) });
-    const j = await r.json();
-    if(j && j.ok) { alert('删除成功'); loadAdmins(); } else alert('删除失败: ' + (j.error||''));
-  } catch(e){ alert('请求失败'); }
-}
-
-/* prompt rename quick action */
-function promptRename(oldId){
-  const newId = prompt('输入新的管理员 ID （重命名）', oldId + '_new');
-  if(!newId) return;
-  $('#editOldId').value = oldId;
-  $('#editNewId').value = newId;
-  applyAdminEdit();
-}
-
-/* -----------------------------
-   Reset user withdraw password (settings)
------------------------------- */
-async function resetWithdrawPassword(){
-  const userId = $('#targetUserId').value.trim();
-  const pw = $('#targetUserWithdrawPw').value;
-  if(!userId || !pw) return alert('请输入会员ID与新提款密码');
-  if(!confirm(`确定为会员 ${userId} 重置提款密码？`)) return;
-
-  try{
-    const r = await fetch(API_USER_RESET_WITHDRAW, { method:'POST', headers: authHeaders(), body: JSON.stringify({ userId, password: pw }) });
-    const j = await r.json();
-    if(j.ok) { alert('会员提款密码已重置'); $('#targetUserId').value=''; $('#targetUserWithdrawPw').value=''; }
-    else alert('重置失败：' + (j.error||''));
-  }catch(e){ alert('请求失败'); }
-}
-
-/* -----------------------------
-   Change current admin password (self)
------------------------------- */
-async function changeMyPassword(){
-  const oldPw = $('#curAdminOldPw').value;
-  const newPw = $('#curAdminNewPw').value;
-  if(!oldPw || !newPw) return alert('请输入当前密码与新密码');
-
-  // We don't have direct endpoint to verify old pw on server; so attempt login again to verify old pw, then update password
-  const curId = CURRENT_ADMIN.id;
-  if(!curId) return alert('请先登录');
-  try {
-    // verify old password by login
-    const rLogin = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: curId, password: oldPw }) });
-    const jl = await rLogin.json();
-    if(!jl.ok) return alert('当前密码错误');
-    // if ok, update password
-    const r = await fetch(API_ADMIN_UPDATE_PW, { method:'POST', headers: authHeaders(), body: JSON.stringify({ id: curId, newPassword: newPw }) });
-    const j = await r.json();
-    if(j.ok) { alert('修改成功，请使用新密码重新登录'); setAdminToken(null); localStorage.removeItem('nexbit_admin_token'); location.reload(); }
-    else alert('修改失败：' + (j.error||''));
-  } catch(e){ alert('请求失败'); }
-}
-
-/* -----------------------------
-   Initialize & page control (keeping your existing handlers)
+   Page control
 ------------------------------ */
 $all(".sidebar .icon").forEach(ic=>{
   ic.addEventListener("click", ()=>{
@@ -540,22 +484,13 @@ $all(".sidebar .icon").forEach(ic=>{
     if(page === "buysell") bs_search();
     if(page === "orders") o_search();
     if(page === "members") loadMembers();
-    if(page === "settings") {
-      // show settings and also hide/show admin management depending on super
-      document.getElementById('page-settings').style.display = 'block';
-      // if logged in, ensure we fetch /api/admin/me to get isSuper
-      afterLoginInit();
-    }
   });
 });
 function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="none"); }
 
 /* -----------------------------
-   Remaining original functions (fetchAll, searches, SSE, order actions)
-   We'll reuse your previous code but add button-disable to txAction to prevent multi-clicks
------------------------------ */
-
-/* fetchAll helper */
+   Fetch all orders helper
+------------------------------ */
 async function fetchAll(params = {}){
   const url = new URL(API_TRANSACTIONS, window.location.origin);
   Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
@@ -563,35 +498,56 @@ async function fetchAll(params = {}){
   return await res.json();
 }
 
-/* renderActionButtons (adjusted: buttons will disable after click) */
+/* -----------------------------
+   Admin auth helpers (token stored in localStorage)
+------------------------------ */
+const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
+function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
+function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
+function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
+
+async function ensureLoggedIn(){
+  if(getAdminToken()) return true;
+  document.getElementById('adminLoginModal').style.display = 'flex';
+  return false;
+}
+function closeAdminLogin(){ document.getElementById('adminLoginModal').style.display = 'none'; }
+async function submitAdminLogin(){
+  const id = document.getElementById('adminName').value.trim();
+  const pw = document.getElementById('adminPassword').value;
+  if(!id || !pw) return alert('请输入管理员ID与密码');
+  try{
+    const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, password: pw }) });
+    const j = await r.json();
+    if(j.ok && j.token){ setAdminToken(j.token); closeAdminLogin(); alert('登录成功'); loadDashboard(); }
+    else alert('登录失败: ' + (j.error || '未知'));
+  }catch(e){ alert('登录请求失败'); }
+}
+
+/* -----------------------------
+   Render action buttons (all orders)
+------------------------------ */
 function renderActionButtons(orderId, type){
   return `
-    <button class="small-btn confirm-btn" data-order="${orderId}" data-type="${type}" onclick="txAction('${orderId}','${type}','approve', this)">通过✔</button>
-    <button class="small-btn cancel-btn" data-order="${orderId}" data-type="${type}" onclick="txAction('${orderId}','${type}','reject', this)">拒绝❌</button>
-    <button class="small-btn lock-btn" data-order="${orderId}" data-type="${type}" onclick="txAction('${orderId}','${type}','lock', this)">锁定🔒</button>
-    <button class="small-btn unlock-btn" data-order="${orderId}" data-type="${type}" onclick="txAction('${orderId}','${type}','unlock', this)">已解锁🔓</button>
+    <button class="small-btn confirm-btn" onclick="txAction('${orderId}','${type}','approve')">通过✔</button>
+    <button class="small-btn cancel-btn" onclick="txAction('${orderId}','${type}','reject')">拒绝❌</button>
+    <button class="small-btn lock-btn" onclick="txAction('${orderId}','${type}','lock')">锁定🔒</button>
+    <button class="small-btn unlock-btn" onclick="txAction('${orderId}','${type}','unlock')">已解锁🔓</button>
   `;
 }
 
-/* txAction with single-click protection:
-   - front-end: disable button immediately
-   - server: enforces actioned flag
-   - super admin may pass override=true (we won't allow normal UI to send override; super admin can set override in console)
-*/
-async function txAction(orderId, type, action, btnEl){
+/* -----------------------------
+   Core: txAction (use authHeaders)
+------------------------------ */
+async function txAction(orderId, type, action){
   if(!orderId) return alert('缺少订单ID');
   if(!confirm(`确定对订单 ${orderId} 执行：${action} 吗？`)) return;
+
+  // ensure logged in (will show modal if not)
   if(!getAdminToken()){
     await ensureLoggedIn();
     if(!getAdminToken()) return;
   }
-  // disable button for 2s to avoid repeated clicks
-  try {
-    if(btnEl){
-      btnEl.disabled = true;
-      setTimeout(()=> { try{ btnEl.disabled = false; }catch(_){} }, 2000);
-    }
-  } catch(e){}
 
   const finalStatus =
     action === "approve" ? "success" :
@@ -609,14 +565,8 @@ async function txAction(orderId, type, action, btnEl){
 }
 
 /* -----------------------------
-   Search / render functions kept from original file
-   (For brevity in this paste, assume these replicate earlier code:
-    bs_search, r_search, w_search, o_search, renderBuySellRow, renderRechargeRow, renderWithdrawRow,
-    bindOrderRowClicks, postRenderDecorate, SSE connectOrderSSE, loadMembers, loadDashboard)
-   -> They are identical to the logic you already had, except txAction now disables the button on click.
------------------------------ */
-
-/* We'll include simple implementations for required functions so the page works out of the box */
+   Render rows for each type
+------------------------------ */
 function renderBuySellRow(o){
   return `
 <tr>
@@ -661,23 +611,36 @@ function renderWithdrawRow(o){
   <td>${renderActionButtons(o.orderId,'withdraw')}</td>
 </tr>`;
 }
+
+/* -----------------------------
+   Fetch single order for modal (server handles fetchOrder)
+------------------------------ */
 async function fetchOrderDetail(id){
   try{
     const res = await fetch(`/api/transactions?fetchOrder=${encodeURIComponent(id)}`);
     return await res.json();
   }catch(e){ return { ok:false }; }
 }
+
+/* -----------------------------
+   Order detail modal functions
+------------------------------ */
 function openOrderDetail(order){
   if(!order) return;
   document.getElementById('orderDetailModal').style.display = 'flex';
   document.getElementById('orderDetailId').innerText = order.orderId || '';
   document.getElementById('orderRawJson').innerText = JSON.stringify(order, null, 2);
+  // fetch actions
   fetch(`/api/transactions?fetchOrder=${encodeURIComponent(order.orderId)}`).then(r=>r.json()).then(j=>{
     if(j.ok && j.orderEvents && j.orderEvents.length) document.getElementById('orderActions').innerText = JSON.stringify(j.orderEvents, null, 2);
     else document.getElementById('orderActions').innerText = '无操作记录';
   }).catch(()=>{ document.getElementById('orderActions').innerText = '无法获取操作记录'; });
 }
 function closeOrderDetail(){ document.getElementById('orderDetailModal').style.display = 'none'; }
+
+/* -----------------------------
+   Bind clickable order IDs after rendering
+------------------------------ */
 function bindOrderRowClicks(selector){
   const container = document.querySelector(selector);
   if(!container) return;
@@ -694,6 +657,10 @@ function bindOrderRowClicks(selector){
     }
   });
 }
+
+/* -----------------------------
+   post-render decorate (highlight & bind)
+------------------------------ */
 function postRenderDecorate(){
   ['#bs_table','#r_table','#w_table','#o_table'].forEach(sel=>{
     const tb = document.querySelector(sel);
@@ -710,7 +677,9 @@ function postRenderDecorate(){
   });
 }
 
-/* SSE */
+/* -----------------------------
+   SSE realtime orders
+------------------------------ */
 let orderEventSource = null;
 function connectOrderSSE(){
   try{
@@ -720,6 +689,7 @@ function connectOrderSSE(){
       try{
         const d = JSON.parse(ev.data);
         if(d && d.order){
+          // flash alert if locked/failed
           if(d.order.status === 'locked' || d.order.status === 'failed'){
             let badge = document.getElementById('globalAlertBadge');
             if(!badge){
@@ -730,6 +700,7 @@ function connectOrderSSE(){
               document.querySelector('.top-header .user').appendChild(badge);
             }
           }
+          // refresh active page
           const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page');
           if(active==='recharge') r_search();
           else if(active==='withdraw') w_search();
@@ -743,7 +714,10 @@ function connectOrderSSE(){
 }
 connectOrderSSE();
 
-/* Searches (simple wrappers calling fetchAll) */
+/* -----------------------------
+   Search functions (bs_search / r_search / w_search / o_search)
+   Each will call postRenderDecorate() after rendering
+------------------------------ */
 async function bs_search(){
   const params = {};
   if($('#bs_start').value) params.start = $('#bs_start').value;
@@ -803,7 +777,9 @@ async function o_search(){
   }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
 
-/* Members & Dashboard */
+/* -----------------------------
+   Members & Dashboard
+------------------------------ */
 async function loadMembers(){
   const tbody = $('#m_table'); tbody.innerHTML = `<tr><td colspan="3">加载中...</td></tr>`;
   try{ const all = await fetchAll(); const users = all.users || {}; if(!Object.keys(users).length){ tbody.innerHTML = `<tr><td colspan="3">暂无数据</td></tr>`; return; } tbody.innerHTML = Object.keys(users).map(uid=>`<tr><td>${uid}</td><td>${users[uid].wallet||'--'}</td><td>${users[uid].updated||'--'}</td></tr>`).join(''); }catch(e){ tbody.innerHTML = `<tr><td colspan="3">加载失败</td></tr>`; }
@@ -812,11 +788,11 @@ async function loadDashboard(){
   try{ const all = await fetchAll(); $('#todayRecharge').innerText = all.stats?.todayRecharge || 0; $('#todayWithdraw').innerText = all.stats?.todayWithdraw || 0; $('#todayOrders').innerText = all.stats?.todayOrders || 0; $('#alertsCount').innerText = all.stats?.alerts || 0; $('#genTime').innerText = new Date().toLocaleString(); }catch(e){ $('#todayRecharge').innerText="--"; }
 }
 
-/* Init */
+/* -----------------------------
+   Init
+------------------------------ */
 document.addEventListener('DOMContentLoaded', ()=>{ document.querySelector('.sidebar .icon.active').click(); });
 
-// try auto login info: if admin token exists, fetch me
-if(getAdminToken()) afterLoginInit();
 </script>
 </body>
 </html>
