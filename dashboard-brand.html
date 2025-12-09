@@ -210,6 +210,19 @@ button.primary{
   min-width:320px;
 }
 
+/* ===== Extra styles: order modal, admin login, alerts ===== */
+.order-detail-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1300; }
+.order-detail-modal .box { background:#fff; color:#111; padding:16px; border-radius:8px; width:760px; max-width:95%; max-height:86vh; overflow:auto; }
+.order-detail-modal pre { background:#f6f8fa; padding:10px; border-radius:6px; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+.admin-login-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1400; }
+.admin-login-modal .box { background:#fff; color:#111; padding:20px; border-radius:8px; width:420px; max-width:95%; }
+.badge-alert { background:#ff4444; color:#fff; padding:6px 8px; border-radius:6px; display:inline-block; margin-left:8px; }
+.flash { animation: flash 1s linear infinite; }
+@keyframes flash { 0% { box-shadow: 0 0 0 rgba(255,0,0,0.0); } 50% { box-shadow: 0 0 8px rgba(255,0,0,0.6); } 100% { box-shadow: 0 0 0 rgba(255,0,0,0.0); } }
+.tr-alert { background: #fff0f0 !important; border-left:4px solid #ff4444 !important; }
+
 /* Responsive */
 @media(max-width:900px){
   .grid{ grid-template-columns:repeat(2,1fr); }
@@ -270,25 +283,12 @@ button.primary{
         <label>开始 <input type="date" id="bs_start"></label>
         <label>结束 <input type="date" id="bs_end"></label>
         <input id="bs_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
-
-        <select id="bs_currency">
-          <option value="">全部币种</option>
-          <option>BTC</option><option>ETH</option><option>USDT</option>
-        </select>
-
-        <select id="bs_side">
-          <option value="">全部</option>
-          <option value="buy">买</option>
-          <option value="sell">卖</option>
-        </select>
-
+        <select id="bs_currency"><option value="">全部币种</option><option>BTC</option><option>ETH</option><option>USDT</option></select>
+        <select id="bs_side"><option value="">全部</option><option value="buy">买</option><option value="sell">卖</option></select>
         <button class="primary" onclick="bs_search()">搜索</button>
       </div>
 
-      <!-- Binance tickers -->
-      <div style="margin-bottom:8px">
-        实时汇率：<span id="tickersSummary">-</span>
-      </div>
+      <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
 
       <table class="table table-sm">
         <thead>
@@ -306,9 +306,7 @@ button.primary{
             <th>操作</th>
           </tr>
         </thead>
-        <tbody id="bs_table">
-          <tr><td colspan="11" class="small">点击搜索加载数据</td></tr>
-        </tbody>
+        <tbody id="bs_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -319,42 +317,15 @@ button.primary{
       <div class="filters">
         <label>开始 <input type="date" id="r_start"></label>
         <label>结束 <input type="date" id="r_end"></label>
-
         <input id="r_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
-
-        <select id="r_currency">
-          <option value="">全部币种</option>
-          <option>BRL</option><option>USDT</option><option>BTC</option>
-        </select>
-
-        <select id="r_status">
-          <option value="">全部状态</option>
-          <option value="processing">处理中</option>
-          <option value="success">成功</option>
-          <option value="failed">失败</option>
-        </select>
-
+        <select id="r_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
+        <select id="r_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="r_search()">搜索</button>
       </div>
 
       <table class="table">
-        <thead>
-          <tr>
-            <th>订单/会员/钱包</th>
-            <th>时间</th>
-            <th>类型</th>
-            <th>金额</th>
-            <th>币种</th>
-            <th>wallet</th>
-            <th>IP</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-
-        <tbody id="r_table">
-          <tr><td colspan="9" class="small">点击搜索加载数据</td></tr>
-        </tbody>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="r_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -365,45 +336,25 @@ button.primary{
       <div class="filters">
         <label>开始 <input type="date" id="w_start"></label>
         <label>结束 <input type="date" id="w_end"></label>
-
         <input id="w_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
-
         <select id="w_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
         <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
-
         <button class="primary" onclick="w_search()">搜索</button>
       </div>
 
       <table class="table">
-        <thead>
-          <tr>
-            <th>订单/会员/钱包</th>
-            <th>时间</th>
-            <th>类型</th>
-            <th>金额</th>
-            <th>币种</th>
-            <th>wallet</th>
-            <th>IP</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-
-        <tbody id="w_table">
-          <tr><td colspan="9" class="small">点击搜索加载数据</td></tr>
-        </tbody>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></thead>
+        <tbody id="w_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
     <!-- Members page -->
     <div id="page-members" class="container" style="display:none">
       <div class="page-title">会员管理</div>
-
       <div class="filters">
         <input id="m_search" placeholder="会员ID / 钱包地址" style="width:260px">
         <button onclick="loadMembers()">搜索</button>
       </div>
-
       <table class="table">
         <thead><tr><th>会员ID</th><th>wallet</th><th>最近活动</th></tr></thead>
         <tbody id="m_table"><tr><td colspan="3" class="small">暂无数据</td></tr></tbody>
@@ -413,58 +364,60 @@ button.primary{
     <!-- Orders page -->
     <div id="page-orders" class="container" style="display:none">
       <div class="page-title">订单记录（充值/提款/买卖）</div>
-
       <div class="filters">
         <label>开始 <input type="date" id="o_start"></label>
         <label>结束 <input type="date" id="o_end"></label>
-
         <input id="o_q" placeholder="订单号 / 会员ID / 钱包地址" style="width:260px">
-
         <select id="o_type"><option value="">全部类型</option><option value="recharge">充值</option><option value="withdraw">提款</option><option value="trade">买卖</option></select>
-
         <button class="primary" onclick="o_search()">搜索</button>
       </div>
-
       <table class="table">
-        <thead>
-          <tr>
-            <th>订单/会员/钱包</th>
-            <th>时间</th>
-            <th>类型</th>
-            <th>金额</th>
-            <th>币种</th>
-            <th>wallet</th>
-            <th>IP</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-
-        <tbody id="o_table">
-          <tr><td colspan="9" class="small">暂无数据</td></tr>
-        </tbody>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="o_table"><tr><td colspan="9" class="small">暂无数据</td></tr></tbody>
       </table>
     </div>
 
-    <!-- Admin page -->
-    <div id="page-settings" class="container" style="display:none">
-      <div class="page-title">系统设置</div>
-      <p class="small">（此页目前无配置，可扩展）</p>
-    </div>
-
     <div class="footer-note">系统生成：<span id="genTime"></span></div>
-
   </div>
 </div>
 
 <!-- Wallet modal -->
-<div class="modal" id="walletModal" onclick="closeWallet()">
+<div class="modal" id="walletModal" onclick="closeWallet()"><div class="box" onclick="event.stopPropagation()"><div style="font-weight:700;margin-bottom:8px">钱包地址</div><div id="walletAddr" style="font-size:14px;word-break:break-all"></div><button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button></div></div>
+
+<!-- Order Detail Modal -->
+<div id="orderDetailModal" class="order-detail-modal" onclick="closeOrderDetail()">
   <div class="box" onclick="event.stopPropagation()">
-    <div style="font-weight:700;margin-bottom:8px">钱包地址</div>
-    <div id="walletAddr" style="font-size:14px;word-break:break-all"></div>
-    <button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:700">订单详情 <span id="orderDetailId"></span></div>
+      <div><button onclick="closeOrderDetail()" style="padding:6px 10px">关闭</button></div>
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-weight:600">原始数据</div>
+      <pre id="orderRawJson">{}</pre>
+    </div>
+    <div style="margin-top:8px">
+      <div style="font-weight:600">操作记录</div>
+      <pre id="orderActions">无操作记录</pre>
+    </div>
   </div>
 </div>
+
+<!-- Admin Login Modal -->
+<div id="adminLoginModal" class="admin-login-modal" onclick="closeAdminLogin()">
+  <div class="box" onclick="event.stopPropagation()">
+    <div style="font-weight:700;margin-bottom:8px">管理员登录</div>
+    <div style="margin-bottom:8px">
+      <input id="adminName" placeholder="管理员ID" style="width:100%;margin-bottom:8px;padding:8px" />
+      <input id="adminPassword" type="password" placeholder="密码" style="width:100%;padding:8px" />
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="submitAdminLogin()" class="primary">登录</button>
+      <button onclick="closeAdminLogin()">取消</button>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:#666">提示：管理员可以通过后端 /api/admin/create 创建新账号。</div>
+  </div>
+</div>
+
 <script>
 /* -----------------------------
    后端 API
@@ -472,7 +425,7 @@ button.primary{
 const API_TRANSACTIONS = '/api/transactions';
 const API_UPDATE = '/api/transaction/update';
 
-/* 工具函数 */
+/* helpers */
 function $(s){ return document.querySelector(s); }
 function $all(s){ return Array.from(document.querySelectorAll(s)); }
 
@@ -495,56 +448,36 @@ function updateEastern(){
 setInterval(updateEastern,1000);
 updateEastern();
 
-/* -----------------------------
-   Binance 行情 WebSocket
------------------------------- */
+/* Binance websocket (tickers) */
 const watchedSymbols = ['BTCUSDT','ETHUSDT','LTCUSDT','BCHUSDT','XRPUSDT'];
-const priceMap = {};
-let bsock = null;
-
+const priceMap = {}; let bsock = null;
 function connectBinance(){
   try{
-    const streams = watchedSymbols.map(s => s.toLowerCase() + "@trade").join('/');
-    bsock = new WebSocket("wss://stream.binance.com:9443/stream?streams=" + streams);
-
+    const streams = watchedSymbols.map(s=>s.toLowerCase()+'@trade').join('/');
+    bsock = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + streams);
     bsock.onmessage = ev=>{
       const msg = JSON.parse(ev.data);
       const d = msg.data || msg;
-      const sym = (d.s || '').toUpperCase();
-      const p = Number(d.p || d.P || d.price || 0);
-
-      if(sym && p){
-        priceMap[sym] = p;
-        updateTickSummary();
-      }
+      const sym = (d.s||'').toUpperCase(); const p = Number(d.p || d.P || d.price || 0);
+      if(sym && p){ priceMap[sym]=p; updateTickSummary(); }
     };
-
-    bsock.onclose = () => {
-      setTimeout(connectBinance, 3000);
-    };
-
+    bsock.onclose = ()=> setTimeout(connectBinance,3000);
   }catch(e){}
 }
 connectBinance();
-
-function updateTickSummary(){
-  $('#tickersSummary').innerText =
-    watchedSymbols.map(s => `${s}: ${priceMap[s] ? priceMap[s].toFixed(6) : '--'}`).join(' | ');
-}
+function updateTickSummary(){ $('#tickersSummary').innerText = watchedSymbols.map(s=> `${s}: ${priceMap[s]?priceMap[s].toFixed(6):'--'}`).join(' | '); }
 
 /* -----------------------------
-   页面显示控制
+   Page control
 ------------------------------ */
 $all(".sidebar .icon").forEach(ic=>{
   ic.addEventListener("click", ()=>{
     $all(".sidebar .icon").forEach(x=>x.classList.remove("active"));
     ic.classList.add("active");
-
     const page = ic.getAttribute("data-page");
     hideAllPages();
     const el = document.getElementById("page-" + page);
     if(el) el.style.display = "block";
-
     if(page === "dashboard") loadDashboard();
     if(page === "recharge") r_search();
     if(page === "withdraw") w_search();
@@ -553,13 +486,10 @@ $all(".sidebar .icon").forEach(ic=>{
     if(page === "members") loadMembers();
   });
 });
-
-function hideAllPages(){
-  $all(".main > .container").forEach(c=>c.style.display="none");
-}
+function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="none"); }
 
 /* -----------------------------
-   通用请求：获取所有订单
+   Fetch all orders helper
 ------------------------------ */
 async function fetchAll(params = {}){
   const url = new URL(API_TRANSACTIONS, window.location.origin);
@@ -569,7 +499,33 @@ async function fetchAll(params = {}){
 }
 
 /* -----------------------------
-   ★★★★★ 统一渲染“审核按钮”★★★★★
+   Admin auth helpers (token stored in localStorage)
+------------------------------ */
+const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
+function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
+function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
+function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
+
+async function ensureLoggedIn(){
+  if(getAdminToken()) return true;
+  document.getElementById('adminLoginModal').style.display = 'flex';
+  return false;
+}
+function closeAdminLogin(){ document.getElementById('adminLoginModal').style.display = 'none'; }
+async function submitAdminLogin(){
+  const id = document.getElementById('adminName').value.trim();
+  const pw = document.getElementById('adminPassword').value;
+  if(!id || !pw) return alert('请输入管理员ID与密码');
+  try{
+    const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, password: pw }) });
+    const j = await r.json();
+    if(j.ok && j.token){ setAdminToken(j.token); closeAdminLogin(); alert('登录成功'); loadDashboard(); }
+    else alert('登录失败: ' + (j.error || '未知'));
+  }catch(e){ alert('登录请求失败'); }
+}
+
+/* -----------------------------
+   Render action buttons (all orders)
 ------------------------------ */
 function renderActionButtons(orderId, type){
   return `
@@ -581,10 +537,17 @@ function renderActionButtons(orderId, type){
 }
 
 /* -----------------------------
-   ★★★★★ 核心：审核动作 ★★★★★
+   Core: txAction (use authHeaders)
 ------------------------------ */
 async function txAction(orderId, type, action){
+  if(!orderId) return alert('缺少订单ID');
   if(!confirm(`确定对订单 ${orderId} 执行：${action} 吗？`)) return;
+
+  // ensure logged in (will show modal if not)
+  if(!getAdminToken()){
+    await ensureLoggedIn();
+    if(!getAdminToken()) return;
+  }
 
   const finalStatus =
     action === "approve" ? "success" :
@@ -592,46 +555,22 @@ async function txAction(orderId, type, action){
     action === "lock"    ? "locked" :
     action === "unlock"  ? "processing" : "processing";
 
-  const body = {
-    orderId,
-    type,
-    status: finalStatus,
-    note: action
-  };
-
+  const body = { orderId, type, status: finalStatus, note: action };
   try{
-    const r = await fetch(API_UPDATE, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify(body)
-    });
+    const r = await fetch(API_UPDATE, { method:'POST', headers: authHeaders(), body: JSON.stringify(body) });
     const j = await r.json();
-    if(j.ok){
-      alert("操作成功");
-      const active = document.querySelector(".sidebar .icon.active").getAttribute("data-page");
-      if(active === "buysell") bs_search();
-      if(active === "recharge") r_search();
-      if(active === "withdraw") w_search();
-      if(active === "orders") o_search();
-    } else {
-      alert("操作失败：" + (j.error || JSON.stringify(j)));
-    }
-  }catch(e){
-    alert("服务器错误");
-  }
+    if(j.ok){ alert('操作成功'); const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page'); if(active==='recharge') r_search(); else if(active==='withdraw') w_search(); else if(active==='buysell') bs_search(); else o_search(); }
+    else alert('操作失败: ' + (j.error || JSON.stringify(j)));
+  }catch(e){ alert('服务器错误'); }
 }
 
 /* -----------------------------
-   ★★★★★ BuySell 渲染 ★★★★★
+   Render rows for each type
 ------------------------------ */
 function renderBuySellRow(o){
   return `
 <tr>
-  <td>
-    <div>${o.orderId}</div>
-    <div class="small">${o.userId}</div>
-  </td>
-
+  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
   <td>${o.time_us || '--'}</td>
   <td>${o.side}</td>
   <td>${o.amount}</td>
@@ -640,83 +579,144 @@ function renderBuySellRow(o){
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td>${(o.tp||'-')}/${(o.sl||'-')}</td>
-
-  <td>
-    <span class="badge" style="background:${
-      o.status === 'success' ? '#00c851' :
-      o.status === 'failed'  ? '#ff4444' :
-      o.status === 'locked'  ? '#ffbb33' :
-      '#1976d2'
-    }; color:#fff;">${o.status}</span>
-  </td>
-
-  <td>${renderActionButtons(o.orderId, "buysell")}</td>
+  <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+  <td>${renderActionButtons(o.orderId,'buysell')}</td>
 </tr>`;
 }
-
-/* -----------------------------
-   ★★★★★ Recharge 渲染 ★★★★★
------------------------------- */
 function renderRechargeRow(o){
   return `
 <tr>
-  <td>
-    <div>${o.orderId}</div>
-    <div class="small">${o.userId}</div>
-  </td>
-
+  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
   <td>${o.time_us || '--'}</td>
   <td>充值</td>
   <td>${o.amount}</td>
   <td>${o.currency || '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-
-  <td>
-    <span class="badge" style="background:${
-      o.status === 'success' ? '#00c851' :
-      o.status === 'failed'  ? '#ff4444' :
-      o.status === 'locked'  ? '#ffbb33' :
-      '#1976d2'
-    }; color:#fff;">${o.status}</span>
-  </td>
-
-  <td>${renderActionButtons(o.orderId, "recharge")}</td>
+  <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+  <td>${renderActionButtons(o.orderId,'recharge')}</td>
 </tr>`;
 }
-
-/* -----------------------------
-   ★★★★★ Withdraw 渲染 ★★★★★
------------------------------- */
 function renderWithdrawRow(o){
   return `
 <tr>
-  <td>
-    <div>${o.orderId}</div>
-    <div class="small">${o.userId}</div>
-  </td>
-
+  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
   <td>${o.time_us || '--'}</td>
   <td>提款</td>
   <td>${o.amount}</td>
-  <td>${o.currency||'--'}</td>
-  <td>${o.wallet||'--'}</td>
-  <td>${o.ip||'--'}</td>
-
-  <td>
-    <span class="badge" style="background:${
-      o.status === 'success' ? '#00c851' :
-      o.status === 'failed'  ? '#ff4444' :
-      o.status === 'locked'  ? '#ffbb33' :
-      '#1976d2'
-    }; color:#fff;">${o.status}</span>
-  </td>
-
-  <td>${renderActionButtons(o.orderId, "withdraw")}</td>
+  <td>${o.currency || '--'}</td>
+  <td>${o.wallet || '--'}</td>
+  <td>${o.ip || '--'}</td>
+  <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+  <td>${renderActionButtons(o.orderId,'withdraw')}</td>
 </tr>`;
 }
+
 /* -----------------------------
-   ★★★★★ BuySell 搜索 ★★★★★
+   Fetch single order for modal (server handles fetchOrder)
+------------------------------ */
+async function fetchOrderDetail(id){
+  try{
+    const res = await fetch(`/api/transactions?fetchOrder=${encodeURIComponent(id)}`);
+    return await res.json();
+  }catch(e){ return { ok:false }; }
+}
+
+/* -----------------------------
+   Order detail modal functions
+------------------------------ */
+function openOrderDetail(order){
+  if(!order) return;
+  document.getElementById('orderDetailModal').style.display = 'flex';
+  document.getElementById('orderDetailId').innerText = order.orderId || '';
+  document.getElementById('orderRawJson').innerText = JSON.stringify(order, null, 2);
+  // fetch actions
+  fetch(`/api/transactions?fetchOrder=${encodeURIComponent(order.orderId)}`).then(r=>r.json()).then(j=>{
+    if(j.ok && j.orderEvents && j.orderEvents.length) document.getElementById('orderActions').innerText = JSON.stringify(j.orderEvents, null, 2);
+    else document.getElementById('orderActions').innerText = '无操作记录';
+  }).catch(()=>{ document.getElementById('orderActions').innerText = '无法获取操作记录'; });
+}
+function closeOrderDetail(){ document.getElementById('orderDetailModal').style.display = 'none'; }
+
+/* -----------------------------
+   Bind clickable order IDs after rendering
+------------------------------ */
+function bindOrderRowClicks(selector){
+  const container = document.querySelector(selector);
+  if(!container) return;
+  container.querySelectorAll('tr').forEach(tr=>{
+    const idCell = tr.querySelector('td div.order-id');
+    if(idCell){
+      const id = idCell.textContent.trim();
+      idCell.style.cursor = 'pointer';
+      idCell.style.textDecoration = 'underline';
+      idCell.onclick = async ()=>{
+        const j = await fetchOrderDetail(id);
+        if(j.ok && j.order) openOrderDetail(j.order); else openOrderDetail({ orderId: id });
+      };
+    }
+  });
+}
+
+/* -----------------------------
+   post-render decorate (highlight & bind)
+------------------------------ */
+function postRenderDecorate(){
+  ['#bs_table','#r_table','#w_table','#o_table'].forEach(sel=>{
+    const tb = document.querySelector(sel);
+    if(!tb) return;
+    bindOrderRowClicks(sel);
+    tb.querySelectorAll('tr').forEach(tr=>{
+      const txt = tr.innerText.toLowerCase();
+      if(txt.includes('locked') || txt.includes('failed')){
+        tr.classList.add('tr-alert');
+      } else {
+        tr.classList.remove('tr-alert');
+      }
+    });
+  });
+}
+
+/* -----------------------------
+   SSE realtime orders
+------------------------------ */
+let orderEventSource = null;
+function connectOrderSSE(){
+  try{
+    if(orderEventSource) orderEventSource.close();
+    orderEventSource = new EventSource('/api/orders/stream');
+    orderEventSource.onmessage = function(ev){
+      try{
+        const d = JSON.parse(ev.data);
+        if(d && d.order){
+          // flash alert if locked/failed
+          if(d.order.status === 'locked' || d.order.status === 'failed'){
+            let badge = document.getElementById('globalAlertBadge');
+            if(!badge){
+              badge = document.createElement('span');
+              badge.id = 'globalAlertBadge';
+              badge.className = 'badge-alert flash';
+              badge.innerText = '异常订单';
+              document.querySelector('.top-header .user').appendChild(badge);
+            }
+          }
+          // refresh active page
+          const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page');
+          if(active==='recharge') r_search();
+          else if(active==='withdraw') w_search();
+          else if(active==='buysell') bs_search();
+          else o_search();
+        }
+      }catch(e){}
+    };
+    orderEventSource.onerror = function(){ setTimeout(connectOrderSSE,3000); };
+  }catch(e){ console.warn('SSE not available', e); }
+}
+connectOrderSSE();
+
+/* -----------------------------
+   Search functions (bs_search / r_search / w_search / o_search)
+   Each will call postRenderDecorate() after rendering
 ------------------------------ */
 async function bs_search(){
   const params = {};
@@ -725,26 +725,9 @@ async function bs_search(){
   if($('#bs_wallet').value) params.q = $('#bs_wallet').value;
   if($('#bs_currency').value) params.currency = $('#bs_currency').value;
   if($('#bs_side').value) params.side = $('#bs_side').value;
-
-  const tbody = $('#bs_table');
-  tbody.innerHTML = `<tr><td colspan="11">加载中...</td></tr>`;
-
-  try{
-    const all = await fetchAll(params);
-    const list = all.buysell || [];
-    if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="11">没有记录</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = list.map(o=>renderBuySellRow(o)).join('');
-  }catch(e){
-    tbody.innerHTML = `<tr><td colspan="11">加载失败</td></tr>`;
-  }
+  const tbody = $('#bs_table'); tbody.innerHTML = `<tr><td colspan="11">加载中...</td></tr>`;
+  try{ const all = await fetchAll(params); const list = all.buysell || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="11">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderBuySellRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="11">加载失败</td></tr>`; }
 }
-
-/* -----------------------------
-   ★★★★★ Recharge 搜索 ★★★★★
------------------------------- */
 async function r_search(){
   const params = {};
   if($('#r_start').value) params.start = $('#r_start').value;
@@ -752,26 +735,9 @@ async function r_search(){
   if($('#r_wallet').value) params.q = $('#r_wallet').value;
   if($('#r_currency').value) params.currency = $('#r_currency').value;
   if($('#r_status').value) params.status = $('#r_status').value;
-
-  const tbody = $('#r_table');
-  tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
-
-  try{
-    const all = await fetchAll(params);
-    const list = all.recharge || [];
-    if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join('');
-  }catch(e){
-    tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`;
-  }
+  const tbody = $('#r_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+  try{ const all = await fetchAll(params); const list = all.recharge || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
-
-/* -----------------------------
-   ★★★★★ Withdraw 搜索 ★★★★★
------------------------------- */
 async function w_search(){
   const params = {};
   if($('#w_start').value) params.start = $('#w_start').value;
@@ -779,137 +745,54 @@ async function w_search(){
   if($('#w_wallet').value) params.q = $('#w_wallet').value;
   if($('#w_currency').value) params.currency = $('#w_currency').value;
   if($('#w_status').value) params.status = $('#w_status').value;
-
-  const tbody = $('#w_table');
-  tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
-
-  try{
-    const all = await fetchAll(params);
-    const list = all.withdraw || [];
-    if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join('');
-  }catch(e){
-    tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`;
-  }
+  const tbody = $('#w_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+  try{ const all = await fetchAll(params); const list = all.withdraw || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
-
-/* -----------------------------
-   ★★★★★ Orders 搜索 ★★★★★
------------------------------- */
 async function o_search(){
   const params = {};
   if($('#o_start').value) params.start = $('#o_start').value;
   if($('#o_end').value) params.end = $('#o_end').value;
   if($('#o_q').value) params.q = $('#o_q').value;
   if($('#o_type').value) params.type = $('#o_type').value;
-
-  const tbody = $('#o_table');
-  tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
-
+  const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
   try{
     const all = await fetchAll(params);
-
-    const rows = [
-      ...(all.recharge || []),
-      ...(all.withdraw || []),
-      ...(all.buysell || [])
-    ];
-
-    if(!rows.length){
-      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
-      return;
-    }
-
+    const rows = [ ...(all.recharge || []), ...(all.withdraw || []), ...(all.buysell || []) ];
+    if(!rows.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; }
     tbody.innerHTML = rows.map(o=>{
-      // 类型识别
-      const type =
-        o.side ? "buy/sell" :
-        o.password ? "withdraw" :
-        "recharge";
-
-      return `
-<tr>
-  <td><div>${o.orderId}</div><div class="small">${o.userId}</div></td>
-  <td>${o.time_us || '--'}</td>
-  <td>${type}</td>
-  <td>${o.amount}</td>
-  <td>${o.currency || o.coin || '--'}</td>
-  <td>${o.wallet || '--'}</td>
-  <td>${o.ip || '--'}</td>
-
-  <td>
-    <span class="badge" style="background:${
-      o.status === 'success' ? '#00c851' :
-      o.status === 'failed'  ? '#ff4444' :
-      o.status === 'locked'  ? '#ffbb33' :
-      '#1976d2'
-    }; color:#fff;">${o.status}</span>
-  </td>
-
-  <td>${renderActionButtons(o.orderId, type)}</td>
-</tr>`;
+      const type = o.side ? 'buy/sell' : o.password ? 'withdraw' : 'recharge';
+      return `<tr>
+        <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
+        <td>${o.time_us || '--'}</td>
+        <td>${type}</td>
+        <td>${o.amount}</td>
+        <td>${o.currency || o.coin || '--'}</td>
+        <td>${o.wallet || '--'}</td>
+        <td>${o.ip || '--'}</td>
+        <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+        <td>${renderActionButtons(o.orderId, type)}</td>
+      </tr>`;
     }).join('');
-  }catch(e){
-    tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`;
-  }
+    postRenderDecorate();
+  }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
 
 /* -----------------------------
-   ★★★★★ 会员加载 ★★★★★
+   Members & Dashboard
 ------------------------------ */
 async function loadMembers(){
-  const tbody = $('#m_table');
-  tbody.innerHTML = `<tr><td colspan="3">加载中...</td></tr>`;
-
-  try{
-    const all = await fetchAll();
-    const users = all.users || {};
-
-    if(!Object.keys(users).length){
-      tbody.innerHTML = `<tr><td colspan="3">暂无数据</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = Object.keys(users).map(uid=>{
-      const u = users[uid];
-      return `
-<tr>
-  <td>${uid}</td>
-  <td>${u.wallet || '--'}</td>
-  <td>${u.updated || '--'}</td>
-</tr>`;
-    }).join('');
-  }catch(e){
-    tbody.innerHTML = `<tr><td colspan="3">加载失败</td></tr>`;
-  }
+  const tbody = $('#m_table'); tbody.innerHTML = `<tr><td colspan="3">加载中...</td></tr>`;
+  try{ const all = await fetchAll(); const users = all.users || {}; if(!Object.keys(users).length){ tbody.innerHTML = `<tr><td colspan="3">暂无数据</td></tr>`; return; } tbody.innerHTML = Object.keys(users).map(uid=>`<tr><td>${uid}</td><td>${users[uid].wallet||'--'}</td><td>${users[uid].updated||'--'}</td></tr>`).join(''); }catch(e){ tbody.innerHTML = `<tr><td colspan="3">加载失败</td></tr>`; }
 }
-
-/* -----------------------------
-   ★★★★★ Dashboard ★★★★★
------------------------------- */
 async function loadDashboard(){
-  try{
-    const all = await fetchAll();
-    $('#todayRecharge').innerText = all.stats?.todayRecharge || 0;
-    $('#todayWithdraw').innerText = all.stats?.todayWithdraw || 0;
-    $('#todayOrders').innerText = all.stats?.todayOrders || 0;
-    $('#alertsCount').innerText = all.stats?.alerts || 0;
-    $('#genTime').innerText = new Date().toLocaleString();
-  }catch(e){
-    $('#todayRecharge').innerText = "--";
-  }
+  try{ const all = await fetchAll(); $('#todayRecharge').innerText = all.stats?.todayRecharge || 0; $('#todayWithdraw').innerText = all.stats?.todayWithdraw || 0; $('#todayOrders').innerText = all.stats?.todayOrders || 0; $('#alertsCount').innerText = all.stats?.alerts || 0; $('#genTime').innerText = new Date().toLocaleString(); }catch(e){ $('#todayRecharge').innerText="--"; }
 }
 
 /* -----------------------------
-   页面载入：默认进入 Dashboard
+   Init
 ------------------------------ */
-document.addEventListener("DOMContentLoaded", ()=>{
-  document.querySelector('.sidebar .icon.active').click();
-});
-</script>
+document.addEventListener('DOMContentLoaded', ()=>{ document.querySelector('.sidebar .icon.active').click(); });
 
+</script>
 </body>
 </html>

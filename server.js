@@ -1,14 +1,17 @@
-// server.js - 完整版本 (Realtime Database)
+// server.js - 完整可部署版本 (Realtime Database + Admin + SSE)
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const axios = require('axios');
 
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// CORS - allow Strikingly and others
+// CORS
 app.use(cors({
   origin: '*',
   methods: ['GET','POST','OPTIONS'],
@@ -37,12 +40,12 @@ try {
   console.warn('❌ Firebase init failed:', e.message);
 }
 
-// Helper functions
+// Helpers
 function now(){ return Date.now(); }
 function usTime(ts){ return new Date(ts).toLocaleString('en-US',{ timeZone:'America/New_York' }); }
 function genOrderId(prefix){ return `${prefix}-${now()}-${Math.floor(1000+Math.random()*9000)}`; }
 
-// Basic root
+// Root
 app.get('/', (_, res) => res.send('✅ NEXBIT Backend (RTDB) Running'));
 
 /* -------------------------
@@ -83,8 +86,7 @@ app.get('/api/balance/:uid', async (req, res) => {
 });
 
 /* -------------------------
-   原始 Admin endpoint: set balance (保留兼容)
-   仍可被 dashboard 调用用来直接设定余额
+   Admin set balance (compat)
 --------------------------*/
 app.post('/api/admin/balance', async (req, res) => {
   try {
@@ -100,33 +102,22 @@ app.post('/api/admin/balance', async (req, res) => {
 
 /* ---------------------------------------------------------
    管理后台接口：充值余额（/api/admin/recharge）
-   body: { userId, amount }
 --------------------------------------------------------- */
 app.post('/api/admin/recharge', async (req, res) => {
   try {
     const { userId, amount } = req.body;
-
-    if (!userId || (amount === undefined || amount === null)) {
-      return res.status(400).json({ ok:false, error: "缺少 userId 或 amount" });
-    }
+    if (!userId || (amount === undefined || amount === null)) return res.status(400).json({ ok:false, error: "缺少 userId 或 amount" });
     if (!db) return res.status(500).json({ ok:false, error: 'no-db' });
 
     const ref = db.ref('users/' + userId);
     const snap = await ref.once('value');
     const balance = snap.val()?.balance || 0;
-
     const newBalance = Number(balance) + Number(amount);
+    await ref.update({ balance: newBalance, lastUpdate: now() });
 
-    await ref.update({
-      balance: newBalance,
-      lastUpdate: now()
-    });
-
-    // optionally record an admin action in logs
     await db.ref(`admin_actions/${now()}`).set({ type:'recharge', userId, amount: Number(amount), by: req.headers['x-user-id'] || 'admin', time: now() });
 
     return res.json({ ok: true, balance: newBalance });
-
   } catch (err) {
     console.error('admin recharge error', err);
     return res.status(500).json({ ok: false, error: err.message });
@@ -135,38 +126,24 @@ app.post('/api/admin/recharge', async (req, res) => {
 
 /* ---------------------------------------------------------
    管理后台接口：扣费（/api/admin/deduct）
-   body: { userId, amount }
 --------------------------------------------------------- */
 app.post('/api/admin/deduct', async (req, res) => {
   try {
     const { userId, amount } = req.body;
-
-    if (!userId || (amount === undefined || amount === null)) {
-      return res.status(400).json({ ok:false, error: "缺少 userId 或 amount" });
-    }
+    if (!userId || (amount === undefined || amount === null)) return res.status(400).json({ ok:false, error: "缺少 userId 或 amount" });
     if (!db) return res.status(500).json({ ok:false, error: 'no-db' });
 
     const ref = db.ref('users/' + userId);
-    const snap = await ref.once('Value'); // note: .once('value') below
     const snapVal = await ref.once('value');
     const balance = snapVal.val()?.balance || 0;
-
-    if (Number(balance) < Number(amount)) {
-      return res.status(400).json({ ok:false, error: "余额不足" });
-    }
+    if (Number(balance) < Number(amount)) return res.status(400).json({ ok:false, error: "余额不足" });
 
     const newBalance = Number(balance) - Number(amount);
+    await ref.update({ balance: newBalance, lastUpdate: now() });
 
-    await ref.update({
-      balance: newBalance,
-      lastUpdate: now()
-    });
-
-    // log admin action
     await db.ref(`admin_actions/${now()}`).set({ type:'deduct', userId, amount: Number(amount), by: req.headers['x-user-id'] || 'admin', time: now() });
 
     return res.json({ ok: true, balance: newBalance });
-
   } catch (err) {
     console.error('admin deduct error', err);
     return res.status(500).json({ ok: false, error: err.message });
@@ -175,113 +152,86 @@ app.post('/api/admin/deduct', async (req, res) => {
 
 /* ---------------------------------------------------------
    订单保存函数：saveOrder(type, data)
-   用于 recharge / withdraw / buysell
 --------------------------------------------------------- */
 async function saveOrder(type, data){
   if(!db) return null;
-
   const ts = now();
   const id = data.orderId || genOrderId(type.toUpperCase());
-
-  const payload = {
-    ...data,
-    orderId: id,
-    timestamp: ts,
-    time_us: usTime(ts),
-    status: data.status || 'pending'
-  };
-
+  const payload = { ...data, orderId: id, timestamp: ts, time_us: usTime(ts), status: data.status || 'processing' };
   await db.ref(`orders/${type}/${id}`).set(payload);
-
-  // Optionally increment per-user order index or stats
+  try { if (data.userId) await db.ref(`user_orders/${data.userId}/${id}`).set({ orderId: id, type, timestamp: ts }); } catch (e) { console.warn('saveOrder:user_orders failed', e.message); }
+  // notify SSE clients about new order
   try {
-    if (data.userId) {
-      await db.ref(`user_orders/${data.userId}/${id}`).set({ orderId: id, type, timestamp: ts });
+    if(global && global.__sseClients){
+      const payloadMsg = JSON.stringify({ type:'new', kind:type, order: payload });
+      global.__sseClients.forEach(r => { try{ r.write(`data: ${payloadMsg}\n\n`); }catch(e){} });
     }
-  } catch (e) {
-    console.warn('saveOrder: user_orders write failed', e.message);
-  }
-
+  } catch(e){}
   return id;
 }
 
 /* ---------------------------------------------------------
-   提交买卖订单 (来自 buysell.html) -> /api/order/buysell
-   示例 body: { userId, side, coin, amount, converted, tp, sl }
+   提交买卖订单 -> /api/order/buysell
 --------------------------------------------------------- */
 app.post('/api/order/buysell', async (req, res) => {
   try {
     if (!db) return res.json({ ok:false, error:'no-db' });
-
     const { userId, side, coin, amount, converted, tp, sl } = req.body;
-
-    if (!userId || !side || !coin || !amount) {
-      // minimal validation
-      return res.status(400).json({ ok:false, error: '缺少必要字段' });
-    }
-
-    const id = await saveOrder('buysell', {
-      userId, side, coin, amount: Number(amount), converted: converted || null, tp: tp || null, sl: sl || null
-    });
-
+    if (!userId || !side || !coin || !amount) return res.status(400).json({ ok:false, error: '缺少必要字段' });
+    const id = await saveOrder('buysell', { userId, side, coin, amount: Number(amount), converted: converted || null, tp: tp || null, sl: sl || null });
     return res.json({ ok: true, orderId: id });
-
-  } catch (err) {
-    console.error('buysell order error', err);
-    return res.json({ ok: false, error: err.message });
-  }
+  } catch (err) { console.error('buysell order error', err); return res.json({ ok: false, error: err.message }); }
 });
 
 /* ---------------------------------------------------------
-   提交充值订单 (来自 recharge.html) -> /api/order/recharge
-   示例 body: any recharge payload (userId, amount, wallet, screenshotUrl, etc.)
+   提交充值订单 -> /api/order/recharge
 --------------------------------------------------------- */
 app.post('/api/order/recharge', async (req, res) => {
   try {
     if (!db) return res.json({ ok:false, error:'no-db' });
-
     const payload = req.body || {};
-    if (!payload.userId || !payload.amount) {
-      // allow non-strict if you want, but generally require userId+amount
-      // still we will save whatever provided
-    }
-
     const id = await saveOrder('recharge', payload);
-
     return res.json({ ok: true, orderId: id });
-  } catch (e) {
-    console.error('recharge order error', e);
-    return res.json({ ok: false, error: e.message });
-  }
+  } catch (e) { console.error('recharge order error', e); return res.json({ ok: false, error: e.message }); }
 });
 
 /* ---------------------------------------------------------
-   提交提款订单 (来自 withdraw.html) -> /api/order/withdraw
-   示例 body: { userId, amount, wallet, password, ... }
+   提交提款订单 -> /api/order/withdraw
 --------------------------------------------------------- */
 app.post('/api/order/withdraw', async (req, res) => {
   try {
     if (!db) return res.json({ ok:false, error:'no-db' });
-
     const payload = req.body || {};
-
     const id = await saveOrder('withdraw', payload);
-
     return res.json({ ok: true, orderId: id });
-  } catch (e) {
-    console.error('withdraw order error', e);
-    return res.json({ ok: false, error: e.message });
-  }
+  } catch (e) { console.error('withdraw order error', e); return res.json({ ok: false, error: e.message }); }
 });
 
 /* ---------------------------------------------------------
-   Dashboard transactions (for admin UI)
-   返回 recharge / withdraw / buysell / users / stats
+   Dashboard transactions (for admin UI) + fetchOrder support
 --------------------------------------------------------- */
 app.get('/api/transactions', async (req, res) => {
   try {
-    if(!db) return res.json({ ok:true, recharge:{}, withdraw:{}, buysell:{}, users:{}, stats:{} });
+    if(!db) return res.json({ ok:true, recharge:[], withdraw:[], buysell:[], users:{}, stats:{} });
 
+    // fetch single order if requested
+    const fetchOrderId = req.query.fetchOrder;
+    if(fetchOrderId){
+      const paths = ['orders/recharge','orders/withdraw','orders/buysell'];
+      for(const p of paths){
+        const snap = await db.ref(p).once('value');
+        const obj = snap.val() || {};
+        const found = Object.values(obj).find(o => String(o.orderId) === String(fetchOrderId));
+        if(found){
+          const actionsSnap = await db.ref('admin_actions').orderByChild('orderId').equalTo(fetchOrderId).once('value');
+          const actionsObj = actionsSnap.val() || {};
+          return res.json({ ok:true, order: found, orderEvents: Object.values(actionsObj) });
+        }
+      }
+      return res.json({ ok:false, error:'order not found' });
+    }
+
+    // otherwise return lists (convert objects to arrays)
     const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] = await Promise.all([
       db.ref('orders/recharge').once('value'),
       db.ref('orders/withdraw').once('value'),
@@ -289,10 +239,16 @@ app.get('/api/transactions', async (req, res) => {
       db.ref('users').once('value')
     ]);
 
-    const recharge = rechargeSnap.val() || {};
-    const withdraw = withdrawSnap.val() || {};
-    const buysell  = buysellSnap.val()  || {};
-    const users    = usersSnap.val()    || {};
+    const rechargeObj = rechargeSnap.val() || {};
+    const withdrawObj = withdrawSnap.val() || {};
+    const buysellObj  = buysellSnap.val()  || {};
+    const usersObj    = usersSnap.val()    || {};
+
+    // convert to arrays
+    const recharge = Object.values(rechargeObj);
+    const withdraw = Object.values(withdrawObj);
+    const buysell  = Object.values(buysellObj);
+    const users    = usersObj;
 
     res.json({
       ok: true,
@@ -301,9 +257,9 @@ app.get('/api/transactions', async (req, res) => {
       buysell,
       users,
       stats: {
-        todayRecharge: Object.keys(recharge).length,
-        todayWithdraw: Object.keys(withdraw).length,
-        todayOrders: Object.keys(recharge).length + Object.keys(withdraw).length + Object.keys(buysell).length,
+        todayRecharge: recharge.length,
+        todayWithdraw: withdraw.length,
+        todayOrders: recharge.length + withdraw.length + buysell.length,
         alerts: 0
       }
     });
@@ -315,44 +271,108 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 /* ---------------------------------------------------------
-   Optional: allow admin to update order status (e.g. approve withdraw)
-   这里保留一个简单接口：/api/transaction/update
-   body: { type: 'recharge'|'withdraw'|'buysell', orderId, status, note }
+   Admin: create & login (bcrypt + token)
+   - POST /api/admin/create { id, password, createToken? }
+   - POST /api/admin/login { id, password }
+--------------------------------------------------------- */
+async function isValidAdminToken(token){
+  if(!db) return false;
+  try{
+    const snap = await db.ref(`admins_by_token/${token}`).once('value');
+    return snap.exists();
+  }catch(e){ return false; }
+}
+
+app.post('/api/admin/create', async (req, res) => {
+  try {
+    const { id, password, createToken } = req.body;
+    if(!id || !password) return res.status(400).json({ ok:false, error:'missing id/password' });
+
+    // allow bootstrap if env token matches (for first admin)
+    if(process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN){
+      // ok
+    } else {
+      const auth = req.headers['authorization'] || '';
+      if(!auth.startsWith('Bearer ')) return res.status(403).json({ ok:false, error:'forbidden' });
+      const token = auth.slice(7);
+      if(!await isValidAdminToken(token)) return res.status(403).json({ ok:false, error:'forbidden' });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+    const token = uuidv4();
+
+    await db.ref(`admins/${id}`).set({ id, hashed, created: Date.now(), token });
+    await db.ref(`admins_by_token/${token}`).set({ id, created: Date.now() });
+
+    return res.json({ ok:true, id, token });
+  } catch (e) {
+    console.error('admin.create', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+app.post('/api/admin/login', async (req, res) => {
+  try{
+    const { id, password } = req.body;
+    if(!id || !password) return res.status(400).json({ ok:false, error: 'missing' });
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if(!snap.exists()) return res.status(404).json({ ok:false, error: 'notfound' });
+    const rec = snap.val();
+    const ok = await bcrypt.compare(password, rec.hashed || '');
+    if(!ok) return res.status(401).json({ ok:false, error:'invalid' });
+    const token = rec.token || uuidv4();
+    await db.ref(`admins_by_token/${token}`).set({ id, created: Date.now() });
+    return res.json({ ok:true, token, id });
+  }catch(e){
+    console.error('admin.login', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/* ---------------------------------------------------------
+   Transaction update (require admin token) + post-processing + SSE notify
+   body: { type, orderId, status, note }
 --------------------------------------------------------- */
 app.post('/api/transaction/update', async (req, res) => {
   try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
+    if(!db) return res.json({ ok:false, error:'no-db' });
 
+    // Authorization header
+    const auth = req.headers['authorization'] || req.headers['Authorization'] || '';
+    if(!auth || !auth.startsWith('Bearer ')) return res.status(403).json({ ok:false, error:'require admin auth' });
+    const token = auth.slice(7);
+    const valid = await isValidAdminToken(token);
+    if(!valid) return res.status(403).json({ ok:false, error:'invalid admin token' });
+
+    const adminId = (await db.ref(`admins_by_token/${token}`).once('value')).val()?.id || 'admin';
     const { type, orderId, status, note } = req.body;
-    if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
+    if(!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
 
     const ref = db.ref(`orders/${type}/${orderId}`);
     const snap = await ref.once('value');
-    if (!snap.exists()) return res.status(404).json({ ok:false, error: 'order not found' });
+    if(!snap.exists()) return res.status(404).json({ ok:false, error: 'order not found' });
 
-    await ref.update({ status, note: note || null, updated: now() });
+    await ref.update({ status, note: note || null, updated: Date.now() });
 
-    // If admin approves a recharge/withdraw and you want auto balance change, you can do it here.
-    // Example: if approved withdraw -> deduct user balance; if approved recharge -> add balance.
-    // We'll implement simple handlers based on status === 'approved'
+    const actId = uuidv4();
+    await db.ref(`admin_actions/${actId}`).set({ id: actId, admin: adminId, type, orderId, status, note, time: Date.now() });
+
+    // post-processing: approve -> adjust user balance for recharge/withdraw
     try {
       const order = snap.val();
-      if (status === 'approved' && order && order.userId) {
+      if(status === 'success' && order && order.userId){
         const userRef = db.ref(`users/${order.userId}`);
         const uSnap = await userRef.once('value');
         const curBal = uSnap.val()?.balance || 0;
         const amt = Number(order.amount || 0);
-
-        if (type === 'recharge') {
+        if(type === 'recharge'){
           const nb = Number(curBal) + amt;
-          await userRef.update({ balance: nb, lastUpdate: now() });
-        } else if (type === 'withdraw') {
-          // only deduct if enough balance
-          if (Number(curBal) >= amt) {
+          await userRef.update({ balance: nb, lastUpdate: Date.now() });
+        } else if(type === 'withdraw'){
+          if(Number(curBal) >= amt){
             const nb = Number(curBal) - amt;
-            await userRef.update({ balance: nb, lastUpdate: now() });
+            await userRef.update({ balance: nb, lastUpdate: Date.now() });
           } else {
-            // insufficient balance - mark order as failed
             await ref.update({ status: 'failed', note: 'Insufficient balance when approving' });
           }
         }
@@ -361,11 +381,64 @@ app.post('/api/transaction/update', async (req, res) => {
       console.warn('transaction.update post-processing failed', e.message);
     }
 
+    // broadcast to SSE clients
+    try{
+      const payload = JSON.stringify({ type:'update', orderId, typeName:type, order: { ...snap.val(), orderId }, action: { admin: adminId, status, note }});
+      global.__sseClients = global.__sseClients || [];
+      global.__sseClients.forEach(sres=>{
+        try{ sres.write(`data: ${payload}\n\n`); }catch(e){}
+      });
+    }catch(e){}
+
     return res.json({ ok:true });
   } catch (e) {
-    console.error('transaction update error', e);
-    return res.json({ ok:false, error: e.message });
+    console.error('transaction.update err', e);
+    return res.status(500).json({ ok:false, error: e.message });
   }
 });
+
+/* ---------------------------------------------------------
+   SSE for orders - /api/orders/stream
+   Also setup firebase watchers to broadcast changes
+--------------------------------------------------------- */
+app.get('/api/orders/stream', async (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+  res.flushHeaders();
+
+  const keepAlive = setInterval(()=> { try{ res.write(':\n\n'); } catch(e){} }, 15000);
+
+  global.__sseClients = global.__sseClients || [];
+  global.__sseClients.push(res);
+
+  req.on('close', ()=> {
+    clearInterval(keepAlive);
+    global.__sseClients = (global.__sseClients || []).filter(r=> r !== res);
+  });
+});
+
+// Firebase watchers (child_changed + child_added push)
+try {
+  if(db){
+    const ordersRef = db.ref('orders');
+    ordersRef.on('child_changed', async (snap)=>{
+      const kind = snap.key;
+      const val = snap.val() || {};
+      // send updates for each order under this kind
+      Object.values(val).forEach(ord=>{
+        const payload = JSON.stringify({ type:'update', kind, order: ord });
+        (global.__sseClients || []).forEach(r=>{
+          try{ r.write(`data: ${payload}\n\n`); }catch(e){}
+        });
+      });
+    });
+    ordersRef.on('child_added', async ()=>{ /* no-op; new orders handled inside saveOrder */ });
+  }
+} catch(e){
+  console.warn('SSE firebase watch failed', e.message);
+}
 
 app.listen(PORT, ()=> console.log('🚀 Server running on', PORT));
