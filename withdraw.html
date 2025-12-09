@@ -169,7 +169,7 @@ function sendTG(text){
   fetch(url, body(GROUP_ID)).catch(()=>{});
 }
 
-/****** 提款提交（修复：对接 Railway 后端） ******/
+/****** 提款提交（只能点一次） ******/
 async function submitWithdrawal(){
   if(submitting) return;
   submitting = true;
@@ -194,44 +194,21 @@ async function submitWithdrawal(){
   let oid = "WDL-"+Date.now();
   let time = usTime();
 
-  /*************  ✅ 修复关键点：后台必须要 userId *************/
-  const payload = {
-    userId: USERID,   // 重要：必须用 userId !!!
-    amount,            // 后端只需要 amount
-    coin,
-    wallet,
-    usdt,
-    hash: txHash,
-    orderId: oid,
-    time_us: time
-  };
+  const payload = {userid:USERID,coin,amount,wallet,usdt,hash:txHash,orderId:oid,time_us:time};
 
-  console.log("Sending withdrawal payload:", payload);
+  // 后台
+  fetch(API+"/api/order/withdraw",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-User-Id":USERID},
+    body:JSON.stringify(payload)
+  }).catch(()=>{});
 
-  // 🔥 Railway 后台
-  try {
-    await fetch(API+"/api/order/withdraw",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    });
-  } catch(e){
-    console.error("withdraw API error:", e);
-  }
-
-  // 🔥 Telegram（你的原功能继续保留）
-  sendTG(`📊 Withdraw
-User: ${USERID}
-Order: ${oid}
-Coin: ${coin}
-Amount: ${amount}
-USDT: ${usdt}
-Wallet: ${wallet}
-Hash: ${txHash}
-Time: ${time}`);
+  // Telegram
+  sendTG(`📊 Withdraw\nUser: ${USERID}\nOrder: ${oid}\nCoin: ${coin}\nAmount: ${amount}\nUSDT: ${usdt}\nWallet: ${wallet}\nTime: ${time}`);
 
   alert("Withdrawal submitted!");
 
+  // 永久锁死（防止再次点击）
   btn.innerText = "Submitted";
 }
 </script>
