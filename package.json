@@ -1,6 +1,7 @@
 {
   "name": "nexbit-backend",
   "version": "1.0.0",
+  "description": "NEXBIT Crypto backend (Realtime Database version)",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
