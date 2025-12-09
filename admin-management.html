@@ -1,1 +1,34 @@
-<html><body>Admin Management Placeholder</body></html>
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>管理员管理</title>
+<style>body{font-family:Arial,sans-serif;padding:18px} table{width:100%;border-collapse:collapse} th,td{padding:8px;border:1px solid #ddd}</style>
+</head>
+<body>
+<h2>管理员管理</h2>
+<div>
+  <div>
+    <label>登录状态：<span id="loginState">未登录</span></label>
+    <button id="btnShowLogin">管理员登录</button>
+  </div>
+  <div id="loginBox" style="display:none;margin-top:12px">
+    <input id="adminId" placeholder="管理员ID" /> <input id="adminPw" placeholder="密码" type="password" />
+    <button id="btnLogin">登录</button>
+  </div>
+</div>
+
+<hr/>
+<div style="margin-top:12px">
+  <h3>创建新管理员（仅超级管理员可用）</h3>
+  <input id="newId" placeholder="new admin id" /> <input id="newPw" placeholder="password" />
+  <label><input type="checkbox" id="permRecharge"> Recharge</label>
+  <label><input type="checkbox" id="permWithdraw"> Withdraw</label>
+  <label><input type="checkbox" id="permBuySell"> BuySell</label>
+  <button id="btnCreate">创建管理员</button>
+</div>
+
+<hr/>
+<h3>管理员列表</h3>
+<table id="adminTable"><thead><tr><th>ID</th><th>isSuper</th><th>permissions</th><th>created</th><th>action</th></tr></thead><tbody><tr><td colspan="5">加载中...</td></tr></tbody></table>
+
+<script src="/js/admin.js"></script>
+</body></html>
