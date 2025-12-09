@@ -116,4 +116,3 @@ async function createBuySellOrder(data) {
 async function createRechargeOrder(data) {
     return apiPost("/api/order/recharge", data);
 }
-
