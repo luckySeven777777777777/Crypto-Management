@@ -465,8 +465,10 @@ app.post('/api/admin/login', async (req, res) => {
     const snap = await db.ref(`admins/${id}`).once('value');
     if(!snap.exists()) return res.status(404).json({ ok:false, error: 'notfound' });
     const rec = snap.val();
-    const ok = await bcrypt.compare(password, rec.hashed || '');
-    if(!ok) return res.status(401).json({ ok:false, error:'invalid' });
+const hash = rec.hashed || rec.passwordHash || '';
+const ok = await bcrypt.compare(password, hash);
+if (!ok) return res.status(401).json({ ok:false, error:'invalid' });
+
     const token = rec.token || uuidv4();
     const created = now();
     await db.ref(`admins_by_token/${token}`).set({ id, created });
