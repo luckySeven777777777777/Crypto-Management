@@ -1,9 +1,4 @@
-// server.js
-// Placeholder: Please provide your existing server.js so I can apply the exact patches.
-// I cannot safely guess your current logic without seeing it.
 
-module.exports = {}
-// server.js - 修复版（Realtime Database + Admin + SSE）
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
