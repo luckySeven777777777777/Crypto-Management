@@ -591,6 +591,53 @@ try {
 } catch(e){
   console.warn('SSE firebase watch failed', e.message);
 }
+/* ---------------------------------------------------------
+   自动确保管理员存在（一次性执行，不覆盖已有 admin）
+   登录账号：admin
+   登录密码：970611
+--------------------------------------------------------- */
+async function ensureDefaultAdmin(){
+  try {
+    if (!db) {
+      console.warn('⚠️ 无法创建管理员：Firebase 未连接');
+      return;
+    }
+
+    const snap = await db.ref('admins/admin').once('value');
+
+    // 如果管理员已存在 -> 不修改
+    if (snap.exists()) {
+      console.log('✔ 管理员 admin 已存在，跳过创建');
+      return;
+    }
+
+    const plain = '970611';   // 登录密码
+    const hashed = await bcrypt.hash(plain, 10);
+    const token = uuidv4();
+    const created = now();
+
+    await db.ref('admins/admin').set({
+      id: 'admin',
+      hashed,
+      created,
+      token,
+      isSuper: true
+    });
+
+    await db.ref(`admins_by_token/${token}`).set({
+      id: 'admin',
+      created
+    });
+
+    console.log('🎉 成功自动创建管理员：admin / 970611');
+
+  } catch (err) {
+    console.error('❌ ensureDefaultAdmin 失败:', err);
+  }
+}
+
+/* 调用一次（不会重复覆盖）*/
+ensureDefaultAdmin();
 
 // start server
 app.listen(PORT, ()=> console.log('🚀 Server running on', PORT));
