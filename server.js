@@ -1,3 +1,4 @@
+// server.js — 修复版本（已加入 balance SSE 广播）
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
@@ -186,6 +187,15 @@ app.post('/api/admin/balance', async (req, res) => {
       status: 'completed'
     });
 
+    // === NEW: broadcast balance update so frontends can sync immediately ===
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId: user,
+        balance: newBal
+      });
+    } catch(e){ console.warn('broadcastSSE error', e); }
+
     return res.json({ ok:true, balance: newBal });
   } catch (e){
     console.error('admin balance set error', e);
@@ -232,6 +242,15 @@ app.post('/api/admin/recharge', async (req, res) => {
       type:'recharge',
       status:'success'
     });
+
+    // === NEW: broadcast balance update so frontends can sync immediately ===
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId,
+        balance: newBalance
+      });
+    } catch(e){ console.warn('broadcastSSE error', e); }
 
     return res.json({ ok: true, balance: newBalance });
   } catch (e){
@@ -281,6 +300,15 @@ app.post('/api/admin/deduct', async (req, res) => {
       type:'deduct',
       status:'success'
     });
+
+    // === NEW: broadcast balance update so frontends can sync immediately ===
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId,
+        balance: newBalance
+      });
+    } catch(e){ console.warn('broadcastSSE error', e); }
 
     return res.json({ ok:true, balance:newBalance });
   } catch (e){
@@ -366,6 +394,15 @@ app.post('/api/order/buysell', async (req, res) => {
         balance: curBal - Number(amount),
         lastUpdate: now()
       });
+
+      // === NEW: broadcast balance change for buy ===
+      try {
+        broadcastSSE({
+          type: 'balance',
+          userId: uid,
+          balance: curBal - Number(amount)
+        });
+      } catch(e){ console.warn('broadcastSSE error', e); }
     }
 
     if (String(side).toLowerCase() === 'sell') {
@@ -373,6 +410,15 @@ app.post('/api/order/buysell', async (req, res) => {
         balance: curBal + Number(amount),
         lastUpdate: now()
       });
+
+      // === NEW: broadcast balance change for sell ===
+      try {
+        broadcastSSE({
+          type: 'balance',
+          userId: uid,
+          balance: curBal + Number(amount)
+        });
+      } catch(e){ console.warn('broadcastSSE error', e); }
     }
 
     const id = await saveOrder('buysell', {
@@ -646,10 +692,30 @@ app.post('/api/transaction/update', async (req, res) => {
         const amt = Number(order.amount || 0);
 
         if (type === 'recharge') {
-          await userRef.update({ balance: curBal + amt, lastUpdate: now() });
+          const newBal = curBal + amt;
+          await userRef.update({ balance: newBal, lastUpdate: now() });
+
+          // === NEW: broadcast balance update after approval ===
+          try {
+            broadcastSSE({
+              type: 'balance',
+              userId: order.userId,
+              balance: newBal
+            });
+          } catch(e){ console.warn('broadcastSSE error', e); }
         } else if (type === 'withdraw') {
           if (curBal >= amt) {
-            await userRef.update({ balance: curBal - amt, lastUpdate: now() });
+            const newBal = curBal - amt;
+            await userRef.update({ balance: newBal, lastUpdate: now() });
+
+            // === NEW: broadcast balance update after withdraw approval ===
+            try {
+              broadcastSSE({
+                type: 'balance',
+                userId: order.userId,
+                balance: newBal
+              });
+            } catch(e){ console.warn('broadcastSSE error', e); }
           } else {
             await ref.update({ status:'failed', note:'Insufficient balance when approving' });
           }
