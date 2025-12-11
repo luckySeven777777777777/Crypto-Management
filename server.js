@@ -20,6 +20,21 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// ---------------------------
+// 🔥 添加：静态文件 + 后台访问保护
+// ---------------------------
+const path = require("path");
+
+// 允许托管 dashboard-brand.html
+app.use(express.static(__dirname));
+
+// 管理后台文件路由（所有人都能打开，但没有管理员 token 看不到数据）
+app.get("/dashboard-brand.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "dashboard-brand.html"));
+});
+// ---------------------------
+// 🔥 添加结束
+// ---------------------------
 
 // ==============================================
 //  Utils
