@@ -1,11 +1,8 @@
-// ==================
-//  必要模块
-// ==================
-import express from "express";
-import cors from "cors";
-import admin from "firebase-admin";
-import bodyParser from "body-parser";
-import { v4 as uuidv4 } from "uuid";
+const express = require("express");
+const cors = require("cors");
+const admin = require("firebase-admin");
+const bodyParser = require("body-parser");
+const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 app.use(cors());
@@ -24,9 +21,8 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
-// ==================
-//  工具函数
-// ==================
+// ================ 工具函数 =====================
+
 async function getUser(uid) {
   const ref = db.collection("users").doc(uid);
   const snap = await ref.get();
@@ -34,17 +30,7 @@ async function getUser(uid) {
 }
 
 async function setBalance(uid, amount) {
-  await db.collection("users").doc(uid).update({ balance: amount });
-}
-
-async function addHistory(uid, type, amount, note = "") {
-  await db.collection("history").add({
-    uid,
-    type,
-    amount,
-    note,
-    time: Date.now(),
-  });
+  return db.collection("users").doc(uid).update({ balance: amount });
 }
 
 // ==================
@@ -53,33 +39,41 @@ async function addHistory(uid, type, amount, note = "") {
 
 // 查询余额
 app.get("/api/balance/:uid", async (req, res) => {
-  const { uid } = req.params;
-  const u = await getUser(uid);
-  if (!u) return res.json({ balance: 0 });
-  res.json({ balance: u.balance || 0 });
+  try {
+    const uid = req.params.uid;
+    const u = await getUser(uid);
+    if (!u) return res.json({ balance: 0 });
+    res.json({ balance: u.balance || 0 });
+  } catch (e) {
+    res.json({ balance: 0 });
+  }
 });
 
 // 买卖扣费
 app.post("/api/buysell", async (req, res) => {
-  const { uid, amount } = req.body;
+  try {
+    const { uid, amount } = req.body;
 
-  const u = await getUser(uid);
-  if (!u) return res.json({ status: false, msg: "User not found" });
+    const u = await getUser(uid);
+    if (!u) return res.json({ status: false });
 
-  const newBalance = u.balance - amount;
-  if (newBalance < 0) return res.json({ status: false, msg: "Insufficient" });
+    const newBalance = (u.balance || 0) - amount;
+    if (newBalance < 0)
+      return res.json({ status: false, msg: "Insufficient balance" });
 
-  await setBalance(uid, newBalance);
+    await setBalance(uid, newBalance);
 
-  // 记录订单
-  await db.collection("bs").add({
-    uid,
-    amount,
-    status: "completed",
-    time: Date.now(),
-  });
+    await db.collection("bs").add({
+      uid,
+      amount,
+      status: "completed",
+      time: Date.now(),
+    });
 
-  res.json({ status: true, balance: newBalance });
+    res.json({ status: true, balance: newBalance });
+  } catch (err) {
+    res.json({ status: false });
+  }
 });
 
 // ==================
@@ -123,36 +117,33 @@ app.get("/api/admin/listBs", async (req, res) => {
 app.get("/api/admin/orderDetail/:id/:type", async (req, res) => {
   const { id, type } = req.params;
 
-  const ref = db.collection(type).doc(id);
-  const snap = await ref.get();
-
+  const snap = await db.collection(type).doc(id).get();
   if (!snap.exists) return res.json({ status: false });
 
   res.json({ status: true, data: snap.data() });
 });
 
-// 更新订单状态（充值/提款审核）
+// 更新订单状态（审核）
 app.post("/api/admin/updateOrderStatus", async (req, res) => {
   const { id, type, status } = req.body;
 
   const ref = db.collection(type).doc(id);
   const snap = await ref.get();
+
   if (!snap.exists) return res.json({ status: false });
 
   const order = snap.data();
 
-  // 充值
+  // 充值审批
   if (type === "recharge" && status === "approve") {
     const u = await getUser(order.uid);
-    const newBalance = (u.balance || 0) + order.amount;
-    await setBalance(order.uid, newBalance);
+    await setBalance(order.uid, (u.balance || 0) + order.amount);
   }
 
-  // 提款
+  // 提款审批
   if (type === "withdraw" && status === "approve") {
     const u = await getUser(order.uid);
-    const newBalance = (u.balance || 0) - order.amount;
-    await setBalance(order.uid, newBalance);
+    await setBalance(order.uid, (u.balance || 0) - order.amount);
   }
 
   await ref.update({ status });
@@ -164,29 +155,33 @@ app.get("/api/admin/dashboard", async (req, res) => {
   const users = await db.collection("users").get();
   const recharge = await db.collection("recharge").get();
   const withdraw = await db.collection("withdraw").get();
-  const buysell = await db.collection("bs").get();
+  const bs = await db.collection("bs").get();
 
   res.json({
     totalUsers: users.size,
     totalRecharge: recharge.size,
     totalWithdraw: withdraw.size,
-    totalBs: buysell.size,
+    totalBs: bs.size,
   });
 });
 
-// SSE 推送（实时刷新后台）
+// SSE 实时推送
 app.get("/api/orders/stream", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
 
-  const unsubscribe = db.collection("recharge").onSnapshot(() => {
+  const unsub = db.collection("recharge").onSnapshot(() => {
     res.write(`data: update\n\n`);
   });
 
-  req.on("close", () => unsubscribe());
+  req.on("close", () => unsub());
 });
 
 // ==================
 //  启动
 // ==================
-app.listen(3000, () => console.log("Server running."));
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
