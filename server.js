@@ -1,835 +1,452 @@
-// server.js — 修复版本（已加入 balance SSE 广播）
-require('dotenv').config();
-const express = require('express');
-const path = require('path');
-const cors = require('cors');
-const axios = require('axios');
-const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+// server.js
+// Final API server for dashboard-brand.html (env-var Firebase service account)
+// Assumptions:
+//  - recharge collection name is "recharge" (user confirmed).
+//  - withdraw collection name is "withdraw" (if different, change below).
+//  - buysell collection name is "buysell" (if different, change below).
+//  - users collection name is "users" (user profile with balance field).
+//
+// Env:
+//  - FIREBASE_SERVICE_ACCOUNT (one-line JSON string, private_key \\n escaped) OR place firebase.json file next to server.js
+//
+// Run: node server.js
 
-const app = express();
-app.disable('etag');
-const PORT = process.env.PORT || 8080;
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const admin = require("firebase-admin");
+const path = require("path");
+const crypto = require("crypto");
+const { execSync } = require("child_process");
 
-/* ---------------------------------------------------------
-   CORS
---------------------------------------------------------- */
-app.use(cors({
-  origin: '*',
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type','x-user-id','x-userid','Authorization','X-User-Id']
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname,'public')));
-
-
-/* ---------------------------------------------------------
-   Firebase RTDB init
---------------------------------------------------------- */
-let db = null;
+// --- Try to mitigate server time drift (Railway sometimes has clock issues) ---
+process.env.TZ = "UTC";
 try {
-  const admin = require('firebase-admin');
-  if (process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_DATABASE_URL) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
-    db = admin.database();
-    console.log('✅ Firebase RTDB connected');
+  execSync("ntpdate -u time.google.com", { stdio: "ignore" });
+  console.log("Time sync attempted");
+} catch (e) {
+  // ignore; may not have permission, but we attempted
+  console.log("Time sync not available in container (ignored).");
+}
+
+// --- Init Firebase Admin using env or file ---
+let serviceAccount;
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    console.log("Using FIREBASE_SERVICE_ACCOUNT from env.");
   } else {
-    console.warn('⚠️ Firebase ENV missing');
+    // fallback to local file if present
+    serviceAccount = require("./firebase.json");
+    console.log("Using local firebase.json file.");
   }
 } catch (e) {
-  console.warn('❌ Firebase init failed:', e.message);
+  console.error("FATAL: Firebase service account not found or invalid. Set FIREBASE_SERVICE_ACCOUNT env or upload firebase.json");
+  console.error(e);
+  process.exit(1);
 }
 
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+const db = admin.firestore();
 
-/* ---------------------------------------------------------
-   Helpers
---------------------------------------------------------- */
-function now(){ return Date.now(); }
-function usTime(ts){ return new Date(ts).toLocaleString('en-US',{ timeZone:'America/New_York' }); }
-function genOrderId(prefix){ return `${prefix || 'ORD'}-${now()}-${Math.floor(1000+Math.random()*9000)}`; }
-function safeNumber(v, fallback=0){
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
 
-// SSE
-global.__sseClients = global.__sseClients || [];
-
-function broadcastSSE(payloadObj){
-  const payload = JSON.stringify(payloadObj);
-  const toRemove = [];
-  global.__sseClients.forEach(res=>{
-    try {
-      if (res.finished || (res.connection && res.connection.destroyed)) {
-        toRemove.push(res);
-        return;
-      }
-      res.write(`data: ${payload}\n\n`);
-    } catch(e){
-      toRemove.push(res);
-    }
-  });
-
-  if(toRemove.length){
-    global.__sseClients = global.__sseClients.filter(r => !toRemove.includes(r));
-  }
-}
-
-function objToSortedArray(objOrNull){
-  if(!objOrNull) return [];
-  try {
-    const arr = Object.values(objOrNull);
-    return arr.sort((a,b)=> (b.timestamp||b.time||0) - (a.timestamp||a.time||0));
-  } catch(e){
-    return [];
-  }
-}
-
-
-/* ---------------------------------------------------------
-   Root
---------------------------------------------------------- */
-app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
-
-
-/* ---------------------------------------------------------
-   Users sync
---------------------------------------------------------- */
-app.post('/api/users/sync', async (req, res) => {
-  try {
-    const { userid, userId } = req.body;
-    const uid = userid || userId;
-    if(!uid) return res.json({ ok:false, message:'no uid' });
-    if(!db) return res.json({ ok:true, message:'no-db' });
-
-    const userRef = db.ref('users/' + uid);
-    const createdSnap = await userRef.child('created').once('value');
-    const createdVal = createdSnap.exists() ? createdSnap.val() : null;
-    const created = (createdVal !== null && createdVal !== undefined) ? createdVal : now();
-    const balanceSnap = await userRef.child('balance').once('value');
-
-    const balance = safeNumber(balanceSnap.exists() ? balanceSnap.val() : 0, 0);
-
-    await userRef.update({
-      userid: uid,
-      created,
-      updated: now(),
-      balance
-    });
-
-    return res.json({ ok:true });
-  } catch(e){
-    console.error('users sync error', e);
-    return res.json({ ok:false });
-  }
+// --- Serve static admin HTML (your UI) ---
+app.use(express.static(__dirname));
+app.get("/dashboard-brand.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "dashboard-brand.html"));
 });
 
-
-/* ---------------------------------------------------------
-   GET balance
---------------------------------------------------------- */
-app.get('/api/balance/:uid', async (req, res) => {
-  try {
-    const uid = req.params.uid;
-    if (!uid) return res.json({ ok:true, balance: 0 });
-    if (!db) return res.json({ ok:true, balance: 0 });
-
-    const snap = await db.ref(`users/${uid}/balance`).once('value');
-    return res.json({ ok:true, balance: Number(snap.val() || 0) });
-  } catch (e){
-    console.error('balance api error', e);
-    return res.json({ ok:false, balance: 0 });
-  }
-});
-/* ---------------------------------------------------------
-   Admin set balance
---------------------------------------------------------- */
-app.post('/api/admin/balance', async (req, res) => {
-  try {
-    const { user, amount } = req.body;
-    if (!user || amount === undefined || amount === null)
-      return res.status(400).json({ ok:false, error:'missing user/amount' });
-    if (!db) return res.json({ ok:false, message:'no-db' });
-
-    const ref = db.ref(`users/${user}`);
-    const snap = await ref.once('value');
-
-    const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-    const newBal = Number(amount);
-
-    await ref.update({ balance: newBal, lastUpdate: now() });
-
-    // admin action
-    const actId = genOrderId('ADMIN_ACT');
-    await db.ref(`admin_actions/${actId}`).set({
-      id: actId,
-      type: 'set_balance',
-      user,
-      amount: Number(amount),
-      by: req.headers['x-user-id'] || 'admin',
-      time: now()
-    });
-
-    // also write an order record
-    const ordId = genOrderId('ORD');
-    await db.ref(`orders/recharge/${ordId}`).set({
-      orderId: ordId,
-      userId: user,
-      amount: Number(amount),
-      timestamp: now(),
-      time_us: usTime(now()),
-      type: 'admin_set_balance',
-      status: 'completed'
-    });
-
-    // === NEW: broadcast balance update so frontends can sync immediately ===
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId: user,
-        balance: newBal
-      });
-    } catch(e){ console.warn('broadcastSSE error', e); }
-
-    return res.json({ ok:true, balance: newBal });
-  } catch (e){
-    console.error('admin balance set error', e);
-    return res.json({ ok:false });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   Admin recharge
---------------------------------------------------------- */
-app.post('/api/admin/recharge', async (req, res) => {
-  try {
-    const { userId, amount } = req.body;
-    if (!userId || amount === undefined || amount === null)
-      return res.status(400).json({ ok:false, error:"missing userId/amount" });
-    if (!db) return res.status(500).json({ ok:false, error:'no-db' });
-
-    const ref = db.ref('users/' + userId);
-    const snap = await ref.once('value');
-
-    const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-    const newBalance = Number(balance) + Number(amount);
-
-    await ref.update({ balance: newBalance, lastUpdate: now() });
-
-    const actId = genOrderId('ADMIN_ACT');
-    await db.ref(`admin_actions/${actId}`).set({
-      id: actId,
-      type:'recharge',
-      userId,
-      amount: Number(amount),
-      by: req.headers['x-user-id'] || 'admin',
-      time: now()
-    });
-
-    const ordId = genOrderId('RECH');
-    await db.ref(`orders/recharge/${ordId}`).set({
-      orderId: ordId,
-      userId,
-      amount: Number(amount),
-      timestamp: now(),
-      time_us: usTime(now()),
-      type:'recharge',
-      status:'success'
-    });
-
-    // === NEW: broadcast balance update so frontends can sync immediately ===
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId,
-        balance: newBalance
-      });
-    } catch(e){ console.warn('broadcastSSE error', e); }
-
-    return res.json({ ok: true, balance: newBalance });
-  } catch (e){
-    console.error('admin recharge error', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   Admin deduct
---------------------------------------------------------- */
-app.post('/api/admin/deduct', async (req, res) => {
-  try {
-    const { userId, amount } = req.body;
-    if (!userId || amount === undefined || amount === null)
-      return res.status(400).json({ ok:false, error:"missing userId/amount" });
-    if (!db) return res.status(500).json({ ok:false, error:'no-db' });
-
-    const ref = db.ref('users/' + userId);
-    const snap = await ref.once('value');
-
-    const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-    if (Number(balance) < Number(amount))
-      return res.status(400).json({ ok:false, error:"余额不足" });
-
-    const newBalance = Number(balance) - Number(amount);
-    await ref.update({ balance: newBalance, lastUpdate: now() });
-
-    const actId = genOrderId('ADMIN_ACT');
-    await db.ref(`admin_actions/${actId}`).set({
-      id: actId,
-      type:'deduct',
-      userId,
-      amount: Number(amount),
-      by: req.headers['x-user-id'] || 'admin',
-      time: now()
-    });
-
-    const ordId = genOrderId('WD');
-    await db.ref(`orders/withdraw/${ordId}`).set({
-      orderId: ordId,
-      userId,
-      amount: Number(amount),
-      timestamp: now(),
-      time_us: usTime(now()),
-      type:'deduct',
-      status:'success'
-    });
-
-    // === NEW: broadcast balance update so frontends can sync immediately ===
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId,
-        balance: newBalance
-      });
-    } catch(e){ console.warn('broadcastSSE error', e); }
-
-    return res.json({ ok:true, balance:newBalance });
-  } catch (e){
-    console.error('admin deduct error', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   Save Order
---------------------------------------------------------- */
-async function saveOrder(type, data){
-  if(!db) return null;
-  const ts = now();
-
-  const allowed = [
-    'userId','user','amount','coin','side','converted',
-    'tp','sl','note','meta','orderId','status','type'
-  ];
-
-  const clean = {};
-  Object.keys(data||{}).forEach(k=>{
-    if(allowed.includes(k)) clean[k] = data[k];
-  });
-
-  if(!clean.userId && clean.user) clean.userId = clean.user;
-
-  const id = clean.orderId || genOrderId(type.toUpperCase());
-
-  const payload = {
-    ...clean,
-    orderId: id,
-    timestamp: ts,
-    time_us: usTime(ts),
-    status: clean.status || 'processing',
-    type
-  };
-
-  await db.ref(`orders/${type}/${id}`).set(payload);
-
-  try {
-    if (payload.userId) {
-      await db.ref(`user_orders/${payload.userId}/${id}`).set({
-        orderId: id, type, timestamp: ts
-      });
-    }
-  } catch(e){
-    console.warn('saveOrder:user_orders failed', e.message);
-  }
-
-  try{
-    broadcastSSE({ type:'new', kind:type, order: payload });
-  }catch(e){}
-
+// --- SSE clients list ---
+let sseClients = [];
+function addSseClient(res) {
+  const id = crypto.randomBytes(8).toString("hex");
+  sseClients.push({ id, res });
   return id;
 }
-
-
-/* ---------------------------------------------------------
-   Buy/Sell Order
---------------------------------------------------------- */
-app.post('/api/order/buysell', async (req, res) => {
-  try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-
-    const { userId, user, side, coin, amount, converted, tp, sl, orderId } = req.body;
-    const uid = userId || user;
-
-    if(!uid || !side || !coin || amount === undefined || amount === null)
-      return res.status(400).json({ ok:false, error:'missing fields' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-
-    if (String(side).toLowerCase() === 'buy') {
-      if (curBal < Number(amount))
-        return res.status(400).json({ ok:false, error:'余额不足' });
-
-      await userRef.update({
-        balance: curBal - Number(amount),
-        lastUpdate: now()
-      });
-
-      // === NEW: broadcast balance change for buy ===
-      try {
-        broadcastSSE({
-          type: 'balance',
-          userId: uid,
-          balance: curBal - Number(amount)
-        });
-      } catch(e){ console.warn('broadcastSSE error', e); }
-    }
-
-    if (String(side).toLowerCase() === 'sell') {
-      await userRef.update({
-        balance: curBal + Number(amount),
-        lastUpdate: now()
-      });
-
-      // === NEW: broadcast balance change for sell ===
-      try {
-        broadcastSSE({
-          type: 'balance',
-          userId: uid,
-          balance: curBal + Number(amount)
-        });
-      } catch(e){ console.warn('broadcastSSE error', e); }
-    }
-
-    const id = await saveOrder('buysell', {
-      userId: uid,
-      side, coin,
-      amount: Number(amount),
-      converted: converted || null,
-      tp: tp || null,
-      sl: sl || null,
-      orderId
-    });
-
-    return res.json({ ok:true, orderId:id });
-
-  } catch(e){
-    console.error('buysell order error', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-/* ---------------------------------------------------------
-   提交充值订单
---------------------------------------------------------- */
-app.post('/api/order/recharge', async (req, res) => {
-  try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-
-    const payload = req.body || {};
-    const id = await saveOrder('recharge', payload);
-
-    return res.json({ ok:true, orderId: id });
-  } catch(e){
-    console.error('recharge order error', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   提交提款订单
---------------------------------------------------------- */
-app.post('/api/order/withdraw', async (req, res) => {
-  try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-
-    const payload = req.body || {};
-    const userId = payload.userId || payload.user;
-
-    if(!userId || payload.amount === undefined || payload.amount === null)
-      return res.status(400).json({ ok:false, error:'missing userId/amount' });
-
-    const snap = await db.ref(`users/${userId}/balance`).once('value');
-    const curBal = snap.exists() ? safeNumber(snap.val(), 0) : 0;
-
-    if(curBal < Number(payload.amount))
-      return res.status(400).json({ ok:false, error:'余额不足' });
-
-    const id = await saveOrder('withdraw', payload);
-
-    return res.json({ ok:true, orderId:id });
-
-  } catch(e){
-    console.error('withdraw order error', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   获取全部订单 + 用户 + 快速订单查找
---------------------------------------------------------- */
-app.get('/api/transactions', async (req, res) => {
-  try {
-    if(!db) return res.json({
-      ok:true,
-      recharge:[], withdraw:[], buysell:[],
-      users:{}, stats:{}
-    });
-
-    const fetchOrderId = req.query.fetchOrder;
-    if(fetchOrderId){
-      const paths = ['orders/recharge','orders/withdraw','orders/buysell'];
-      for(const p of paths){
-        const snap = await db.ref(p).once('value');
-        const obj = snap.val() || {};
-        const found = Object.values(obj).find(o => String(o.orderId) === String(fetchOrderId));
-        if(found){
-          const actionsSnap = await db.ref('admin_actions')
-            .orderByChild('orderId')
-            .equalTo(fetchOrderId)
-            .once('value');
-
-          const actions = Object.values(actionsSnap.val() || {});
-          return res.json({ ok:true, order:found, orderEvents:actions });
-        }
-      }
-      return res.json({ ok:false, error:'order not found' });
-    }
-
-    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] = await Promise.all([
-      db.ref('orders/recharge').once('value'),
-      db.ref('orders/withdraw').once('value'),
-      db.ref('orders/buysell').once('value'),
-      db.ref('users').once('value')
-    ]);
-
-    const recharge = objToSortedArray(rechargeSnap.val() || {});
-    const withdraw = objToSortedArray(withdrawSnap.val() || {});
-    const buysell  = objToSortedArray(buysellSnap.val()  || {});
-    const users    = usersSnap.val() || {};
-
-    return res.json({
-      ok:true,
-      recharge,
-      withdraw,
-      buysell,
-      users,
-      stats:{
-        todayRecharge: recharge.length,
-        todayWithdraw: withdraw.length,
-        todayOrders: recharge.length + withdraw.length + buysell.length,
-        alerts:0
-      }
-    });
-
-  } catch(e){
-    console.error('transactions error', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   Admin: token 校验
---------------------------------------------------------- */
-async function isValidAdminToken(token){
-  if(!db || !token) return false;
-  try{
-    const snap = await db.ref(`admins_by_token/${token}`).once('value');
-    if(!snap.exists()) return false;
-
-    const rec = snap.val();
-    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30);
-    const ageMs = now() - (rec.created || 0);
-
-    if(ageMs > ttlDays * 24*60*60*1000){
-      try{ await db.ref(`admins_by_token/${token}`).remove(); }catch(e){}
-      return false;
-    }
-    return true;
-  } catch(e){
-    return false;
-  }
+function removeSseClient(id) {
+  sseClients = sseClients.filter(c => c.id !== id);
 }
-
-
-/* ---------------------------------------------------------
-   Admin: create
---------------------------------------------------------- */
-app.post('/api/admin/create', async (req, res) => {
-  try {
-    const { id, password, createToken } = req.body;
-
-    if(!id || !password) return res.status(400).json({ ok:false, error:'missing id/password' });
-
-    // only allow creation via bootstrap token or existing admin
-    if(process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN){
-      // allow
-    } else {
-      const auth = req.headers['authorization'] || '';
-      if(!auth.startsWith('Bearer ')) return res.status(403).json({ ok:false, error:'forbidden' });
-
-      const token = auth.slice(7);
-      if(!await isValidAdminToken(token)) return res.status(403).json({ ok:false, error:'forbidden' });
-    }
-
-    const hashed = await bcrypt.hash(password, 10);
-    const token = uuidv4();
-    const created = now();
-
-    await db.ref(`admins/${id}`).set({ id, hashed, created, token });
-    await db.ref(`admins_by_token/${token}`).set({ id, created });
-
-    return res.json({ ok:true, id, token });
-
-  } catch(e){
-    console.error('admin.create', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   Admin: login
---------------------------------------------------------- */
-app.post('/api/admin/login', async (req, res) => {
-  try {
-    const { id, password } = req.body;
-
-    if(!id || !password) return res.status(400).json({ ok:false, error:'missing' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if(!snap.exists()) return res.status(404).json({ ok:false, error:'notfound' });
-
-    const rec = snap.val();
-    const hash = rec.hashed || rec.passwordHash || '';
-
-    const ok = await bcrypt.compare(password, hash);
-    if(!ok) return res.status(401).json({ ok:false, error:'invalid' });
-
-    const token = rec.token || uuidv4();
-    const created = now();
-
-    await db.ref(`admins_by_token/${token}`).set({ id, created });
-
-    return res.json({ ok:true, token, id });
-
-  } catch(e){
-    console.error('admin.login', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-/* ---------------------------------------------------------
-   交易更新（后台审批）
---------------------------------------------------------- */
-app.post('/api/transaction/update', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
-
-    const auth = req.headers['authorization'] || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok:false, error:'require admin auth' });
-
-    const token = auth.slice(7);
-    const valid = await isValidAdminToken(token);
-    if (!valid) return res.status(403).json({ ok:false, error:'invalid admin token' });
-
-    const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
-    const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
-
-    const { type, orderId, status, note } = req.body;
-    if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
-
-    const ref = db.ref(`orders/${type}/${orderId}`);
-    const snap = await ref.once('value');
-    if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
-
-    await ref.update({
-      status,
-      note: note || null,
-      updated: now()
-    });
-
-    const actId = uuidv4();
-    await db.ref(`admin_actions/${actId}`).set({
-      id: actId,
-      admin: adminId,
-      type,
-      orderId,
-      status,
-      note,
-      time: now()
-    });
-
-    // 如果审批成功：更新余额
+function broadcastSse(event, payload) {
+  const data = JSON.stringify(payload || {});
+  sseClients.forEach(c => {
     try {
-      const order = snap.val();
-      if (status === 'success' && order && order.userId) {
-        const userRef = db.ref(`users/${order.userId}`);
-        const uSnap = await userRef.once('value');
-        const curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
-        const amt = Number(order.amount || 0);
-
-        if (type === 'recharge') {
-          const newBal = curBal + amt;
-          await userRef.update({ balance: newBal, lastUpdate: now() });
-
-          // === NEW: broadcast balance update after approval ===
-          try {
-            broadcastSSE({
-              type: 'balance',
-              userId: order.userId,
-              balance: newBal
-            });
-          } catch(e){ console.warn('broadcastSSE error', e); }
-        } else if (type === 'withdraw') {
-          if (curBal >= amt) {
-            const newBal = curBal - amt;
-            await userRef.update({ balance: newBal, lastUpdate: now() });
-
-            // === NEW: broadcast balance update after withdraw approval ===
-            try {
-              broadcastSSE({
-                type: 'balance',
-                userId: order.userId,
-                balance: newBal
-              });
-            } catch(e){ console.warn('broadcastSSE error', e); }
-          } else {
-            await ref.update({ status:'failed', note:'Insufficient balance when approving' });
-          }
-        }
-      }
+      c.res.write(`event: ${event}\n`);
+      c.res.write(`data: ${data}\n\n`);
     } catch (e) {
-      console.warn('post-processing failed', e.message);
+      // ignore
     }
-
-    // 推送 SSE
-    try {
-      broadcastSSE({
-        type:'update',
-        orderId,
-        typeName:type,
-        order:{ ...snap.val(), orderId },
-        action:{ admin:adminId, status, note }
-      });
-    } catch(e){}
-
-    return res.json({ ok:true });
-
-  } catch(e){
-    console.error('transaction.update err', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   SSE 订单流
---------------------------------------------------------- */
-app.get('/api/orders/stream', async (req, res) => {
-  res.set({
-    'Content-Type':'text/event-stream',
-    'Cache-Control':'no-cache',
-    'Connection':'keep-alive'
   });
-  res.flushHeaders();
-
-  // keepalive
-  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
-
-  global.__sseClients.push(res);
-
-  req.on('close', () => {
-    clearInterval(ka);
-    global.__sseClients = global.__sseClients.filter(r => r !== res);
-  });
-});
-
-// Firebase watchers
-try {
-  if (db) {
-    const ordersRef = db.ref('orders');
-    ordersRef.on('child_changed', (snap) => {
-      const kind = snap.key;
-      const val = snap.val() || {};
-      Object.values(val).forEach(ord => {
-        broadcastSSE({ type:'update', kind, order:ord });
-      });
-    });
-  }
-} catch(e){
-  console.warn('SSE firebase watch failed', e.message);
 }
 
+// --- Collections (ASSUMPTIONS) ---
+const COL_RECHARGE = "recharge"; // you confirmed this
+const COL_WITHDRAW = "withdraw"; // ASSUMPTION: change if different
+const COL_BUYSELL = "buysell";   // ASSUMPTION: change if different
+const COL_USERS = "users";       // ASSUMPTION: change if different
 
-/* ---------------------------------------------------------
-   强制重置管理员：admin / 970611
-   （覆盖 Firebase 中 admins/admin）
---------------------------------------------------------- */
+// --- Admin token store (in-memory) ---
+const tokens = {}; // token -> adminId
+async function createAdmin(id, password) {
+  const ref = db.collection("admins").doc(String(id));
+  const snap = await ref.get();
+  const hash = crypto.createHash("sha256").update(password).digest("hex");
+  if (!snap.exists) {
+    await ref.set({ id: String(id), passwordHash: hash, created: Date.now() });
+    return { ok: true };
+  } else {
+    // update password if exists
+    await ref.set({ passwordHash: hash }, { merge: true });
+    return { ok: true };
+  }
+}
+async function verifyAdmin(id, password) {
+  const ref = db.collection("admins").doc(String(id));
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  const data = snap.data();
+  const hash = crypto.createHash("sha256").update(password).digest("hex");
+  return data.passwordHash === hash;
+}
 async function ensureDefaultAdmin() {
-  try {
-    if (!db) {
-      console.warn('⚠️ 无法创建管理员：Firebase 未连接');
-      return;
-    }
-
-    console.log('⚠️ 正在强制重置管理员：admin / 970611');
-
-    const plain = '970611';
-    const hashed = await bcrypt.hash(plain, 10);
-    const token = uuidv4();
-    const created = now();
-
-    // 直接覆盖，无条件重置
-    await db.ref('admins/admin').set({
-      id: 'admin',
-      hashed,
-      created,
-      token,
-      isSuper: true
-    });
-
-    await db.ref(`admins_by_token/${token}`).set({
-      id: 'admin',
-      created
-    });
-
-    console.log('🎉 管理员已强制重置：admin / 970611');
-
-  } catch(e){
-    console.error('❌ ensureDefaultAdmin 失败:', e);
+  const snap = await db.collection("admins").limit(1).get();
+  if (snap.empty) {
+    await createAdmin("admin", "970611");
+    console.log("Default admin created: id=admin pw=970611 (change ASAP)");
   }
 }
-
-// 启动时执行一次
 ensureDefaultAdmin();
 
+// --- Helper: user balance operations ---
+async function getUser(uid) {
+  const doc = db.collection(COL_USERS).doc(String(uid));
+  const snap = await doc.get();
+  if (!snap.exists) {
+    // create default
+    await doc.set({ balance: 0, created: Date.now() });
+    return { id: String(uid), data: { balance: 0 } };
+  }
+  return { id: snap.id, data: snap.data() };
+}
+async function setUserBalance(uid, newBal) {
+  const ref = db.collection(COL_USERS).doc(String(uid));
+  await ref.set({ balance: Number(newBal), updated: Date.now() }, { merge: true });
+  return Number(newBal);
+}
+async function addUserBalance(uid, delta) {
+  const u = await getUser(uid);
+  const newBal = Number(u.data.balance || 0) + Number(delta || 0);
+  await setUserBalance(uid, newBal);
+  return newBal;
+}
+async function deductUserBalance(uid, delta) {
+  const u = await getUser(uid);
+  const cur = Number(u.data.balance || 0);
+  const amount = Number(delta || 0);
+  if (cur - amount < 0) return { ok: false, error: "insufficient", balance: cur };
+  const newBal = cur - amount;
+  await setUserBalance(uid, newBal);
+  return { ok: true, balance: newBal };
+}
 
-/* ---------------------------------------------------------
-   启动服务器
---------------------------------------------------------- */
+// --- Helper: create order doc in collection ---
+async function createOrderInCollection(collName, payload) {
+  const ref = await db.collection(collName).add(payload);
+  const snap = await ref.get();
+  return { id: ref.id, data: snap.data() };
+}
+
+// --- SSE endpoint ---
+app.get("/api/orders/stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  try { res.flushHeaders && res.flushHeaders(); } catch(e) {}
+  const id = addSseClient(res);
+  // welcome
+  res.write(`event: welcome\n`);
+  res.write(`data: ${JSON.stringify({ ok: true, now: Date.now() })}\n\n`);
+  const heartbeat = setInterval(() => {
+    try { res.write(`: heartbeat\n\n`); } catch(e) {}
+  }, 20000);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    removeSseClient(id);
+  });
+});
+
+// --- Balance endpoint (for Strikingly) ---
+app.get("/api/balance/:uid", async (req, res) => {
+  try {
+    const uid = req.params.uid;
+    const u = await getUser(uid);
+    return res.json({ ok: true, balance: Number(u.data.balance || 0) });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// --- Create orders (client endpoints) ---
+// Recharge (client-submitted deposit request)
+app.post("/api/order/recharge", async (req, res) => {
+  try {
+    const { userId, amount, currency } = req.body;
+    if (!userId || !amount) return res.json({ ok: false, error: "missing params" });
+    const doc = {
+      userId: String(userId),
+      amount: Number(amount),
+      currency: currency || "USD",
+      status: "pending",
+      created: Date.now(),
+      type: "recharge"
+    };
+    const o = await createOrderInCollection(COL_RECHARGE, doc);
+    broadcastSse("order_created", { collection: COL_RECHARGE, order: { orderId: o.id, ...o.data } });
+    return res.json({ ok: true, orderId: o.id });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// Withdraw (client-submitted withdraw request)
+app.post("/api/order/withdraw", async (req, res) => {
+  try {
+    const { userId, amount, currency } = req.body;
+    if (!userId || !amount) return res.json({ ok: false, error: "missing params" });
+    const doc = {
+      userId: String(userId),
+      amount: Number(amount),
+      currency: currency || "USD",
+      status: "pending",
+      created: Date.now(),
+      type: "withdraw"
+    };
+    const o = await createOrderInCollection(COL_WITHDRAW, doc);
+    broadcastSse("order_created", { collection: COL_WITHDRAW, order: { orderId: o.id, ...o.data } });
+    return res.json({ ok: true, orderId: o.id });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// BuySell (client-submitted trade) - automatically deduct immediately
+app.post("/api/order/buysell", async (req, res) => {
+  try {
+    const { userId, amount, side, coin } = req.body;
+    if (!userId || !amount) return res.json({ ok: false, error: "missing params" });
+    const doc = {
+      userId: String(userId),
+      amount: Number(amount),
+      side: side || "buy",
+      coin: coin || "USDT",
+      status: "processing",
+      created: Date.now(),
+      type: "buysell"
+    };
+    // attempt deduct
+    const deduct = await deductUserBalance(userId, Number(amount));
+    if (!deduct.ok) {
+      doc.status = "failed";
+      doc.reason = deduct.error || "insufficient";
+      const o = await createOrderInCollection(COL_BUYSELL, doc);
+      broadcastSse("order_created", { collection: COL_BUYSELL, order: { orderId: o.id, ...o.data } });
+      return res.json({ ok: false, error: "insufficient balance" });
+    }
+    // succeeded
+    doc.status = "success";
+    const o = await createOrderInCollection(COL_BUYSELL, doc);
+    broadcastSse("order_created", { collection: COL_BUYSELL, order: { orderId: o.id, ...o.data } });
+    broadcastSse("balance", { userId: String(userId), balance: Number((await getUser(userId)).data.balance || 0) });
+    return res.json({ ok: true });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// --- Admin create/login ---
+app.post("/api/admin/create", async (req, res) => {
+  try {
+    const { id, password } = req.body;
+    if (!id || !password) return res.json({ ok: false, error: "missing" });
+    await createAdmin(id, password);
+    return res.json({ ok: true });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+app.post("/api/admin/login", async (req, res) => {
+  try {
+    const { id, password } = req.body;
+    if (!id || !password) return res.json({ ok: false, error: "missing" });
+    const ok = await verifyAdmin(id, password);
+    if (!ok) return res.json({ ok: false, error: "invalid" });
+    const token = crypto.randomBytes(24).toString("hex");
+    tokens[token] = id;
+    // expire token in 24h
+    setTimeout(() => { delete tokens[token]; }, 24 * 3600 * 1000);
+    return res.json({ ok: true, token, admin: id });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// --- requireAdmin middleware ---
+function requireAdmin(req, res, next) {
+  try {
+    const auth = req.headers.authorization || req.headers.Authorization;
+    if (!auth) return res.status(401).json({ ok: false, error: "no auth" });
+    const parts = auth.split(" ");
+    if (parts.length !== 2) return res.status(401).json({ ok: false, error: "bad auth" });
+    const token = parts[1];
+    if (!tokens[token]) return res.status(401).json({ ok: false, error: "invalid token" });
+    req.adminId = tokens[token];
+    next();
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+}
+
+// --- Admin listing endpoints used by dashboard (protected) ---
+app.get("/api/admin/listRecharge", requireAdmin, async (req, res) => {
+  try {
+    const snap = await db.collection(COL_RECHARGE).orderBy("created", "desc").limit(500).get();
+    const list = [];
+    snap.forEach(d => list.push({ orderId: d.id, ...d.data() }));
+    return res.json({ ok: true, list });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+app.get("/api/admin/listWithdraw", requireAdmin, async (req, res) => {
+  try {
+    const snap = await db.collection(COL_WITHDRAW).orderBy("created", "desc").limit(500).get();
+    const list = [];
+    snap.forEach(d => list.push({ orderId: d.id, ...d.data() }));
+    return res.json({ ok: true, list });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+app.get("/api/admin/listBs", requireAdmin, async (req, res) => {
+  try {
+    const snap = await db.collection(COL_BUYSELL).orderBy("created", "desc").limit(500).get();
+    const list = [];
+    snap.forEach(d => list.push({ orderId: d.id, ...d.data() }));
+    return res.json({ ok: true, list });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// --- Admin dashboard stats ---
+app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
+  try {
+    const [rSnap, wSnap, bSnap, usersSnap] = await Promise.all([
+      db.collection(COL_RECHARGE).get(),
+      db.collection(COL_WITHDRAW).get(),
+      db.collection(COL_BUYSELL).get(),
+      db.collection(COL_USERS).get()
+    ]);
+    const totalUsers = usersSnap.size;
+    const totalBalance = (await Promise.all(usersSnap.docs.map(async d => Number(d.data().balance || 0)))).reduce((a,b) => a+b, 0);
+    return res.json({ ok: true, totalUsers, totalBalance, rechargeCount: rSnap.size, withdrawCount: wSnap.size, buysellCount: bSnap.size });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// --- Admin order detail ---
+app.get("/api/admin/orderDetail", requireAdmin, async (req, res) => {
+  try {
+    const orderId = req.query.orderId;
+    const type = req.query.type; // 'recharge' | 'withdraw' | 'buysell' expected
+    if (!orderId || !type) return res.json({ ok: false, error: "missing params" });
+    const snap = await db.collection(type).doc(orderId).get();
+    if (!snap.exists) return res.json({ ok: false, error: "not found" });
+    return res.json({ ok: true, order: { orderId: snap.id, ...snap.data() } });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// --- Admin update order status (approve/reject/lock/unlock) ---
+app.post("/api/admin/updateOrderStatus", requireAdmin, async (req, res) => {
+  try {
+    const { orderId, type, action } = req.body;
+    if (!orderId || !type || !action) return res.json({ ok: false, error: "missing params" });
+    const docRef = db.collection(type).doc(orderId);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.json({ ok: false, error: "not found" });
+    const order = snap.data();
+
+    // compute new status
+    let newStatus = order.status || "processing";
+    if (action === "approve" || action === "success") newStatus = "success";
+    if (action === "reject" || action === "failed") newStatus = "failed";
+    if (action === "lock") newStatus = "locked";
+    if (action === "unlock") newStatus = "processing";
+
+    // apply side effects for success
+    if (newStatus === "success") {
+      if (type === COL_RECHARGE) {
+        // add money to user
+        await addUserBalance(order.userId, order.amount);
+      } else if (type === COL_WITHDRAW) {
+        // deduct money
+        const deduct = await deductUserBalance(order.userId, order.amount);
+        if (!deduct.ok) {
+          // fail if insufficient
+          await docRef.set({ status: "failed", reason: "insufficient" }, { merge: true });
+          broadcastSse("order_updated", { orderId, type, status: "failed" });
+          return res.json({ ok: false, error: "insufficient balance" });
+        }
+      } else if (type === COL_BUYSELL) {
+        // buysell usually already deducted at creation; if not, try deduct
+        // we avoid double-deduct here
+      }
+    }
+
+    // update order status and add audit event
+    await docRef.set({ status: newStatus, updated: Date.now(), lastAction: action }, { merge: true });
+    // optional: append to events subcollection
+    try {
+      await docRef.collection("events").add({ action, admin: req.adminId, time: Date.now() });
+    } catch (e) {}
+
+    // broadcast SSE
+    broadcastSse("order_updated", { orderId, type, status: newStatus });
+    // broadcast new balance if applicable
+    if (order.userId) {
+      const u = await getUser(order.userId);
+      broadcastSse("balance", { userId: String(order.userId), balance: Number(u.data.balance || 0) });
+    }
+
+    return res.json({ ok: true, status: newStatus });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// --- Generic aggregated transactions endpoint for dashboard (not protected) ---
+app.get("/api/transactions", async (req, res) => {
+  try {
+    // allow optional fetchOrder param
+    if (req.query.fetchOrder) {
+      const orderId = req.query.fetchOrder;
+      // search in all collections
+      const types = [COL_RECHARGE, COL_WITHDRAW, COL_BUYSELL];
+      for (let t of types) {
+        const s = await db.collection(t).doc(orderId).get().catch(()=>null);
+        if (s && s.exists) return res.json({ ok: true, order: { orderId: s.id, type: t, ...s.data() } });
+      }
+      return res.json({ ok: false, error: "not found" });
+    }
+
+    // otherwise return grouped lists
+    const [rSnap, wSnap, bSnap, usersSnap] = await Promise.all([
+      db.collection(COL_RECHARGE).orderBy("created", "desc").limit(500).get(),
+      db.collection(COL_WITHDRAW).orderBy("created", "desc").limit(500).get(),
+      db.collection(COL_BUYSELL).orderBy("created", "desc").limit(500).get(),
+      db.collection(COL_USERS).get()
+    ]);
+    const recharge = [], withdraw = [], buysell = [];
+    rSnap.forEach(d => recharge.push({ orderId: d.id, ...d.data() }));
+    wSnap.forEach(d => withdraw.push({ orderId: d.id, ...d.data() }));
+    bSnap.forEach(d => buysell.push({ orderId: d.id, ...d.data() }));
+    const users = {};
+    usersSnap.forEach(d => users[d.id] = { wallet: d.data().wallet || null, balance: Number(d.data().balance || 0), updated: d.data().updated || d.data().created || null });
+    return res.json({ ok: true, recharge, withdraw, buysell, users });
+  } catch (e) { return res.json({ ok: false, error: String(e) }); }
+});
+
+// --- Health ---
+app.get("/api/health", (req, res) => res.json({ ok: true, now: Date.now() }));
+
+// --- Start server ---
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log('🚀 Server running on', PORT);
+  console.log("🚀 Server running on port", PORT);
 });
