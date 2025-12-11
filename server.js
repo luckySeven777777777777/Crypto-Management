@@ -1,4 +1,5 @@
-// server.js — 修复版本（已加入 balance SSE 广播）
+// server.js — 完整修复版（分段发送：第 1 部分）
+// 功能：充值/提款/买卖/后台审核/approveRecharge/approveWithdraw/tx update/SSE 广播
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
@@ -12,7 +13,7 @@ app.disable('etag');
 const PORT = process.env.PORT || 8080;
 
 /* ---------------------------------------------------------
-   CORS
+   CORS & body
 --------------------------------------------------------- */
 app.use(cors({
   origin: '*',
@@ -22,7 +23,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname,'public')));
-
 
 /* ---------------------------------------------------------
    Firebase RTDB init
@@ -45,7 +45,6 @@ try {
   console.warn('❌ Firebase init failed:', e.message);
 }
 
-
 /* ---------------------------------------------------------
    Helpers
 --------------------------------------------------------- */
@@ -57,7 +56,7 @@ function safeNumber(v, fallback=0){
   return Number.isFinite(n) ? n : fallback;
 }
 
-// SSE
+// SSE clients
 global.__sseClients = global.__sseClients || [];
 
 function broadcastSSE(payloadObj){
@@ -90,12 +89,10 @@ function objToSortedArray(objOrNull){
   }
 }
 
-
 /* ---------------------------------------------------------
    Root
 --------------------------------------------------------- */
 app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
-
 
 /* ---------------------------------------------------------
    Users sync
@@ -129,7 +126,6 @@ app.post('/api/users/sync', async (req, res) => {
   }
 });
 
-
 /* ---------------------------------------------------------
    GET balance
 --------------------------------------------------------- */
@@ -147,7 +143,7 @@ app.get('/api/balance/:uid', async (req, res) => {
   }
 });
 /* ---------------------------------------------------------
-   Admin set balance
+   Admin set balance (explicit set)
 --------------------------------------------------------- */
 app.post('/api/admin/balance', async (req, res) => {
   try {
@@ -187,7 +183,7 @@ app.post('/api/admin/balance', async (req, res) => {
       status: 'completed'
     });
 
-    // === NEW: broadcast balance update so frontends can sync immediately ===
+    // broadcast balance update so frontends can sync immediately
     try {
       broadcastSSE({
         type: 'balance',
@@ -203,9 +199,8 @@ app.post('/api/admin/balance', async (req, res) => {
   }
 });
 
-
 /* ---------------------------------------------------------
-   Admin recharge
+   Admin recharge (adds funds)
 --------------------------------------------------------- */
 app.post('/api/admin/recharge', async (req, res) => {
   try {
@@ -243,7 +238,7 @@ app.post('/api/admin/recharge', async (req, res) => {
       status:'success'
     });
 
-    // === NEW: broadcast balance update so frontends can sync immediately ===
+    // broadcast balance update so frontends can sync immediately
     try {
       broadcastSSE({
         type: 'balance',
@@ -258,10 +253,11 @@ app.post('/api/admin/recharge', async (req, res) => {
     return res.status(500).json({ ok:false, error:e.message });
   }
 });
-
+// server.js — 完整修复版（分段发送：第 2 部分）
+//（续接第 1 部分，直接往下拼即可）
 
 /* ---------------------------------------------------------
-   Admin deduct
+   Admin deduct (subtract funds)
 --------------------------------------------------------- */
 app.post('/api/admin/deduct', async (req, res) => {
   try {
@@ -274,10 +270,11 @@ app.post('/api/admin/deduct', async (req, res) => {
     const snap = await ref.once('value');
 
     const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-    if (Number(balance) < Number(amount))
-      return res.status(400).json({ ok:false, error:"余额不足" });
+    if (balance < Number(amount))
+      return res.json({ ok:false, error:'insufficient balance' });
 
-    const newBalance = Number(balance) - Number(amount);
+    const newBalance = balance - Number(amount);
+
     await ref.update({ balance: newBalance, lastUpdate: now() });
 
     const actId = genOrderId('ADMIN_ACT');
@@ -290,18 +287,17 @@ app.post('/api/admin/deduct', async (req, res) => {
       time: now()
     });
 
-    const ordId = genOrderId('WD');
+    const ordId = genOrderId('DEDUCT');
     await db.ref(`orders/withdraw/${ordId}`).set({
       orderId: ordId,
       userId,
       amount: Number(amount),
       timestamp: now(),
       time_us: usTime(now()),
-      type:'deduct',
+      type: 'withdraw',
       status:'success'
     });
 
-    // === NEW: broadcast balance update so frontends can sync immediately ===
     try {
       broadcastSSE({
         type: 'balance',
@@ -310,526 +306,504 @@ app.post('/api/admin/deduct', async (req, res) => {
       });
     } catch(e){ console.warn('broadcastSSE error', e); }
 
-    return res.json({ ok:true, balance:newBalance });
+    return res.json({ ok: true, balance: newBalance });
   } catch (e){
     console.error('admin deduct error', e);
     return res.status(500).json({ ok:false, error:e.message });
   }
 });
 
-
 /* ---------------------------------------------------------
-   Save Order
+   Add an order record (general)
 --------------------------------------------------------- */
-async function saveOrder(type, data){
+async function saveOrder(type, userId, amount, ext={}){
   if(!db) return null;
-  const ts = now();
-
-  const allowed = [
-    'userId','user','amount','coin','side','converted',
-    'tp','sl','note','meta','orderId','status','type'
-  ];
-
-  const clean = {};
-  Object.keys(data||{}).forEach(k=>{
-    if(allowed.includes(k)) clean[k] = data[k];
-  });
-
-  if(!clean.userId && clean.user) clean.userId = clean.user;
-
-  const id = clean.orderId || genOrderId(type.toUpperCase());
-
-  const payload = {
-    ...clean,
-    orderId: id,
-    timestamp: ts,
-    time_us: usTime(ts),
-    status: clean.status || 'processing',
-    type
+  const ordId = genOrderId('ORD');
+  const data = {
+    orderId: ordId,
+    userId,
+    amount: Number(amount),
+    type,
+    status:'processing',
+    timestamp: now(),
+    time_us: usTime(now()),
+    ...ext
   };
-
-  await db.ref(`orders/${type}/${id}`).set(payload);
-
-  try {
-    if (payload.userId) {
-      await db.ref(`user_orders/${payload.userId}/${id}`).set({
-        orderId: id, type, timestamp: ts
-      });
-    }
-  } catch(e){
-    console.warn('saveOrder:user_orders failed', e.message);
-  }
-
-  try{
-    broadcastSSE({ type:'new', kind:type, order: payload });
-  }catch(e){}
-
-  return id;
+  await db.ref(`orders/${type}/${ordId}`).set(data);
+  return data;
 }
 
-
 /* ---------------------------------------------------------
-   Buy/Sell Order
---------------------------------------------------------- */
-app.post('/api/order/buysell', async (req, res) => {
-  try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-
-    const { userId, user, side, coin, amount, converted, tp, sl, orderId } = req.body;
-    const uid = userId || user;
-
-    if(!uid || !side || !coin || amount === undefined || amount === null)
-      return res.status(400).json({ ok:false, error:'missing fields' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-
-    if (String(side).toLowerCase() === 'buy') {
-      if (curBal < Number(amount))
-        return res.status(400).json({ ok:false, error:'余额不足' });
-
-      await userRef.update({
-        balance: curBal - Number(amount),
-        lastUpdate: now()
-      });
-
-      // === NEW: broadcast balance change for buy ===
-      try {
-        broadcastSSE({
-          type: 'balance',
-          userId: uid,
-          balance: curBal - Number(amount)
-        });
-      } catch(e){ console.warn('broadcastSSE error', e); }
-    }
-
-    if (String(side).toLowerCase() === 'sell') {
-      await userRef.update({
-        balance: curBal + Number(amount),
-        lastUpdate: now()
-      });
-
-      // === NEW: broadcast balance change for sell ===
-      try {
-        broadcastSSE({
-          type: 'balance',
-          userId: uid,
-          balance: curBal + Number(amount)
-        });
-      } catch(e){ console.warn('broadcastSSE error', e); }
-    }
-
-    const id = await saveOrder('buysell', {
-      userId: uid,
-      side, coin,
-      amount: Number(amount),
-      converted: converted || null,
-      tp: tp || null,
-      sl: sl || null,
-      orderId
-    });
-
-    return res.json({ ok:true, orderId:id });
-
-  } catch(e){
-    console.error('buysell order error', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-/* ---------------------------------------------------------
-   提交充值订单
+   Submit recharge (user)
 --------------------------------------------------------- */
 app.post('/api/order/recharge', async (req, res) => {
   try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
+    const { userId, amount, currency, wallet, ip } = req.body;
+    if (!userId || !amount)
+      return res.json({ ok:false, error:'Missing userId/amount' });
+    if (!db) return res.json({ ok:false, error:'no-db' });
 
-    const payload = req.body || {};
-    const id = await saveOrder('recharge', payload);
+    const data = {
+      currency,
+      wallet,
+      ip: ip || req.headers['x-real-ip'] || req.ip
+    };
 
-    return res.json({ ok:true, orderId: id });
+    const order = await saveOrder('recharge', userId, amount, data);
+
+    if(order){
+      try {
+        broadcastSSE({
+          type:'order',
+          orderType:'recharge',
+          userId,
+          order
+        });
+      } catch(e){ console.warn('broadcastSSE recharge error', e); }
+
+      return res.json({ ok:true, order });
+    }
+    return res.json({ ok:false, message:'Save failed' });
   } catch(e){
-    console.error('recharge order error', e);
-    return res.status(500).json({ ok:false, error:e.message });
+    console.error('user recharge error', e);
+    return res.json({ ok:false });
   }
 });
 
-
 /* ---------------------------------------------------------
-   提交提款订单
+   Submit withdraw (user) — no auto deduct here
 --------------------------------------------------------- */
 app.post('/api/order/withdraw', async (req, res) => {
   try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
+    const { userId, amount, currency, wallet, ip } = req.body;
+    if (!userId || !amount)
+      return res.json({ ok:false, error:'Missing userId/amount' });
+    if (!db) return res.json({ ok:false, error:'no-db' });
 
-    const payload = req.body || {};
-    const userId = payload.userId || payload.user;
+    const data = {
+      currency,
+      wallet,
+      ip: ip || req.headers['x-real-ip'] || req.ip
+    };
 
-    if(!userId || payload.amount === undefined || payload.amount === null)
-      return res.status(400).json({ ok:false, error:'missing userId/amount' });
+    const order = await saveOrder('withdraw', userId, amount, data);
 
-    const snap = await db.ref(`users/${userId}/balance`).once('value');
-    const curBal = snap.exists() ? safeNumber(snap.val(), 0) : 0;
+    if(order){
+      try {
+        broadcastSSE({
+          type:'order',
+          orderType:'withdraw',
+          userId,
+          order
+        });
+      } catch(e){ console.warn('broadcastSSE withdraw error', e); }
 
-    if(curBal < Number(payload.amount))
-      return res.status(400).json({ ok:false, error:'余额不足' });
-
-    const id = await saveOrder('withdraw', payload);
-
-    return res.json({ ok:true, orderId:id });
-
+      return res.json({ ok:true, order });
+    }
+    return res.json({ ok:false, message:'Save failed' });
   } catch(e){
-    console.error('withdraw order error', e);
-    return res.status(500).json({ ok:false, error:e.message });
+    console.error('user withdraw error', e);
+    return res.json({ ok:false });
   }
 });
 
-
 /* ---------------------------------------------------------
-   获取全部订单 + 用户 + 快速订单查找
+   BuySell
+   BUY  = deduct amount
+   SELL = add amount
 --------------------------------------------------------- */
-app.get('/api/transactions', async (req, res) => {
+app.post('/api/order/buysell', async (req, res) => {
   try {
-    if(!db) return res.json({
-      ok:true,
-      recharge:[], withdraw:[], buysell:[],
-      users:{}, stats:{}
-    });
+    const { userId, amount, side, coin, wallet, ip } = req.body;
+    if (!userId || !amount || !side)
+      return res.json({ ok:false, error:'missing data' });
+    if(!db) return res.json({ ok:false, error:'no-db' });
 
-    const fetchOrderId = req.query.fetchOrder;
-    if(fetchOrderId){
-      const paths = ['orders/recharge','orders/withdraw','orders/buysell'];
-      for(const p of paths){
-        const snap = await db.ref(p).once('value');
-        const obj = snap.val() || {};
-        const found = Object.values(obj).find(o => String(o.orderId) === String(fetchOrderId));
-        if(found){
-          const actionsSnap = await db.ref('admin_actions')
-            .orderByChild('orderId')
-            .equalTo(fetchOrderId)
-            .once('value');
+    const userRef = db.ref(`users/${userId}`);
+    const snap = await userRef.once('value');
+    const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
 
-          const actions = Object.values(actionsSnap.val() || {});
-          return res.json({ ok:true, order:found, orderEvents:actions });
-        }
-      }
-      return res.json({ ok:false, error:'order not found' });
+    let newBal = curBal;
+    if(side === 'buy'){
+      if(newBal < Number(amount))
+        return res.json({ ok:false, error:'insufficient balance' });
+      newBal -= Number(amount);
+    } else {
+      newBal += Number(amount);
     }
 
-    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] = await Promise.all([
-      db.ref('orders/recharge').once('value'),
-      db.ref('orders/withdraw').once('value'),
-      db.ref('orders/buysell').once('value'),
-      db.ref('users').once('value')
-    ]);
+    await userRef.update({ balance:newBal, lastUpdate: now() });
 
-    const recharge = objToSortedArray(rechargeSnap.val() || {});
-    const withdraw = objToSortedArray(withdrawSnap.val() || {});
-    const buysell  = objToSortedArray(buysellSnap.val()  || {});
-    const users    = usersSnap.val() || {};
+    const ext = {
+      side,
+      coin,
+      wallet,
+      estimatedUSDT: Number(amount),
+      ip: ip || req.headers['x-real-ip'] || req.ip
+    };
+    const order = await saveOrder('buysell', userId, amount, ext);
+
+    if(order){
+      try {
+        broadcastSSE({
+          type:'balance',
+          userId,
+          balance:newBal
+        });
+        broadcastSSE({
+          type:'order',
+          orderType:'buysell',
+          userId,
+          order
+        });
+      } catch(e){ console.warn('broadcastSSE buysell error', e); }
+
+      return res.json({ ok:true, order, balance:newBal });
+    }
+
+    return res.json({ ok:false, message:'Save order failed' });
+  } catch(e){
+    console.error('buysell error', e);
+    return res.json({ ok:false });
+  }
+});
+
+/* ---------------------------------------------------------
+   getTransactions (list)
+--------------------------------------------------------- */
+app.get('/api/transactions/:user', async (req, res) => {
+  try {
+    const uid = req.params.user;
+    if (!uid) return res.json({ ok:true, recharge:[], withdraw:[], buysell:[] });
+    if (!db) return res.json({ ok:true, recharge:[], withdraw:[], buysell:[] });
+
+    const reSnap = await db.ref(`orders/recharge`).once('value');
+    const wdSnap = await db.ref(`orders/withdraw`).once('value');
+    const bsSnap = await db.ref(`orders/buysell`).once('value');
+
+    const reArr = objToSortedArray(reSnap.exists()? reSnap.val():{});
+    const wdArr = objToSortedArray(wdSnap.exists()? wdSnap.val():{});
+    const bsArr = objToSortedArray(bsSnap.exists()? bsSnap.val():{});
+
+    // filter by user
+    const filterByUser = arr => arr.filter(o => (o.userId===uid));
 
     return res.json({
       ok:true,
-      recharge,
-      withdraw,
-      buysell,
-      users,
-      stats:{
-        todayRecharge: recharge.length,
-        todayWithdraw: withdraw.length,
-        todayOrders: recharge.length + withdraw.length + buysell.length,
-        alerts:0
-      }
+      recharge: filterByUser(reArr),
+      withdraw: filterByUser(wdArr),
+      buysell: filterByUser(bsArr)
     });
-
   } catch(e){
-    console.error('transactions error', e);
-    return res.status(500).json({ ok:false, error:e.message });
+    console.error('transactions list error', e);
+    return res.json({ ok:false });
   }
 });
-
-
 /* ---------------------------------------------------------
-   Admin: token 校验
---------------------------------------------------------- */
-async function isValidAdminToken(token){
-  if(!db || !token) return false;
-  try{
-    const snap = await db.ref(`admins_by_token/${token}`).once('value');
-    if(!snap.exists()) return false;
-
-    const rec = snap.val();
-    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30);
-    const ageMs = now() - (rec.created || 0);
-
-    if(ageMs > ttlDays * 24*60*60*1000){
-      try{ await db.ref(`admins_by_token/${token}`).remove(); }catch(e){}
-      return false;
-    }
-    return true;
-  } catch(e){
-    return false;
-  }
-}
-
-
-/* ---------------------------------------------------------
-   Admin: create
+   Admin — Create account
 --------------------------------------------------------- */
 app.post('/api/admin/create', async (req, res) => {
   try {
-    const { id, password, createToken } = req.body;
-
-    if(!id || !password) return res.status(400).json({ ok:false, error:'missing id/password' });
-
-    // only allow creation via bootstrap token or existing admin
-    if(process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN){
-      // allow
-    } else {
-      const auth = req.headers['authorization'] || '';
-      if(!auth.startsWith('Bearer ')) return res.status(403).json({ ok:false, error:'forbidden' });
-
-      const token = auth.slice(7);
-      if(!await isValidAdminToken(token)) return res.status(403).json({ ok:false, error:'forbidden' });
-    }
-
-    const hashed = await bcrypt.hash(password, 10);
-    const token = uuidv4();
-    const created = now();
-
-    await db.ref(`admins/${id}`).set({ id, hashed, created, token });
-    await db.ref(`admins_by_token/${token}`).set({ id, created });
-
-    return res.json({ ok:true, id, token });
-
-  } catch(e){
-    console.error('admin.create', e);
-    return res.status(500).json({ ok:false, error:e.message });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   Admin: login
---------------------------------------------------------- */
-app.post('/api/admin/login', async (req, res) => {
-  try {
     const { id, password } = req.body;
+    if (!id || !password)
+      return res.json({ ok:false, error:"missing id/password" });
+    if (!db) return res.json({ ok:false, error:"no-db" });
 
-    if(!id || !password) return res.status(400).json({ ok:false, error:'missing' });
+    const ref = db.ref('admins/' + id);
+    const snap = await ref.once('value');
+    if (snap.exists())
+      return res.json({ ok:false, error:'admin-exists' });
 
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if(!snap.exists()) return res.status(404).json({ ok:false, error:'notfound' });
+    await ref.set({
+      id,
+      password,
+      created: now()
+    });
 
-    const rec = snap.val();
-    const hash = rec.hashed || rec.passwordHash || '';
-
-    const ok = await bcrypt.compare(password, hash);
-    if(!ok) return res.status(401).json({ ok:false, error:'invalid' });
-
-    const token = rec.token || uuidv4();
-    const created = now();
-
-    await db.ref(`admins_by_token/${token}`).set({ id, created });
-
-    return res.json({ ok:true, token, id });
-
-  } catch(e){
-    console.error('admin.login', e);
-    return res.status(500).json({ ok:false, error:e.message });
+    return res.json({ ok:true });
+  } catch (e){
+    console.error("create admin error", e);
+    return res.json({ ok:false });
   }
 });
+
 /* ---------------------------------------------------------
-   交易更新（后台审批）
+   Admin Login
+--------------------------------------------------------- */
+app.post('/api/admin/login', async (req, res)=>{
+  try{
+    const { id, password } = req.body;
+    if(!id || !password)
+      return res.json({ ok:false, error:"missing id/password" });
+    if(!db) return res.json({ ok:false, error:"no-db" });
+
+    const snap = await db.ref('admins/' + id).once('value');
+    if(!snap.exists() || snap.val().password !== password)
+      return res.json({ ok:false, error:"invalid-login" });
+
+    const token = genToken(id);
+    adminTokens.set(token, id);
+
+    return res.json({ ok:true, token });
+  }catch(e){
+    console.error("admin login error", e);
+    return res.json({ ok:false });
+  }
+});
+
+/* ---------------------------------------------------------
+   Admin: Approve/Reject/Lock/Unlock Order
+   - Approve recharge  → 真正加余额
+   - Approve withdraw → 真正扣余额
 --------------------------------------------------------- */
 app.post('/api/transaction/update', async (req, res) => {
   try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
+    const token = (req.headers.authorization || "").replace("Bearer ","").trim();
+    if (!adminTokens.has(token))
+      return res.status(403).json({ ok:false, error:"not-auth" });
 
-    const auth = req.headers['authorization'] || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok:false, error:'require admin auth' });
+    const adminId = adminTokens.get(token);
 
-    const token = auth.slice(7);
-    const valid = await isValidAdminToken(token);
-    if (!valid) return res.status(403).json({ ok:false, error:'invalid admin token' });
+    const { orderId, type, status, note } = req.body;
+    if (!orderId || !type || !status)
+      return res.json({ ok:false, error:"missing fields" });
+    if (!db) return res.json({ ok:false, error:"no-db" });
 
-    const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
-    const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
+    let root = "";
+    if (type === "recharge") root = "orders/recharge";
+    else if (type === "withdraw") root = "orders/withdraw";
+    else if (type === "buysell") root = "orders/buysell";
+    else return res.json({ ok:false, error:"invalid-type" });
 
-    const { type, orderId, status, note } = req.body;
-    if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
+    const ref = db.ref(`${root}/${orderId}`);
+    const snap = await ref.once("value");
+    if (!snap.exists())
+      return res.json({ ok:false, error:"order-not-found" });
 
-    const ref = db.ref(`orders/${type}/${orderId}`);
-    const snap = await ref.once('value');
-    if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
+    const ord = snap.val();
 
+    // -----------------------------------------------------
+    // 审核充值成功 = 真正加余额
+    // -----------------------------------------------------
+    if (type === "recharge" && status === "success") {
+      const uref = db.ref("users/" + ord.userId);
+      const uSnap = await uref.once("value");
+      const bal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
+      const newBal = bal + Number(ord.amount);
+
+      await uref.update({
+        balance: newBal,
+        lastUpdate: now()
+      });
+
+      broadcastSSE({
+        type:"balance",
+        userId: ord.userId,
+        balance: newBal
+      });
+    }
+
+    // -----------------------------------------------------
+    // 审核提款成功 = 真正扣余额
+    // -----------------------------------------------------
+    if (type === "withdraw" && status === "success") {
+      const uref = db.ref("users/" + ord.userId);
+      const uSnap = await uref.once("value");
+      const bal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
+
+      if (bal < Number(ord.amount))
+        return res.json({ ok:false, error:"insufficient-balance" });
+
+      const newBal = bal - Number(ord.amount);
+
+      await uref.update({
+        balance: newBal,
+        lastUpdate: now()
+      });
+
+      broadcastSSE({
+        type:"balance",
+        userId: ord.userId,
+        balance: newBal
+      });
+    }
+
+    // -----------------------------------------------------
+    // 更新订单状态 + 写入操作记录
+    // -----------------------------------------------------
     await ref.update({
       status,
-      note: note || null,
-      updated: now()
+      adminNote: note || "",
+      adminBy: adminId,
+      adminTime: now()
     });
 
-    const actId = uuidv4();
-    await db.ref(`admin_actions/${actId}`).set({
-      id: actId,
-      admin: adminId,
-      type,
+    await db.ref(`order_actions/${orderId}/${now()}`).set({
       orderId,
+      type,
       status,
-      note,
+      by: adminId,
+      note: note || "",
       time: now()
     });
 
-    // 如果审批成功：更新余额
-    try {
-      const order = snap.val();
-      if (status === 'success' && order && order.userId) {
-        const userRef = db.ref(`users/${order.userId}`);
-        const uSnap = await userRef.once('value');
-        const curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
-        const amt = Number(order.amount || 0);
-
-        if (type === 'recharge') {
-          const newBal = curBal + amt;
-          await userRef.update({ balance: newBal, lastUpdate: now() });
-
-          // === NEW: broadcast balance update after approval ===
-          try {
-            broadcastSSE({
-              type: 'balance',
-              userId: order.userId,
-              balance: newBal
-            });
-          } catch(e){ console.warn('broadcastSSE error', e); }
-        } else if (type === 'withdraw') {
-          if (curBal >= amt) {
-            const newBal = curBal - amt;
-            await userRef.update({ balance: newBal, lastUpdate: now() });
-
-            // === NEW: broadcast balance update after withdraw approval ===
-            try {
-              broadcastSSE({
-                type: 'balance',
-                userId: order.userId,
-                balance: newBal
-              });
-            } catch(e){ console.warn('broadcastSSE error', e); }
-          } else {
-            await ref.update({ status:'failed', note:'Insufficient balance when approving' });
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('post-processing failed', e.message);
-    }
-
-    // 推送 SSE
-    try {
-      broadcastSSE({
-        type:'update',
-        orderId,
-        typeName:type,
-        order:{ ...snap.val(), orderId },
-        action:{ admin:adminId, status, note }
-      });
-    } catch(e){}
+    broadcastSSE({
+      type:'order',
+      orderType:type,
+      orderId,
+      status
+    });
 
     return res.json({ ok:true });
-
-  } catch(e){
-    console.error('transaction.update err', e);
-    return res.status(500).json({ ok:false, error:e.message });
+  } catch (e){
+    console.error("transaction update error", e);
+    return res.json({ ok:false, error: e.message });
   }
 });
 
-
 /* ---------------------------------------------------------
-   SSE 订单流
+   Admin fetch all orders + stats
 --------------------------------------------------------- */
-app.get('/api/orders/stream', async (req, res) => {
+app.get('/api/transactions', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:"no-db" });
+
+    const q = req.query.q || "";
+    const start = req.query.start ? Date.parse(req.query.start) : 0;
+    const end = req.query.end ? Date.parse(req.query.end) + 86400000 : Date.now() + 10000;
+    const currency = req.query.currency || "";
+    const side = req.query.side || "";
+    const status = req.query.status || "";
+    const type = req.query.type || "";
+
+    const reSnap = await db.ref('orders/recharge').once('value');
+    const wdSnap = await db.ref('orders/withdraw').once('value');
+    const bsSnap = await db.ref('orders/buysell').once('value');
+
+    const reArr = objToSortedArray(reSnap.exists()? reSnap.val():{});
+    const wdArr = objToSortedArray(wdSnap.exists()? wdSnap.val():{});
+    const bsArr = objToSortedArray(bsSnap.exists()? bsSnap.val():{});
+
+    function filterOrder(o) {
+      if (o.timestamp < start || o.timestamp > end) return false;
+      if (q && !(o.orderId?.includes(q) || o.userId?.includes(q) || o.wallet?.includes(q))) return false;
+      if (currency && (o.currency !== currency && o.coin !== currency)) return false;
+      if (status && o.status !== status) return false;
+      if (side && o.side !== side) return false;
+      return true;
+    }
+
+    return res.json({
+      ok:true,
+      recharge: (type && type!=='recharge') ? [] : reArr.filter(filterOrder),
+      withdraw: (type && type!=='withdraw') ? [] : wdArr.filter(filterOrder),
+      buysell: (type && type!=='trade' && type!=='buysell') ? [] : bsArr.filter(filterOrder),
+      users: (await db.ref('users').once('value')).val() || {},
+      stats:{
+        todayRecharge: reArr.filter(o=>o.timestamp>todayStartTS()).length,
+        todayWithdraw: wdArr.filter(o=>o.timestamp>todayStartTS()).length,
+        todayOrders: (reArr.length + wdArr.length + bsArr.length),
+        alerts: wdArr.filter(o=>['failed','locked'].includes(o.status)).length
+      }
+    });
+  } catch(e){
+    console.error("admin fetch error", e);
+    return res.json({ ok:false });
+  }
+});
+/* ---------------------------------------------------------
+   SSE — 前端实时同步余额 & 订单状态
+--------------------------------------------------------- */
+let sseClients = new Set();
+
+app.get('/api/sse', (req, res) => {
   res.set({
-    'Content-Type':'text/event-stream',
-    'Cache-Control':'no-cache',
-    'Connection':'keep-alive'
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
   });
   res.flushHeaders();
 
-  // keepalive
-  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
-
-  global.__sseClients.push(res);
+  const client = { id: Date.now(), res };
+  sseClients.add(client);
 
   req.on('close', () => {
-    clearInterval(ka);
-    global.__sseClients = global.__sseClients.filter(r => r !== res);
+    sseClients.delete(client);
   });
 });
 
-// Firebase watchers
-try {
-  if (db) {
-    const ordersRef = db.ref('orders');
-    ordersRef.on('child_changed', (snap) => {
-      const kind = snap.key;
-      const val = snap.val() || {};
-      Object.values(val).forEach(ord => {
-        broadcastSSE({ type:'update', kind, order:ord });
-      });
-    });
+/* 广播到所有 SSE 客户端 */
+function broadcastSSE(data) {
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
+  for (const c of sseClients) {
+    try { c.res.write(payload); }
+    catch { }
   }
-} catch(e){
-  console.warn('SSE firebase watch failed', e.message);
 }
 
-
 /* ---------------------------------------------------------
-   强制重置管理员：admin / 970611
-   （覆盖 Firebase 中 admins/admin）
+   Balance API (Strikingly 每 2 秒拉取)
 --------------------------------------------------------- */
-async function ensureDefaultAdmin() {
+app.get('/api/balance/:uid', async (req, res) => {
   try {
-    if (!db) {
-      console.warn('⚠️ 无法创建管理员：Firebase 未连接');
-      return;
+    const uid = req.params.uid;
+    const snap = await db.ref('users/' + uid).once('value');
+    if (!snap.exists()) {
+      return res.json({ balance: 0 });
     }
+    return res.json({ balance: safeNumber(snap.val().balance, 0) });
+  } catch (e) {
+    return res.json({ balance: 0 });
+  }
+});
 
-    console.log('⚠️ 正在强制重置管理员：admin / 970611');
+/* ---------------------------------------------------------
+   Tools
+--------------------------------------------------------- */
+function todayStartTS() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
 
-    const plain = '970611';
-    const hashed = await bcrypt.hash(plain, 10);
-    const token = uuidv4();
-    const created = now();
+function safeNumber(v, def = 0) {
+  const n = Number(v);
+  return isNaN(n) ? def : n;
+}
 
-    // 直接覆盖，无条件重置
-    await db.ref('admins/admin').set({
-      id: 'admin',
-      hashed,
-      created,
-      token,
-      isSuper: true
+function now() {
+  return Date.now();
+}
+
+function objToSortedArray(obj) {
+  const arr = Object.values(obj || {});
+  arr.sort((a, b) => b.timestamp - a.timestamp);
+  return arr;
+}
+
+/* ---------------------------------------------------------
+   Server Start
+--------------------------------------------------------- */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("🚀 Server running on port", PORT);
+});
+
+/* ---------------------------------------------------------
+   Init Admin (默认管理员)
+--------------------------------------------------------- */
+async function initAdmin() {
+  if (!db) return;
+  const adminRef = db.ref("admins/admin");
+  const snap = await adminRef.once('value');
+  if (!snap.exists()) {
+    await adminRef.set({
+      id: "admin",
+      password: "970611",
+      created: now()
     });
-
-    await db.ref(`admins_by_token/${token}`).set({
-      id: 'admin',
-      created
-    });
-
-    console.log('🎉 管理员已强制重置：admin / 970611');
-
-  } catch(e){
-    console.error('❌ ensureDefaultAdmin 失败:', e);
+    console.log("Default admin account created.");
   }
 }
 
-// 启动时执行一次
-ensureDefaultAdmin();
-
-
-/* ---------------------------------------------------------
-   启动服务器
---------------------------------------------------------- */
-app.listen(PORT, () => {
-  console.log('🚀 Server running on', PORT);
-});
+setTimeout(initAdmin, 1500);
