@@ -254,6 +254,7 @@ button.primary{
   </div>
 
   <div class="main">
+
     <!-- Dashboard -->
     <div id="page-dashboard" class="container">
       <div class="page-title">控制台</div>
@@ -419,55 +420,14 @@ button.primary{
 
 <script>
 /* -----------------------------
-   后端 API (兼容层：优先 admin 路由，回退到通用路由)
+   后端 API
 ------------------------------ */
-
-// Primary admin endpoints (what your UI expects)
-const ADMIN_LIST_RECHARGE = '/api/admin/listRecharge';
-const ADMIN_LIST_WITHDRAW = '/api/admin/listWithdraw';
-const ADMIN_LIST_BS = '/api/admin/listBs';
-const ADMIN_APPROVE_RECHARGE = '/api/admin/approveRecharge';
-const ADMIN_APPROVE_WITHDRAW = '/api/admin/approveWithdraw';
-const ADMIN_UPDATE_ORDER = '/api/admin/updateOrderStatus';
-const ADMIN_ORDER_DETAIL = '/api/admin/orderDetail';
-const ADMIN_LIST_MEMBERS = '/api/admin/listMembers';
-const ADMIN_DASHBOARD = '/api/admin/dashboard';
-const ORDERS_SSE = '/api/orders/stream';
-
-// Fallback / alternate endpoints (older/newer server.js)
 const API_TRANSACTIONS = '/api/transactions';
-const API_TRANSACTION_UPDATE = '/api/transaction/update';
-const API_SSE_FALLBACK = '/api/sse'; // sometimes server exposes this
-const API_BALANCE_BASE = '/api/balance';
-const API_ADMIN_LIST_RECHARGE_FALLBACK = '/api/admin/listRecharge'; // keeps same name
-const API_ORDER_FETCH = '/api/transactions'; // supports ?fetchOrder=...
-const API_ADMIN_DASHBOARD_FALLBACK = '/api/dashboard';
+const API_UPDATE = '/api/transaction/update';
 
-// helpers
+/* helpers */
 function $(s){ return document.querySelector(s); }
 function $all(s){ return Array.from(document.querySelectorAll(s)); }
-
-function jsonPost(url, body, timeout = 8000){
-  return new Promise((resolve, reject)=>{
-    const controller = new AbortController();
-    const id = setTimeout(()=> controller.abort(), timeout);
-    fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body), signal: controller.signal })
-      .then(r=> r.json().then(j=>{ clearTimeout(id); resolve(j); }).catch(e=>{ clearTimeout(id); resolve(null); }))
-      .catch(e=>{ clearTimeout(id); resolve(null); });
-  });
-}
-
-async function tryGet(url, timeout=8000){
-  try{
-    const controller = new AbortController();
-    const id = setTimeout(()=> controller.abort(), timeout);
-    const r = await fetch(url, { signal: controller.signal });
-    clearTimeout(id);
-    if(!r.ok) return null;
-    const j = await r.json().catch(()=>null);
-    return j;
-  }catch(e){ return null; }
-}
 
 /* -----------------------------
    US/Eastern 时间显示
@@ -529,49 +489,13 @@ $all(".sidebar .icon").forEach(ic=>{
 function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="none"); }
 
 /* -----------------------------
-   Fetch helpers (compatible)
-   - try admin list endpoints first, else fallback to /api/transactions
+   Fetch all orders helper
 ------------------------------ */
-
-async function fetchAdminList(type, params = {}){
-  // type: 'recharge'|'withdraw'|'buysell'
-  const qs = new URLSearchParams(params).toString();
-  let url;
-  if(type === 'recharge') url = ADMIN_LIST_RECHARGE + (qs ? '?' + qs : '');
-  else if(type === 'withdraw') url = ADMIN_LIST_WITHDRAW + (qs ? '?' + qs : '');
-  else url = ADMIN_LIST_BS + (qs ? '?' + qs : '');
-
-  // try admin endpoint first
-  let res = await tryGet(url);
-  if(res && res.ok) return res.list || res || [];
-  // fallback: try generic /api/transactions
-  try{
-    const r = await fetch(API_TRANSACTIONS + (qs ? '?' + qs : ''));
-    if(r.ok){ const j = await r.json(); return j[type] || j.list || []; }
-  }catch(e){}
-  return [];
-}
-
-async function fetchOrderDetailFlexible(orderId){
-  // try admin detail
-  try{
-    const r1 = await tryGet(ADMIN_ORDER_DETAIL + '?orderId=' + encodeURIComponent(orderId));
-    if(r1 && r1.ok && r1.order) return r1.order;
-  }catch(e){}
-  // fallback: try /api/transactions?fetchOrder=
-  try{
-    const r2 = await tryGet(API_ORDER_FETCH + '?fetchOrder=' + encodeURIComponent(orderId));
-    if(r2 && r2.ok && r2.order) return r2.order;
-  }catch(e){}
-  // last resort: try fetching lists and find
-  try{
-    const all = await tryGet(API_TRANSACTIONS);
-    if(all){
-      const merged = [ ...(all.recharge||[]), ...(all.withdraw||[]), ...(all.buysell||[]) ];
-      return merged.find(o=>o.orderId === orderId) || null;
-    }
-  }catch(e){}
-  return null;
+async function fetchAll(params = {}){
+  const url = new URL(API_TRANSACTIONS, window.location.origin);
+  Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
+  const res = await fetch(url.toString());
+  return await res.json();
 }
 
 /* -----------------------------
@@ -580,13 +504,14 @@ async function fetchOrderDetailFlexible(orderId){
 const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
 function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
-function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json','Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
-async function ensureLoggedIn(){ if(getAdminToken()) return true; document.getElementById('adminLoginModal').style.display = 'flex'; return false; }
-function closeAdminLogin(){ document.getElementById('adminLoginModal').style.display = 'none'; }
+function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
 
-/* -----------------------------
-   Admin login (unchanged)
------------------------------- */
+async function ensureLoggedIn(){
+  if(getAdminToken()) return true;
+  document.getElementById('adminLoginModal').style.display = 'flex';
+  return false;
+}
+function closeAdminLogin(){ document.getElementById('adminLoginModal').style.display = 'none'; }
 async function submitAdminLogin(){
   const id = document.getElementById('adminName').value.trim();
   const pw = document.getElementById('adminPassword').value;
@@ -600,7 +525,7 @@ async function submitAdminLogin(){
 }
 
 /* -----------------------------
-   Render action buttons (all orders) - UI unchanged
+   Render action buttons (all orders)
 ------------------------------ */
 function renderActionButtons(orderId, type){
   return `
@@ -612,106 +537,35 @@ function renderActionButtons(orderId, type){
 }
 
 /* -----------------------------
-   Core: txAction (compatibility + fallback)
-   - For approve: try admin approve endpoints (which do real add/deduct)
-   - Fallback to transaction/update if admin endpoints unavailable
+   Core: txAction (use authHeaders)
 ------------------------------ */
 async function txAction(orderId, type, action){
   if(!orderId) return alert('缺少订单ID');
   if(!confirm(`确定对订单 ${orderId} 执行：${action} 吗？`)) return;
 
-  // ensure admin logged
+  // ensure logged in (will show modal if not)
   if(!getAdminToken()){
     await ensureLoggedIn();
     if(!getAdminToken()) return;
   }
 
-  // fetch order detail to get userId/amount if needed
-  const order = await fetchOrderDetailFlexible(orderId);
-  // compute finalStatus
   const finalStatus =
     action === "approve" ? "success" :
     action === "reject"  ? "failed" :
     action === "lock"    ? "locked" :
     action === "unlock"  ? "processing" : "processing";
 
-  // If approve and we have order info and it's recharge/withdraw, try admin-specific approve endpoints first
-  if(action === 'approve' && order){
-    try{
-      // Recharge approve
-      if(type === 'recharge' || (order.type && order.type === 'recharge')){
-        // try admin approve recharge
-        let tried = false;
-        let j = null;
-        if(ADMIN_APPROVE_RECHARGE){
-          j = await jsonPost(ADMIN_APPROVE_RECHARGE, { orderId: order.orderId, userId: order.userId, amount: order.amount });
-          tried = true;
-          if(j && j.ok){
-            alert('通过成功（admin approveRecharge）');
-            refreshActivePage();
-            return;
-          }
-        }
-        // fallback to transaction.update
-        const body = { orderId: order.orderId, type: 'recharge', status: 'success', note: 'approve' };
-        j = await jsonPost(API_TRANSACTION_UPDATE, body);
-        if(j && j.ok){ alert('通过成功（fallback）'); refreshActivePage(); return; }
-        // last try admin updateOrderStatus
-        j = await jsonPost(ADMIN_UPDATE_ORDER, { orderId: order.orderId, type: 'recharge', action: 'success' });
-        if(j && j.ok){ alert('通过成功（admin updateOrderStatus）'); refreshActivePage(); return; }
-        return alert('无法完成通过操作：后端接口不可用或返回错误');
-      }
-
-      // Withdraw approve (need to deduct)
-      if(type === 'withdraw' || (order.type && order.type === 'withdraw')){
-        let j = null;
-        if(ADMIN_APPROVE_WITHDRAW){
-          j = await jsonPost(ADMIN_APPROVE_WITHDRAW, { orderId: order.orderId, userId: order.userId, amount: order.amount });
-          if(j && j.ok){ alert('提款通过成功（admin approveWithdraw）'); refreshActivePage(); return; }
-        }
-        // fallback: transaction.update
-        j = await jsonPost(API_TRANSACTION_UPDATE, { orderId: order.orderId, type: 'withdraw', status: 'success', note: 'approve' });
-        if(j && j.ok){ alert('提款通过成功（fallback）'); refreshActivePage(); return; }
-        // last try admin updateOrderStatus
-        j = await jsonPost(ADMIN_UPDATE_ORDER, { orderId: order.orderId, type: 'withdraw', action: 'success' });
-        if(j && j.ok){ alert('提款通过成功（admin updateOrderStatus）'); refreshActivePage(); return; }
-        return alert('无法完成提款通过：后端接口不可用或返回错误');
-      }
-    }catch(e){
-      console.error('approve path error', e);
-    }
-  }
-
-  // For non-approve actions or if order info missing: try admin updateOrderStatus then transaction.update
-  // construct bodies for both styles
-  const adminBody = { orderId, type, action };
-  const txBody = { orderId, type, status: finalStatus, note: action };
-
-  // try admin update endpoint
-  let res = await jsonPost(ADMIN_UPDATE_ORDER, adminBody);
-  if(res && res.ok){ alert('操作成功（admin updateOrderStatus）'); refreshActivePage(); return; }
-
-  // try transaction.update fallback
-  res = await jsonPost(API_TRANSACTION_UPDATE, txBody);
-  if(res && res.ok){ alert('操作成功（transaction.update）'); refreshActivePage(); return; }
-
-  // last resort: try generic admin update with txBody
-  res = await jsonPost(ADMIN_UPDATE_ORDER, txBody);
-  if(res && res.ok){ alert('操作成功（admin updateOrderStatus with txBody）'); refreshActivePage(); return; }
-
-  alert('操作失败：后端接口不可用或返回错误');
-}
-
-function refreshActivePage(){
-  const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page');
-  if(active==='recharge') r_search();
-  else if(active==='withdraw') w_search();
-  else if(active==='buysell') bs_search();
-  else o_search();
+  const body = { orderId, type, status: finalStatus, note: action };
+  try{
+    const r = await fetch(API_UPDATE, { method:'POST', headers: authHeaders(), body: JSON.stringify(body) });
+    const j = await r.json();
+    if(j.ok){ alert('操作成功'); const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page'); if(active==='recharge') r_search(); else if(active==='withdraw') w_search(); else if(active==='buysell') bs_search(); else o_search(); }
+    else alert('操作失败: ' + (j.error || JSON.stringify(j)));
+  }catch(e){ alert('服务器错误'); }
 }
 
 /* -----------------------------
-   Render rows for each type (UI unchanged)
+   Render rows for each type
 ------------------------------ */
 function renderBuySellRow(o){
   return `
@@ -759,26 +613,13 @@ function renderWithdrawRow(o){
 }
 
 /* -----------------------------
-   Fetch single order for modal (flexible)
+   Fetch single order for modal (server handles fetchOrder)
 ------------------------------ */
 async function fetchOrderDetail(id){
   try{
-    // try admin detail
-    const adm = await tryGet(ADMIN_ORDER_DETAIL + '?orderId=' + encodeURIComponent(id));
-    if(adm && adm.ok && adm.order) return adm.order;
-
-    // try common transactions endpoint
-    const t = await tryGet(API_ORDER_FETCH + '?fetchOrder=' + encodeURIComponent(id));
-    if(t && t.ok && t.order) return t.order;
-
-    // fallback: fetch all and find
-    const all = await tryGet(API_TRANSACTIONS);
-    if(all){
-      const merged = [ ...(all.recharge||[]), ...(all.withdraw||[]), ...(all.buysell||[]) ];
-      return merged.find(o=>o.orderId === id) || null;
-    }
-  }catch(e){}
-  return null;
+    const res = await fetch(`/api/transactions?fetchOrder=${encodeURIComponent(id)}`);
+    return await res.json();
+  }catch(e){ return { ok:false }; }
 }
 
 /* -----------------------------
@@ -789,19 +630,11 @@ function openOrderDetail(order){
   document.getElementById('orderDetailModal').style.display = 'flex';
   document.getElementById('orderDetailId').innerText = order.orderId || '';
   document.getElementById('orderRawJson').innerText = JSON.stringify(order, null, 2);
-
-  // try to fetch actions using admin endpoint first
-  (async ()=>{
-    try{
-      const r1 = await tryGet('/api/transactions?fetchOrder=' + encodeURIComponent(order.orderId));
-      if(r1 && r1.ok && r1.orderEvents){ document.getElementById('orderActions').innerText = JSON.stringify(r1.orderEvents, null, 2); return; }
-      const r2 = await tryGet('/api/admin/orderActions?orderId=' + encodeURIComponent(order.orderId));
-      if(r2 && r2.ok && r2.actions){ document.getElementById('orderActions').innerText = JSON.stringify(r2.actions, null, 2); return; }
-      document.getElementById('orderActions').innerText = '无操作记录';
-    }catch(e){
-      document.getElementById('orderActions').innerText = '无法获取操作记录';
-    }
-  })();
+  // fetch actions
+  fetch(`/api/transactions?fetchOrder=${encodeURIComponent(order.orderId)}`).then(r=>r.json()).then(j=>{
+    if(j.ok && j.orderEvents && j.orderEvents.length) document.getElementById('orderActions').innerText = JSON.stringify(j.orderEvents, null, 2);
+    else document.getElementById('orderActions').innerText = '无操作记录';
+  }).catch(()=>{ document.getElementById('orderActions').innerText = '无法获取操作记录'; });
 }
 function closeOrderDetail(){ document.getElementById('orderDetailModal').style.display = 'none'; }
 
@@ -818,8 +651,8 @@ function bindOrderRowClicks(selector){
       idCell.style.cursor = 'pointer';
       idCell.style.textDecoration = 'underline';
       idCell.onclick = async ()=>{
-        const ord = await fetchOrderDetail(id);
-        if(ord) openOrderDetail(ord); else openOrderDetail({ orderId: id });
+        const j = await fetchOrderDetail(id);
+        if(j.ok && j.order) openOrderDetail(j.order); else openOrderDetail({ orderId: id });
       };
     }
   });
@@ -845,80 +678,45 @@ function postRenderDecorate(){
 }
 
 /* -----------------------------
-   SSE realtime orders (try primary then fallback; also start poll)
+   SSE realtime orders
 ------------------------------ */
 let orderEventSource = null;
-let adminPollTimer = null;
-
 function connectOrderSSE(){
-  // prefer ORDERS_SSE endpoint
   try{
     if(orderEventSource) orderEventSource.close();
-    let url = ORDERS_SSE;
-    // try to open EventSource to primary path; if it errors handle in onerror
-    orderEventSource = new EventSource(url);
-    orderEventSource.onmessage = handleSSEMsg;
-    orderEventSource.onerror = ()=>{
-      // try fallback SSE
+    orderEventSource = new EventSource('/api/orders/stream');
+    orderEventSource.onmessage = function(ev){
       try{
-        orderEventSource.close();
+        const d = JSON.parse(ev.data);
+        if(d && d.order){
+          // flash alert if locked/failed
+          if(d.order.status === 'locked' || d.order.status === 'failed'){
+            let badge = document.getElementById('globalAlertBadge');
+            if(!badge){
+              badge = document.createElement('span');
+              badge.id = 'globalAlertBadge';
+              badge.className = 'badge-alert flash';
+              badge.innerText = '异常订单';
+              document.querySelector('.top-header .user').appendChild(badge);
+            }
+          }
+          // refresh active page
+          const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page');
+          if(active==='recharge') r_search();
+          else if(active==='withdraw') w_search();
+          else if(active==='buysell') bs_search();
+          else o_search();
+        }
       }catch(e){}
-      orderEventSource = null;
-      // attempt fallback '/api/sse' if exists
-      try{
-        const fallback = API_SSE_FALLBACK;
-        orderEventSource = new EventSource(fallback);
-        orderEventSource.onmessage = handleSSEMsg;
-        orderEventSource.onerror = ()=>{
-          try{ orderEventSource.close(); }catch(e){}
-          orderEventSource = null;
-          startAdminPoll(); // start polling fallback
-        };
-      }catch(e){
-        startAdminPoll();
-      }
     };
-  }catch(e){
-    startAdminPoll();
-  }
+    orderEventSource.onerror = function(){ setTimeout(connectOrderSSE,3000); };
+  }catch(e){ console.warn('SSE not available', e); }
 }
-
-function handleSSEMsg(ev){
-  try{
-    const d = JSON.parse(ev.data);
-    // if balance update: (frontend else)
-    if(d && (d.type === 'balance' || d.type === 'order')){
-      // refresh current active page
-      refreshActivePage();
-    }
-    // also show alert badge if order locked/failed
-    if(d && d.order && (d.order.status === 'locked' || d.order.status === 'failed')){
-      let badge = document.getElementById('globalAlertBadge');
-      if(!badge){
-        badge = document.createElement('span');
-        badge.id = 'globalAlertBadge';
-        badge.className = 'badge-alert flash';
-        badge.innerText = '异常订单';
-        document.querySelector('.top-header .user').appendChild(badge);
-      }
-    }
-  }catch(e){}
-}
-
-function startAdminPoll(){
-  if(adminPollTimer) return;
-  adminPollTimer = setInterval(()=> {
-    try{ refreshActivePage(); loadDashboard(); }catch(e){}
-  }, 5000);
-}
-function stopAdminPoll(){ if(adminPollTimer){ clearInterval(adminPollTimer); adminPollTimer = null; } }
-
 connectOrderSSE();
 
 /* -----------------------------
    Search functions (bs_search / r_search / w_search / o_search)
    Each will call postRenderDecorate() after rendering
-   Use admin list endpoints first, else fallback
 ------------------------------ */
 async function bs_search(){
   const params = {};
@@ -928,14 +726,8 @@ async function bs_search(){
   if($('#bs_currency').value) params.currency = $('#bs_currency').value;
   if($('#bs_side').value) params.side = $('#bs_side').value;
   const tbody = $('#bs_table'); tbody.innerHTML = `<tr><td colspan="11">加载中...</td></tr>`;
-  try{
-    const list = await fetchAdminList('buysell', params);
-    if(!list || !list.length){ tbody.innerHTML = `<tr><td colspan="11">没有记录</td></tr>`; return; }
-    tbody.innerHTML = list.map(o=>renderBuySellRow(o)).join('');
-    postRenderDecorate();
-  }catch(e){ tbody.innerHTML = `<tr><td colspan="11">加载失败</td></tr>`; }
+  try{ const all = await fetchAll(params); const list = all.buysell || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="11">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderBuySellRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="11">加载失败</td></tr>`; }
 }
-
 async function r_search(){
   const params = {};
   if($('#r_start').value) params.start = $('#r_start').value;
@@ -944,20 +736,8 @@ async function r_search(){
   if($('#r_currency').value) params.currency = $('#r_currency').value;
   if($('#r_status').value) params.status = $('#r_status').value;
   const tbody = $('#r_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
-  try{
-    // try admin list recharge
-    let res = await tryGet(ADMIN_LIST_RECHARGE + (Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : ''));
-    if(res && res.ok && res.list){ const list = res.list; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join(''); postRenderDecorate(); return; }
-    // fallback to generic
-    const r = await fetch(API_TRANSACTIONS + (Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : ''));
-    const j = await r.json();
-    const list = j.recharge || [];
-    if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; }
-    tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join('');
-    postRenderDecorate();
-  }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
+  try{ const all = await fetchAll(params); const list = all.recharge || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
-
 async function w_search(){
   const params = {};
   if($('#w_start').value) params.start = $('#w_start').value;
@@ -966,18 +746,8 @@ async function w_search(){
   if($('#w_currency').value) params.currency = $('#w_currency').value;
   if($('#w_status').value) params.status = $('#w_status').value;
   const tbody = $('#w_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
-  try{
-    let res = await tryGet(ADMIN_LIST_WITHDRAW + (Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : ''));
-    if(res && res.ok && res.list){ const list = res.list; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join(''); postRenderDecorate(); return; }
-    const r = await fetch(API_TRANSACTIONS + (Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : ''));
-    const j = await r.json();
-    const list = j.withdraw || [];
-    if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; }
-    tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join('');
-    postRenderDecorate();
-  }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
+  try{ const all = await fetchAll(params); const list = all.withdraw || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
-
 async function o_search(){
   const params = {};
   if($('#o_start').value) params.start = $('#o_start').value;
@@ -986,94 +756,43 @@ async function o_search(){
   if($('#o_type').value) params.type = $('#o_type').value;
   const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
   try{
-    // try admin transactions endpoint
-    let res = await tryGet(API_TRANSACTIONS + (Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : ''));
-    if(res){
-      const rows = [ ...(res.recharge || []), ...(res.withdraw || []), ...(res.buysell || []) ];
-      if(!rows.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; }
-      tbody.innerHTML = rows.map(o=>{
-        const type = o.side ? 'buy/sell' : o.password ? 'withdraw' : 'recharge';
-        return `<tr>
-          <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
-          <td>${o.time_us || '--'}</td>
-          <td>${type}</td>
-          <td>${o.amount}</td>
-          <td>${o.currency || o.coin || '--'}</td>
-          <td>${o.wallet || '--'}</td>
-          <td>${o.ip || '--'}</td>
-          <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
-          <td>${renderActionButtons(o.orderId, type)}</td>
-        </tr>`;
-      }).join('');
-      postRenderDecorate();
-      return;
-    }
-    tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+    const all = await fetchAll(params);
+    const rows = [ ...(all.recharge || []), ...(all.withdraw || []), ...(all.buysell || []) ];
+    if(!rows.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; }
+    tbody.innerHTML = rows.map(o=>{
+      const type = o.side ? 'buy/sell' : o.password ? 'withdraw' : 'recharge';
+      return `<tr>
+        <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
+        <td>${o.time_us || '--'}</td>
+        <td>${type}</td>
+        <td>${o.amount}</td>
+        <td>${o.currency || o.coin || '--'}</td>
+        <td>${o.wallet || '--'}</td>
+        <td>${o.ip || '--'}</td>
+        <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+        <td>${renderActionButtons(o.orderId, type)}</td>
+      </tr>`;
+    }).join('');
+    postRenderDecorate();
   }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
 
 /* -----------------------------
    Members & Dashboard
-   - try admin endpoints, else fallback
 ------------------------------ */
 async function loadMembers(){
   const tbody = $('#m_table'); tbody.innerHTML = `<tr><td colspan="3">加载中...</td></tr>`;
-  try{
-    let r = await tryGet(ADMIN_LIST_MEMBERS);
-    if(r && r.ok && r.members){
-      const members = r.members;
-      if(!members.length){ tbody.innerHTML = `<tr><td colspan="3">暂无数据</td></tr>`; return; }
-      tbody.innerHTML = members.map(m=>`<tr><td>${m.userId}</td><td>${m.wallet||'--'}</td><td>${m.last_active||'--'}</td></tr>`).join('');
-      return;
-    }
-    // fallback: try /api/transactions users field
-    const all = await tryGet(API_TRANSACTIONS);
-    const users = (all && all.users) ? all.users : {};
-    if(!Object.keys(users).length){ tbody.innerHTML = `<tr><td colspan="3">暂无数据</td></tr>`; return; }
-    tbody.innerHTML = Object.keys(users).map(uid=>`<tr><td>${uid}</td><td>${users[uid].wallet||'--'}</td><td>${users[uid].updated||'--'}</td></tr>`).join('');
-  }catch(e){ tbody.innerHTML = `<tr><td colspan="3">加载失败</td></tr>`; }
+  try{ const all = await fetchAll(); const users = all.users || {}; if(!Object.keys(users).length){ tbody.innerHTML = `<tr><td colspan="3">暂无数据</td></tr>`; return; } tbody.innerHTML = Object.keys(users).map(uid=>`<tr><td>${uid}</td><td>${users[uid].wallet||'--'}</td><td>${users[uid].updated||'--'}</td></tr>`).join(''); }catch(e){ tbody.innerHTML = `<tr><td colspan="3">加载失败</td></tr>`; }
 }
-
 async function loadDashboard(){
-  try{
-    // try admin dashboard
-    let r = await tryGet(ADMIN_DASHBOARD);
-    if(r && r.ok){
-      $('#todayRecharge').innerText = r.stats?.todayRecharge ?? '--';
-      $('#todayWithdraw').innerText = r.stats?.todayWithdraw ?? '--';
-      $('#todayOrders').innerText = r.stats?.todayOrders ?? '--';
-      $('#alertsCount').innerText = r.stats?.alerts ?? '--';
-      $('#genTime').innerText = new Date().toLocaleString();
-      return;
-    }
-    // fallback: /api/transactions general stats
-    const all = await tryGet(API_TRANSACTIONS);
-    if(all && all.stats){
-      $('#todayRecharge').innerText = all.stats?.todayRecharge || 0;
-      $('#todayWithdraw').innerText = all.stats?.todayWithdraw || 0;
-      $('#todayOrders').innerText = all.stats?.todayOrders || 0;
-      $('#alertsCount').innerText = all.stats?.alerts || 0;
-      $('#genTime').innerText = new Date().toLocaleString();
-      return;
-    }
-    $('#todayRecharge').innerText = '--';
-    $('#todayWithdraw').innerText = '--';
-    $('#todayOrders').innerText = '--';
-    $('#alertsCount').innerText = '--';
-  }catch(e){
-    $('#todayRecharge').innerText="--";
-  }
+  try{ const all = await fetchAll(); $('#todayRecharge').innerText = all.stats?.todayRecharge || 0; $('#todayWithdraw').innerText = all.stats?.todayWithdraw || 0; $('#todayOrders').innerText = all.stats?.todayOrders || 0; $('#alertsCount').innerText = all.stats?.alerts || 0; $('#genTime').innerText = new Date().toLocaleString(); }catch(e){ $('#todayRecharge').innerText="--"; }
 }
 
 /* -----------------------------
    Init
 ------------------------------ */
-document.addEventListener('DOMContentLoaded', ()=>{
-  document.querySelector('.sidebar .icon.active').click();
-  // connect SSE already attempted in connectOrderSSE()
-  // ensure polling fallback is ready
-  if(!adminPollTimer) startAdminPoll();
-});
+document.addEventListener('DOMContentLoaded', ()=>{ document.querySelector('.sidebar .icon.active').click(); });
+
 </script>
 </body>
 </html>
