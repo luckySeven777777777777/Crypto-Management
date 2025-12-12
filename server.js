@@ -473,6 +473,7 @@ app.post('/api/admin/boost', async (req, res) => {
    Save Order
    - expanded allowed fields
    - broadcast includes userId at top-level so wallet SSE connections get it
+   - broadcast type is 'buysell' when type==='buysell' to help admin UI listen
 --------------------------------------------------------- */
 async function saveOrder(type, data){
   if(!db) return null;
@@ -531,6 +532,8 @@ async function saveOrder(type, data){
 
 /* ---------------------------------------------------------
    Buy/Sell Order
+   - BUY: immediate deduction (deducted: true)
+   - SELL: create order, wait for admin approval to add funds
 --------------------------------------------------------- */
 app.post('/api/order/buysell', async (req, res) => {
   try {
@@ -554,20 +557,19 @@ app.post('/api/order/buysell', async (req, res) => {
     if(sideLower === 'buy') {
       // BUY 必须立即扣钱
       if(balance < amt) return res.status(400).json({ ok:false, error:'余额不足' });
+      const newBal = balance - amt;
       await userRef.update({
-        balance: balance - amt,
+        balance: newBal,
         lastUpdate: now()
       });
 
       // 广播余额
-      broadcastSSE({ type:'balance', userId: uid, balance: balance - amt });
-
-    } else if (sideLower === 'sell') {
-      // SELL 不加钱、不扣钱，等待后台审核
-      // nothing now
+      try { broadcastSSE({ type:'balance', userId: uid, balance: newBal }); } catch(e){}
+    } else {
+      // SELL：不扣钱、不加钱，等待后台审批
     }
 
-    // 保存订单
+    // 保存订单，标记 deducted 当 buy 时为 true
     const id = await saveOrder('buysell', {
       userId: uid,
       side,
@@ -577,7 +579,7 @@ app.post('/api/order/buysell', async (req, res) => {
       tp: tp || null,
       sl: sl || null,
       orderId,
-      deducted: (sideLower === 'buy') ? true : false // 买入已扣款
+      deducted: (sideLower === 'buy') ? true : false
     });
 
     return res.json({ ok:true, orderId:id });
@@ -587,6 +589,7 @@ app.post('/api/order/buysell', async (req, res) => {
     return res.status(500).json({ ok:false, error:e.message });
   }
 });
+
 /* ---------------------------------------------------------
    提交充值订单
 --------------------------------------------------------- */
@@ -611,7 +614,7 @@ app.post('/api/order/recharge', async (req, res) => {
 
 /* ---------------------------------------------------------
    提交提款订单（提交时立即扣除余额，并在订单里标记 deducted: true）
-   后台审核只更新状态，不重复扣款
+   后台审核只更新状态，不重复扣款；后台取消会退款
 --------------------------------------------------------- */
 app.post('/api/order/withdraw', async (req, res) => {
   try {
@@ -820,6 +823,7 @@ app.post('/api/admin/login', async (req, res) => {
 /* ---------------------------------------------------------
    交易更新（后台审批）
    NOTE: 对 withdraw 类型，如果订单在提交时已扣款（order.deducted === true），则后台审批成功**不再重复扣款**。
+   NOTE: 对 buysell 类型，sell 审核成功会加钱；buy 审核失败会退款（如果提交时已扣款）。
 --------------------------------------------------------- */
 app.post('/api/transaction/update', async (req, res) => {
   try {
@@ -861,30 +865,36 @@ app.post('/api/transaction/update', async (req, res) => {
       time: now()
     });
 
-    // 如果审批成功：更新余额（谨慎：避免重复扣款）
-    try {
-      const order = snap.val();
-      if (status === 'success' && order && order.userId) {
-        const userRef = db.ref(`users/${order.userId}`);
-        const uSnap = await userRef.once('value');
-        const curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
-        const amt = Number(order.amount || 0);
+    // 读取订单及用户余额信息（统一在外层处理，避免作用域问题）
+    const order = snap.val();
+    const userId = order && order.userId ? order.userId : null;
 
+    if (userId) {
+      const userRef = db.ref(`users/${userId}`);
+      const uSnap = await userRef.once('value');
+      let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
+      const amt = Number(order.amount || 0);
+
+      // 审批成功的处理
+      if (status === 'success') {
         if (type === 'recharge') {
           // 充值审批：把钱加上（通常充值在后台确认时才加）
+          curBal = curBal + amt;
           await userRef.update({
-            balance: curBal + amt,
+            balance: curBal,
             lastUpdate: now(),
             boost_last: now()
           });
+
         } else if (type === 'withdraw') {
           // 提现审批：只有在订单提交时未扣款（deducted !== true）才会在审批时扣款
           if (order.deducted === true) {
             // 已在提交时扣过款，审批不再扣款
           } else {
             if (curBal >= amt) {
+              curBal = curBal - amt;
               await userRef.update({
-                balance: curBal - amt,
+                balance: curBal,
                 lastUpdate: now(),
                 boost_last: now()
               });
@@ -892,17 +902,56 @@ app.post('/api/transaction/update', async (req, res) => {
               await ref.update({ status:'failed', note:'Insufficient balance when approving' });
             }
           }
-        }
 
-        // broadcast balance event for this user
-        try {
-          const newUserSnap = await db.ref(`users/${order.userId}/balance`).once('value');
-          const newBal = safeNumber(newUserSnap.exists() ? newUserSnap.val() : 0, 0);
-          broadcastSSE({ type:'balance', userId: order.userId, balance: newBal });
-        } catch(e){}
+        } else if (type === 'buysell') {
+          // Buysell 审核成功逻辑
+          const side = String(order.side || '').toLowerCase();
+          if (side === 'sell') {
+            // SELL：后台成功时给用户加钱
+            curBal = curBal + amt;
+            await userRef.update({
+              balance: curBal,
+              lastUpdate: now(),
+              boost_last: now()
+            });
+          } else if (side === 'buy') {
+            // BUY：通常已经在提交时扣款（deducted===true），审批成功不改变余额.
+            // 如果订单当时并未扣款（unlikely），可以在此扣款（按你原意，我们默认 buy 已扣）
+          }
+        }
+      } else {
+        // status !== 'success'（failed/cancel）时的处理
+        if (type === 'withdraw') {
+          // 如果提交时已扣款并且现在被取消，需要退款
+          if (order.deducted === true) {
+            curBal = curBal + amt;
+            await userRef.update({
+              balance: curBal,
+              lastUpdate: now(),
+              boost_last: now()
+            });
+          }
+        } else if (type === 'buysell') {
+          const side = String(order.side || '').toLowerCase();
+          // 如果 buy 被取消并且提交时已扣款，要退款
+          if (side === 'buy' && order.deducted === true) {
+            curBal = curBal + amt;
+            await userRef.update({
+              balance: curBal,
+              lastUpdate: now(),
+              boost_last: now()
+            });
+          }
+          // sell 被取消则不需要特殊退款（因为 sell 在提交时没有扣款）
+        }
       }
-    } catch (e) {
-      console.warn('post-processing failed', e.message);
+
+      // broadcast balance event for this user
+      try {
+        const newUserSnap = await db.ref(`users/${userId}/balance`).once('value');
+        const newBal = safeNumber(newUserSnap.exists() ? newUserSnap.val() : 0, 0);
+        broadcastSSE({ type:'balance', userId: userId, balance: newBal });
+      } catch(e){}
     }
 
     // 推送 SSE（订单更新）
@@ -915,20 +964,12 @@ app.post('/api/transaction/update', async (req, res) => {
         type: 'update',
         typeName: type,
         userId: latestOrder.userId,
-        order: latestOrder,   // 最新订单数据（含 userId）
+        order: latestOrder,
         action: { admin: adminId, status, note }
       });
     } catch(e){}
 
-    
-    if (type === 'buysell' && order.side === 'sell' && status === 'success') {
-        await userRef.update({
-            balance: curBal + amt,
-            lastUpdate: now(),
-            boost_last: now()
-        });
-    }
-return res.json({ ok:true });
+    return res.json({ ok:true });
 
   } catch(e){
     console.error('transaction.update err', e);
@@ -1033,18 +1074,22 @@ try {
   if (db) {
     const ordersRef = db.ref('orders');
     ordersRef.on('child_changed', (snap) => {
-      const kind = snap.key;
-      const val = snap.val() || {};
-      Object.values(val).forEach(ord => {
-        try { broadcastSSE({ type:'update', kind, order:ord }); } catch(e){}
-      });
+      try {
+        const kind = snap.key;
+        const val = snap.val() || {};
+        Object.values(val).forEach(ord => {
+          try { broadcastSSE({ type:'update', typeName: kind, order:ord }); } catch(e){}
+        });
+      } catch(e){}
     });
     ordersRef.on('child_added', (snap) => {
-      const kind = snap.key;
-      const val = snap.val() || {};
-      Object.values(val).forEach(ord => {
-        try { broadcastSSE({ type: (type === 'buysell' ? 'buysell' : 'new'), kind, order:ord }); } catch(e){}
-      });
+      try {
+        const kind = snap.key;
+        const val = snap.val() || {};
+        Object.values(val).forEach(ord => {
+          try { broadcastSSE({ type: (kind === 'buysell' ? 'buysell' : 'new'), typeName: kind, order:ord }); } catch(e){}
+        });
+      } catch(e){}
     });
 
     // watch users for balance changes and broadcast balance events
