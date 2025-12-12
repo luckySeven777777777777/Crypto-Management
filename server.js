@@ -518,14 +518,12 @@ async function saveOrder(type, data){
 
   // Broadcast with userId at top-level to ensure wallet-specific SSE connections receive it
   try{
-    // generic 'new' event for admin panels
-    broadcastSSE({ type: 'new', typeName: type, userId: payload.userId, order: payload });
-  }catch(e){}
-  try{
-    // buysell-specific event for wallets/UI that listen for 'buysell'
-    if (type === 'buysell') {
-      broadcastSSE({ type: 'buysell', typeName: type, userId: payload.userId, order: payload });
-    }
+    broadcastSSE({
+      type: (type === 'buysell' ? 'buysell' : 'new'),
+      typeName: type,
+      userId: payload.userId,
+      order: payload
+    });
   }catch(e){}
 
   return id;
@@ -537,62 +535,6 @@ async function saveOrder(type, data){
    - BUY: immediate deduction (deducted: true)
    - SELL: create order, wait for admin approval to add funds
 --------------------------------------------------------- */
-   - BUY: immediate deduction (deducted: true)
-   - SELL: create order, wait for admin approval to add funds
---------------------------------------------------------- */
-/* ---------------------------------------------------------
-   Proxy endpoint for legacy frontend: /proxy/buysell -> /api/order/buysell
---------------------------------------------------------- */
-app.post('/proxy/buysell', async (req, res) => {
-  try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-
-    const { userId, user, side, coin, amount, converted, tp, sl, orderId } = req.body;
-    const uid = userId || user;
-    const amt = Number(amount || 0);
-
-    if(!uid || !side || !coin || amt <= 0)
-      return res.status(400).json({ ok:false, error:'missing fields' });
-
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-
-    const sideLower = String(side).toLowerCase();
-
-    if(sideLower === 'buy') {
-      if(balance < amt) return res.status(400).json({ ok:false, error:'余额不足' });
-      const newBal = balance - amt;
-      await userRef.update({
-        balance: newBal,
-        lastUpdate: now()
-      });
-      try { broadcastSSE({ type:'balance', userId: uid, balance: newBal }); } catch(e){}
-    } else {
-      // SELL: wait for admin approval
-    }
-
-    const id = await saveOrder('buysell', {
-      userId: uid,
-      side,
-      coin,
-      amount: amt,
-      converted: converted || null,
-      tp: tp || null,
-      sl: sl || null,
-      orderId,
-      deducted: (sideLower === 'buy') ? true : false
-    });
-
-    return res.json({ ok:true, orderId:id });
-  } catch(e){
-    console.error('/proxy/buysell error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-
 app.post('/api/order/buysell', async (req, res) => {
   try {
     if(!db) return res.json({ ok:false, error:'no-db' });
