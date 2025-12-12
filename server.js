@@ -797,8 +797,94 @@ app.post('/api/transaction/update', async (req, res) => {
 });
 
 
+
 /* ---------------------------------------------------------
-   SSE 订单流
+   SSE: 支持 /api/orders/stream (通用) 与 /wallet/:uid/sse（钱包专用，按 uid 过滤）
+--------------------------------------------------------- */
+// 全局 clients 存储对象 { res, uid, ka }
+global.__sseClients = global.__sseClients || [];
+
+/**
+ * sendSSE(res, payloadString)
+ */
+function sendSSE(res, payloadStr){
+  try {
+    if (res.finished || (res.connection && res.connection.destroyed)) return false;
+    res.write(`data: ${payloadStr}\n\n`);
+    return true;
+  } catch(e){
+    return false;
+  }
+}
+
+/**
+ * broadcastSSE(payloadObj)
+ * - 如果 payloadObj.order && payloadObj.order.userId 存在，则只发送给匹配该 uid 的连接，以及所有通用连接(uid === null)
+ * - 否则发送给所有连接
+ */
+function broadcastSSE(payloadObj){
+  const payload = JSON.stringify(payloadObj);
+  const toKeep = [];
+  global.__sseClients.forEach(client => {
+    try {
+      const { res, uid } = client;
+      if (!res || (res.finished || (res.connection && res.connection.destroyed))) {
+        return;
+      }
+      if (payloadObj && payloadObj.order && payloadObj.order.userId) {
+        // send to matching uid or general connections
+        if (uid === null || uid === undefined || String(uid) === String(payloadObj.order.userId)) {
+          const ok = sendSSE(res, payload);
+          if (ok) toKeep.push(client);
+        } else {
+          // keep client but do not send
+          toKeep.push(client);
+        }
+      } else if (payloadObj && payloadObj.userId) {
+        // direct balance event: payloadObj.userId present
+        if (uid === null || uid === undefined || String(uid) === String(payloadObj.userId)) {
+          const ok = sendSSE(res, payload);
+          if (ok) toKeep.push(client);
+        } else {
+          toKeep.push(client);
+        }
+      } else {
+        // global event
+        const ok = sendSSE(res, payload);
+        if (ok) toKeep.push(client);
+      }
+    } catch(e){
+      // ignore broken client
+    }
+  });
+  global.__sseClients = toKeep;
+}
+
+/**
+ * sendInitialBalanceToRes(res, uid)
+ * - Read users/:uid/balance and send a balance event immediately
+ */
+async function sendInitialBalanceToRes(res, uid){
+  try {
+    if (!db) {
+      sendSSE(res, JSON.stringify({ type: 'balance', userId: uid, balance: 0 }));
+      return;
+    }
+    if (!isSafeUid(uid)) {
+      sendSSE(res, JSON.stringify({ type:'error', message: 'invalid uid' }));
+      try{ res.end(); }catch(e){}
+      return;
+    }
+    const snap = await db.ref(`users/${uid}/balance`).once('value');
+    const bal = safeNumber(snap.exists() ? snap.val() : 0, 0);
+    sendSSE(res, JSON.stringify({ type: 'balance', userId: uid, balance: bal }));
+  } catch (e) {
+    sendSSE(res, JSON.stringify({ type:'error', message: 'failed to read balance' }));
+  }
+}
+
+/* ---------------------------------------------------------
+   通用订单流（兼容旧路由 /api/orders/stream）
 --------------------------------------------------------- */
 app.get('/api/orders/stream', async (req, res) => {
   res.set({
@@ -808,18 +894,48 @@ app.get('/api/orders/stream', async (req, res) => {
   });
   res.flushHeaders();
 
-  // keepalive
+  // keepalive ping
   const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
 
-  global.__sseClients.push(res);
+  global.__sseClients.push({ res, uid: null, ka });
 
   req.on('close', () => {
     clearInterval(ka);
-    global.__sseClients = global.__sseClients.filter(r => r !== res);
+    global.__sseClients = global.__sseClients.filter(c => c.res !== res);
   });
 });
 
-// Firebase watchers
+/* ---------------------------------------------------------
+   钱包专用 SSE：/wallet/:uid/sse
+   前端（wallet widget）会连接此路由以接收只属于该 uid 的余额更新
+--------------------------------------------------------- */
+app.get('/wallet/:uid/sse', async (req, res) => {
+  const uid = String(req.params.uid || '').trim();
+
+  res.set({
+    'Content-Type':'text/event-stream',
+    'Cache-Control':'no-cache',
+    'Connection':'keep-alive'
+  });
+  res.flushHeaders();
+
+  // keepalive ping
+  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
+
+  global.__sseClients.push({ res, uid, ka });
+
+  // send current balance immediately so front-end shows correct amount without waiting
+  sendInitialBalanceToRes(res, uid).catch(()=>{});
+
+  req.on('close', () => {
+    clearInterval(ka);
+    global.__sseClients = global.__sseClients.filter(c => c.res !== res);
+  });
+});
+
+/* ---------------------------------------------------------
+   Firebase watchers: orders 和 users/balance 变化都广播事件
+--------------------------------------------------------- */
 try {
   if (db) {
     const ordersRef = db.ref('orders');
@@ -827,15 +943,34 @@ try {
       const kind = snap.key;
       const val = snap.val() || {};
       Object.values(val).forEach(ord => {
-        broadcastSSE({ type:'update', kind, order:ord });
+        try { broadcastSSE({ type:'update', kind, order:ord }); } catch(e){}
       });
+    });
+    ordersRef.on('child_added', (snap) => {
+      const kind = snap.key;
+      const val = snap.val() || {};
+      Object.values(val).forEach(ord => {
+        try { broadcastSSE({ type:'new', kind, order:ord }); } catch(e){}
+      });
+    });
+
+    // watch users for balance changes and broadcast balance events
+    const usersRef = db.ref('users');
+    usersRef.on('child_changed', (snap) => {
+      try {
+        const uid = snap.key;
+        const data = snap.val() || {};
+        if (data && Object.prototype.hasOwnProperty.call(data, 'balance')) {
+          broadcastSSE({ type:'balance', userId: uid, balance: safeNumber(data.balance,0) });
+        }
+      } catch (e) {
+        // ignore
+      }
     });
   }
 } catch(e){
   console.warn('SSE firebase watch failed', e.message);
 }
-
-
 /* ---------------------------------------------------------
    强制重置管理员：admin / 970611
    （覆盖 Firebase 中 admins/admin）
