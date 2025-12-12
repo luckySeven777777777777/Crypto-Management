@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
@@ -518,12 +519,14 @@ async function saveOrder(type, data){
 
   // Broadcast with userId at top-level to ensure wallet-specific SSE connections receive it
   try{
-    broadcastSSE({
-      type: (type === 'buysell' ? 'buysell' : 'new'),
-      typeName: type,
-      userId: payload.userId,
-      order: payload
-    });
+    // generic 'new' event for admin panels
+    broadcastSSE({ type: 'new', typeName: type, userId: payload.userId, order: payload });
+  }catch(e){}
+  try{
+    // buysell-specific event for wallets/UI that listen for 'buysell'
+    if (type === 'buysell') {
+      broadcastSSE({ type: 'buysell', typeName: type, userId: payload.userId, order: payload });
+    }
   }catch(e){}
 
   return id;
@@ -535,6 +538,57 @@ async function saveOrder(type, data){
    - BUY: immediate deduction (deducted: true)
    - SELL: create order, wait for admin approval to add funds
 --------------------------------------------------------- */
+/* Proxy endpoint for legacy frontend: /proxy/buysell -> /api/order/buysell */
+app.post('/proxy/buysell', async (req, res) => {
+  try {
+    if(!db) return res.json({ ok:false, error:'no-db' });
+
+    const { userId, user, side, coin, amount, converted, tp, sl, orderId } = req.body;
+    const uid = userId || user;
+    const amt = Number(amount || 0);
+
+    if(!uid || !side || !coin || amt <= 0)
+      return res.status(400).json({ ok:false, error:'missing fields' });
+
+    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+    const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
+
+    const sideLower = String(side).toLowerCase();
+
+    if(sideLower === 'buy') {
+      if(balance < amt) return res.status(400).json({ ok:false, error:'余额不足' });
+      const newBal = balance - amt;
+      await userRef.update({
+        balance: newBal,
+        lastUpdate: now()
+      });
+      try { broadcastSSE({ type:'balance', userId: uid, balance: newBal }); } catch(e){}
+    } else {
+      // SELL: wait for admin approval
+    }
+
+    const id = await saveOrder('buysell', {
+      userId: uid,
+      side,
+      coin,
+      amount: amt,
+      converted: converted || null,
+      tp: tp || null,
+      sl: sl || null,
+      orderId,
+      deducted: (sideLower === 'buy') ? true : false
+    });
+
+    return res.json({ ok:true, orderId:id });
+  } catch(e){
+    console.error('/proxy/buysell error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
 app.post('/api/order/buysell', async (req, res) => {
   try {
     if(!db) return res.json({ ok:false, error:'no-db' });
@@ -555,7 +609,7 @@ app.post('/api/order/buysell', async (req, res) => {
     const sideLower = String(side).toLowerCase();
 
     if(sideLower === 'buy') {
-      // BUY 必须立即扣钱
+      // BUY must deduct immediately
       if(balance < amt) return res.status(400).json({ ok:false, error:'余额不足' });
       const newBal = balance - amt;
       await userRef.update({
@@ -563,13 +617,12 @@ app.post('/api/order/buysell', async (req, res) => {
         lastUpdate: now()
       });
 
-      // 广播余额
+      // broadcast balance
       try { broadcastSSE({ type:'balance', userId: uid, balance: newBal }); } catch(e){}
     } else {
-      // SELL：不扣钱、不加钱，等待后台审批
+      // SELL: do not change balance now; wait admin approval
     }
 
-    // 保存订单，标记 deducted 当 buy 时为 true
     const id = await saveOrder('buysell', {
       userId: uid,
       side,
@@ -591,7 +644,7 @@ app.post('/api/order/buysell', async (req, res) => {
 });
 
 /* ---------------------------------------------------------
-   提交充值订单
+   Submit recharge order
 --------------------------------------------------------- */
 app.post('/api/order/recharge', async (req, res) => {
   try {
@@ -613,8 +666,8 @@ app.post('/api/order/recharge', async (req, res) => {
 
 
 /* ---------------------------------------------------------
-   提交提款订单（提交时立即扣除余额，并在订单里标记 deducted: true）
-   后台审核只更新状态，不重复扣款；后台取消会退款
+   Submit withdraw order (deduct immediately, mark deducted: true)
+   Admin approval will not double-deduct; admin cancel refunds.
 --------------------------------------------------------- */
 app.post('/api/order/withdraw', async (req, res) => {
   try {
@@ -637,7 +690,7 @@ app.post('/api/order/withdraw', async (req, res) => {
     if(curBal < amount)
       return res.status(400).json({ ok:false, error:'余额不足' });
 
-    // 立即扣款（用户提交时就扣）
+    // Deduct immediately
     const newBal = curBal - amount;
     await userRef.update({
       balance: newBal,
@@ -645,10 +698,10 @@ app.post('/api/order/withdraw', async (req, res) => {
       boost_last: now()
     });
 
-    // 广播余额变更，前端钱包实时看到减少
+    // Broadcast balance change
     try { broadcastSSE({ type:'balance', userId, balance: newBal }); } catch(e){}
 
-    // 创建 withdraw 订单，并标记 deducted: true
+    // Create withdraw order with deducted:true
     const orderId = await saveOrder('withdraw', {
       ...payload,
       userId,
@@ -667,7 +720,7 @@ app.post('/api/order/withdraw', async (req, res) => {
 
 
 /* ---------------------------------------------------------
-   获取全部订单 + 用户 + 快速订单查找
+   Get transactions (recharge / withdraw / buysell) and users
 --------------------------------------------------------- */
 app.get('/api/transactions', async (req, res) => {
   try {
@@ -731,7 +784,7 @@ app.get('/api/transactions', async (req, res) => {
 
 
 /* ---------------------------------------------------------
-   Admin: token 校验
+   Admin: token validation
 --------------------------------------------------------- */
 async function isValidAdminToken(token){
   if(!db || !token) return false;
@@ -755,7 +808,7 @@ async function isValidAdminToken(token){
 
 
 /* ---------------------------------------------------------
-   Admin: create
+   Admin create
 --------------------------------------------------------- */
 app.post('/api/admin/create', async (req, res) => {
   try {
@@ -791,7 +844,7 @@ app.post('/api/admin/create', async (req, res) => {
 
 
 /* ---------------------------------------------------------
-   Admin: login
+   Admin login
 --------------------------------------------------------- */
 app.post('/api/admin/login', async (req, res) => {
   try {
@@ -820,10 +873,12 @@ app.post('/api/admin/login', async (req, res) => {
     return res.status(500).json({ ok:false, error:e.message });
   }
 });
+
+
 /* ---------------------------------------------------------
-   交易更新（后台审批）
-   NOTE: 对 withdraw 类型，如果订单在提交时已扣款（order.deducted === true），则后台审批成功**不再重复扣款**。
-   NOTE: 对 buysell 类型，sell 审核成功会加钱；buy 审核失败会退款（如果提交时已扣款）。
+   Transaction update (admin approves/declines)
+   - withdraw: if deducted on submission, admin success does not double-deduct
+   - buysell: sell success adds funds; buy failure refunds if deducted
 --------------------------------------------------------- */
 app.post('/api/transaction/update', async (req, res) => {
   try {
@@ -847,7 +902,7 @@ app.post('/api/transaction/update', async (req, res) => {
     const snap = await ref.once('value');
     if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
 
-    // 保存审批状态
+    // save approval status
     await ref.update({
       status,
       note: note || null,
@@ -865,7 +920,6 @@ app.post('/api/transaction/update', async (req, res) => {
       time: now()
     });
 
-    // 读取订单及用户余额信息（统一在外层处理，避免作用域问题）
     const order = snap.val();
     const userId = order && order.userId ? order.userId : null;
 
@@ -875,21 +929,17 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-      // 审批成功的处理
       if (status === 'success') {
         if (type === 'recharge') {
-          // 充值审批：把钱加上（通常充值在后台确认时才加）
           curBal = curBal + amt;
           await userRef.update({
             balance: curBal,
             lastUpdate: now(),
             boost_last: now()
           });
-
         } else if (type === 'withdraw') {
-          // 提现审批：只有在订单提交时未扣款（deducted !== true）才会在审批时扣款
           if (order.deducted === true) {
-            // 已在提交时扣过款，审批不再扣款
+            // already deducted on submission; do nothing
           } else {
             if (curBal >= amt) {
               curBal = curBal - amt;
@@ -902,12 +952,9 @@ app.post('/api/transaction/update', async (req, res) => {
               await ref.update({ status:'failed', note:'Insufficient balance when approving' });
             }
           }
-
         } else if (type === 'buysell') {
-          // Buysell 审核成功逻辑
           const side = String(order.side || '').toLowerCase();
           if (side === 'sell') {
-            // SELL：后台成功时给用户加钱
             curBal = curBal + amt;
             await userRef.update({
               balance: curBal,
@@ -915,14 +962,12 @@ app.post('/api/transaction/update', async (req, res) => {
               boost_last: now()
             });
           } else if (side === 'buy') {
-            // BUY：通常已经在提交时扣款（deducted===true），审批成功不改变余额.
-            // 如果订单当时并未扣款（unlikely），可以在此扣款（按你原意，我们默认 buy 已扣）
+            // buy usually already deducted on submission
           }
         }
       } else {
-        // status !== 'success'（failed/cancel）时的处理
+        // status !== 'success' : failed/cancel
         if (type === 'withdraw') {
-          // 如果提交时已扣款并且现在被取消，需要退款
           if (order.deducted === true) {
             curBal = curBal + amt;
             await userRef.update({
@@ -933,7 +978,6 @@ app.post('/api/transaction/update', async (req, res) => {
           }
         } else if (type === 'buysell') {
           const side = String(order.side || '').toLowerCase();
-          // 如果 buy 被取消并且提交时已扣款，要退款
           if (side === 'buy' && order.deducted === true) {
             curBal = curBal + amt;
             await userRef.update({
@@ -942,11 +986,10 @@ app.post('/api/transaction/update', async (req, res) => {
               boost_last: now()
             });
           }
-          // sell 被取消则不需要特殊退款（因为 sell 在提交时没有扣款）
         }
       }
 
-      // broadcast balance event for this user
+      // broadcast new balance
       try {
         const newUserSnap = await db.ref(`users/${userId}/balance`).once('value');
         const newBal = safeNumber(newUserSnap.exists() ? newUserSnap.val() : 0, 0);
@@ -954,12 +997,10 @@ app.post('/api/transaction/update', async (req, res) => {
       } catch(e){}
     }
 
-    // 推送 SSE（订单更新）
+    // broadcast order update
     try {
-      // 获取更新后的订单（最新数据）
       const newSnap = await ref.once("value");
       const latestOrder = { ...newSnap.val(), orderId };
-
       broadcastSSE({
         type: 'update',
         typeName: type,
@@ -979,25 +1020,10 @@ app.post('/api/transaction/update', async (req, res) => {
 
 
 /* ---------------------------------------------------------
-   SSE: 支持 /api/orders/stream (通用) 与 /wallet/:uid/sse（钱包专用，按 uid 过滤）
+   SSE endpoints
 --------------------------------------------------------- */
-// 全局 clients 存储对象 { res, uid, ka }
 global.__sseClients = global.__sseClients || [];
 
-/**
- * sendSSE(res, payloadStr, eventName)
- * implemented above
- */
-
-/**
- * broadcastSSE(payloadObj)
- * implemented above
- */
-
-/**
- * sendInitialBalanceToRes(res, uid)
- * - Read users/:uid/balance and send a balance event immediately
- */
 async function sendInitialBalanceToRes(res, uid){
   try {
     if (!db) {
@@ -1017,9 +1043,6 @@ async function sendInitialBalanceToRes(res, uid){
   }
 }
 
-/* ---------------------------------------------------------
-   通用订单流（兼容旧路由 /api/orders/stream）
---------------------------------------------------------- */
 app.get('/api/orders/stream', async (req, res) => {
   res.set({
     'Content-Type':'text/event-stream',
@@ -1028,7 +1051,6 @@ app.get('/api/orders/stream', async (req, res) => {
   });
   res.flushHeaders();
 
-  // keepalive ping
   const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
 
   global.__sseClients.push({ res, uid: null, ka });
@@ -1039,10 +1061,6 @@ app.get('/api/orders/stream', async (req, res) => {
   });
 });
 
-/* ---------------------------------------------------------
-   钱包专用 SSE：/wallet/:uid/sse
-   前端（wallet widget）会连接此路由以接收只属于该 uid 的余额更新
---------------------------------------------------------- */
 app.get('/wallet/:uid/sse', async (req, res) => {
   const uid = String(req.params.uid || '').trim();
 
@@ -1053,12 +1071,10 @@ app.get('/wallet/:uid/sse', async (req, res) => {
   });
   res.flushHeaders();
 
-  // keepalive ping
   const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
 
   global.__sseClients.push({ res, uid, ka });
 
-  // send current balance immediately so front-end shows correct amount without waiting
   sendInitialBalanceToRes(res, uid).catch(()=>{});
 
   req.on('close', () => {
@@ -1068,7 +1084,7 @@ app.get('/wallet/:uid/sse', async (req, res) => {
 });
 
 /* ---------------------------------------------------------
-   Firebase watchers: orders 和 users/balance 变化都广播事件
+   Firebase watchers: orders and users/balance
 --------------------------------------------------------- */
 try {
   if (db) {
@@ -1092,7 +1108,6 @@ try {
       } catch(e){}
     });
 
-    // watch users for balance changes and broadcast balance events
     const usersRef = db.ref('users');
     usersRef.on('child_changed', (snap) => {
       try {
@@ -1109,25 +1124,22 @@ try {
 } catch(e){
   console.warn('SSE firebase watch failed', e.message);
 }
+
 /* ---------------------------------------------------------
-   强制重置管理员：admin / 970611
-   （覆盖 Firebase 中 admins/admin）
+   Ensure default admin (bootstrap)
 --------------------------------------------------------- */
 async function ensureDefaultAdmin() {
   try {
     if (!db) {
-      console.warn('⚠️ 无法创建管理员：Firebase 未连接');
+      console.warn('⚠️ Firebase not connected');
       return;
     }
-
-    console.log('⚠️ 正在强制重置管理员：admin / 970611');
 
     const plain = '970611';
     const hashed = await bcrypt.hash(plain, 10);
     const token = uuidv4();
     const created = now();
 
-    // 直接覆盖，无条件重置
     await db.ref('admins/admin').set({
       id: 'admin',
       hashed,
@@ -1141,19 +1153,17 @@ async function ensureDefaultAdmin() {
       created
     });
 
-    console.log('🎉 管理员已强制重置：admin / 970611');
+    console.log('🎉 admin reset: admin / 970611');
 
   } catch(e){
-    console.error('❌ ensureDefaultAdmin 失败:', e);
+    console.error('ensureDefaultAdmin failed:', e);
   }
 }
 
-// 启动时执行一次
 ensureDefaultAdmin();
 
-
 /* ---------------------------------------------------------
-   启动服务器
+   Start server
 --------------------------------------------------------- */
 app.listen(PORT, () => {
   console.log('🚀 Server running on', PORT);
