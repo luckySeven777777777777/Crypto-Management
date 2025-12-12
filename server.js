@@ -161,7 +161,12 @@ app.post('/api/admin/balance', async (req, res) => {
     const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
     const newBal = Number(amount);
 
-    await ref.update({ balance: newBal, lastUpdate: now() });
+    await ref.update({
+  balance: newBal,
+  lastUpdate: now(),
+  boost_last: now()
+});
+
 
     // admin action
     const actId = genOrderId('ADMIN_ACT');
@@ -210,7 +215,12 @@ app.post('/api/admin/recharge', async (req, res) => {
     const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
     const newBalance = Number(balance) + Number(amount);
 
-    await ref.update({ balance: newBalance, lastUpdate: now() });
+    await ref.update({
+  balance: newBalance,
+  lastUpdate: now(),
+  boost_last: now()
+});
+
 
     const actId = genOrderId('ADMIN_ACT');
     await db.ref(`admin_actions/${actId}`).set({
@@ -259,7 +269,12 @@ app.post('/api/admin/deduct', async (req, res) => {
       return res.status(400).json({ ok:false, error:"余额不足" });
 
     const newBalance = Number(balance) - Number(amount);
-    await ref.update({ balance: newBalance, lastUpdate: now() });
+    await ref.update({
+  balance: newBalance,
+  lastUpdate: now(),
+  boost_last: now()
+});
+
 
     const actId = genOrderId('ADMIN_ACT');
     await db.ref(`admin_actions/${actId}`).set({
@@ -289,6 +304,43 @@ app.post('/api/admin/deduct', async (req, res) => {
   }
 });
 
+/* ---------------------------------------------------------
+   Admin 修改用户 Boost 百分比（新增）
+--------------------------------------------------------- */
+app.post('/api/admin/boost', async (req, res) => {
+  try {
+    const { userId, pct } = req.body;
+
+    if (!userId || pct === undefined) {
+      return res.status(400).json({ ok:false, error:"missing userId/pct" });
+    }
+    if (!db) return res.status(500).json({ ok:false, error:"no-db" });
+
+    const ref = db.ref(`users/${userId}`);
+
+    await ref.update({
+      boost_pct: Number(pct),
+      boost_last: now()
+    });
+
+    // 写入后台操作记录
+    const actId = genOrderId('ADMIN_ACT');
+    await db.ref(`admin_actions/${actId}`).set({
+      id: actId,
+      type: 'set_boost',
+      userId,
+      pct: Number(pct),
+      by: req.headers['x-user-id'] || 'admin',
+      time: now()
+    });
+
+    return res.json({ ok:true, pct:Number(pct) });
+
+  } catch(e){
+    console.error("admin boost error:", e);
+    return res.status(500).json({ ok:false, error:e.message });
+  }
+});
 
 /* ---------------------------------------------------------
    Save Order
@@ -646,10 +698,20 @@ app.post('/api/transaction/update', async (req, res) => {
         const amt = Number(order.amount || 0);
 
         if (type === 'recharge') {
-          await userRef.update({ balance: curBal + amt, lastUpdate: now() });
+         await userRef.update({
+  balance: curBal + amt,
+  lastUpdate: now(),
+  boost_last: now()
+});
+
         } else if (type === 'withdraw') {
           if (curBal >= amt) {
-            await userRef.update({ balance: curBal - amt, lastUpdate: now() });
+           await userRef.update({
+  balance: curBal - amt,
+  lastUpdate: now(),
+  boost_last: now()
+});
+
           } else {
             await ref.update({ status:'failed', note:'Insufficient balance when approving' });
           }
