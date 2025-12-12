@@ -518,7 +518,7 @@ async function saveOrder(type, data){
   // Broadcast with userId at top-level to ensure wallet-specific SSE connections receive it
   try{
     broadcastSSE({
-      type: 'new',
+      type: (type === 'buysell' ? 'buysell' : 'new'),
       typeName: type,
       userId: payload.userId,
       order: payload
@@ -538,50 +538,47 @@ app.post('/api/order/buysell', async (req, res) => {
 
     const { userId, user, side, coin, amount, converted, tp, sl, orderId } = req.body;
     const uid = userId || user;
+    const amt = Number(amount || 0);
 
-    if(!uid || !side || !coin || amount === undefined || amount === null)
+    if(!uid || !side || !coin || amt <= 0)
       return res.status(400).json({ ok:false, error:'missing fields' });
 
     if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
 
     const userRef = db.ref(`users/${uid}`);
     const snap = await userRef.once('value');
+    const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
 
-    const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
+    const sideLower = String(side).toLowerCase();
 
-    if (String(side).toLowerCase() === 'buy') {
-      if (curBal < Number(amount))
-        return res.status(400).json({ ok:false, error:'余额不足' });
-
+    if(sideLower === 'buy') {
+      // BUY 必须立即扣钱
+      if(balance < amt) return res.status(400).json({ ok:false, error:'余额不足' });
       await userRef.update({
-        balance: curBal - Number(amount),
+        balance: balance - amt,
         lastUpdate: now()
       });
+
+      // 广播余额
+      broadcastSSE({ type:'balance', userId: uid, balance: balance - amt });
+
+    } else if (sideLower === 'sell') {
+      // SELL 不加钱、不扣钱，等待后台审核
+      // nothing now
     }
 
-    if (String(side).toLowerCase() === 'sell') {
-      await userRef.update({
-        balance: curBal + Number(amount),
-        lastUpdate: now()
-      });
-    }
-
+    // 保存订单
     const id = await saveOrder('buysell', {
       userId: uid,
-      side, coin,
-      amount: Number(amount),
+      side,
+      coin,
+      amount: amt,
       converted: converted || null,
       tp: tp || null,
       sl: sl || null,
-      orderId
+      orderId,
+      deducted: (sideLower === 'buy') ? true : false // 买入已扣款
     });
-
-    // broadcast balance update as well
-    try {
-      const uSnap = await db.ref(`users/${uid}/balance`).once('value');
-      const newBal = safeNumber(uSnap.exists() ? uSnap.val() : 0, 0);
-      broadcastSSE({ type:'balance', userId: uid, balance: newBal });
-    } catch(e){}
 
     return res.json({ ok:true, orderId:id });
 
@@ -923,7 +920,15 @@ app.post('/api/transaction/update', async (req, res) => {
       });
     } catch(e){}
 
-    return res.json({ ok:true });
+    
+    if (type === 'buysell' && order.side === 'sell' && status === 'success') {
+        await userRef.update({
+            balance: curBal + amt,
+            lastUpdate: now(),
+            boost_last: now()
+        });
+    }
+return res.json({ ok:true });
 
   } catch(e){
     console.error('transaction.update err', e);
@@ -1038,7 +1043,7 @@ try {
       const kind = snap.key;
       const val = snap.val() || {};
       Object.values(val).forEach(ord => {
-        try { broadcastSSE({ type:'new', kind, order:ord }); } catch(e){}
+        try { broadcastSSE({ type: (type === 'buysell' ? 'buysell' : 'new'), kind, order:ord }); } catch(e){}
       });
     });
 
