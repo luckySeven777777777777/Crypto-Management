@@ -722,15 +722,20 @@ app.post('/api/transaction/update', async (req, res) => {
     }
 
     // 推送 SSE
-    try {
-      broadcastSSE({
-        type:'update',
-        orderId,
-        typeName:type,
-        order:{ ...snap.val(), orderId },
-        action:{ admin:adminId, status, note }
-      });
-    } catch(e){}
+ // 推送最新订单，确保 userId 存在
+try {
+  // 获取更新后的订单（最新数据）
+  const newSnap = await ref.once("value");
+  const latestOrder = { ...newSnap.val(), orderId };
+
+  broadcastSSE({
+    type: 'update',
+    typeName: type,
+    order: latestOrder,   // 最新订单数据（含 userId）
+    action: { admin: adminId, status, note }
+  });
+} catch(e){}
+
 
     return res.json({ ok:true });
 
