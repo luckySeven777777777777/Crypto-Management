@@ -1,235 +1,233 @@
-// server.js — Robust SSE + wallet endpoints (replace your current file with this)
-require('dotenv').config();
-const express = require('express');
-const path = require('path');
-const cors = require('cors');
+// ======= NEXBIT FULL SERVER.JS (FINAL VERSION) =======
+
+const express = require("express");
+const admin = require("firebase-admin");
+const cors = require("cors");
 
 const app = express();
-app.disable('etag');
-const PORT = process.env.PORT || 8080;
-
-process.on('unhandledRejection', (r,p) => console.error('UNHANDLED REJECTION', r,p));
-process.on('uncaughtException', e => console.error('UNCAUGHT EXCEPTION', e));
-
-app.use(cors({
-  origin: '*',
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type','x-user-id','x-userid','authorization','X-User-Id','Authorization']
-}));
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname,'public')));
+app.use(cors());
 
-/* ---------------- FIREBASE RTDB init (same approach) ---------------- */
-let db = null;
-try {
-  const admin = require('firebase-admin');
-  if (process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_DATABASE_URL) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
-    db = admin.database();
-    console.log('✅ Firebase RTDB connected');
-  } else {
-    console.warn('⚠️ FIREBASE vars missing; RTDB disabled');
-  }
-} catch (e) {
-  console.warn('❌ Firebase init failed:', e && e.message);
+/* ===== Firebase 初始化 ===== */
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: process.env.FIREBASE_DATABASE_URL,
+});
+const db = admin.firestore();
+const rtdb = admin.database();
+
+console.log("✔ Firebase RTDB connected");
+
+/* ======== SSE 客户端存储 ======== */
+const sseClients = {};
+
+function pushSSE(uid, payload) {
+  const list = sseClients[uid];
+  if (!list) return;
+
+  const data = `event: balance\ndata:${JSON.stringify(payload)}\n\n`;
+  list.forEach((res) => res.write(data));
 }
 
-/* ---------------- Helpers ---------------- */
-function now(){ return Date.now(); }
-function safeNumber(v, fallback=0){ const n=Number(v); return Number.isFinite(n)?n:fallback; }
-function isSafeUid(uid){
-  if(!uid||typeof uid!=='string') return false;
-  if(/[.#$\[\]]/.test(uid)) return false;
-  if(uid.includes('{{')||uid.includes('}}')) return false;
-  if(uid.length<2||uid.length>512) return false;
-  return true;
+/* ======== 实时同步余额 ======== */
+async function updateBalance(uid, diff) {
+  const ref = rtdb.ref(`balances/${uid}`);
+  const snap = await ref.get();
+  const cur = snap.exists() ? Number(snap.val()) : 0;
+  const final = cur + diff;
+
+  await ref.set(final);
+  pushSSE(uid, { balance: final });
+  return final;
 }
 
-/* ---------------- SSE client stores ---------------- */
-/*
-  We'll keep clients in global.__sseClientsPerUid = { uid: [res,...] }
-  and also a global counter for diagnostics.
-*/
-global.__sseClientsPerUid = global.__sseClientsPerUid || {};
-global.__sseClientCount = global.__sseClientCount || 0;
+/* ======== 钱包 SSE ======== */
+app.get("/wallet/:uid/sse", (req, res) => {
+  const uid = req.params.uid;
 
-/* Unified broadcast helper: targetUid optional (if provided, send only to that uid clients) */
-function broadcastSSE(payloadObj, targetUid){
-  const json = JSON.stringify(payloadObj);
-  if(targetUid){
-    const arr = global.__sseClientsPerUid[targetUid] || [];
-    const toRemove = [];
-    arr.forEach((res) => {
-      try{
-        if(res.finished || (res.connection && res.connection.destroyed)) { toRemove.push(res); return; }
-        res.write(`event: balance\n`);
-        res.write(`data: ${json}\n\n`);
-      }catch(e){ toRemove.push(res); }
-    });
-    if(toRemove.length){
-      global.__sseClientsPerUid[targetUid] = (global.__sseClientsPerUid[targetUid] || []).filter(r=> !toRemove.includes(r));
-      global.__sseClientCount = Object.values(global.__sseClientsPerUid).reduce((s,a)=> s + a.length, 0);
-    }
-    return;
-  }
-  // broadcast to all uids
-  Object.keys(global.__sseClientsPerUid).forEach(uid=>{
-    broadcastSSE(payloadObj, uid);
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
   });
-}
 
-/* ---------------- Basic root & health ---------------- */
-app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
-app.get('/health', (_,res)=> res.json({ ok:true, time: now(), sseClients: global.__sseClientCount || 0 }));
+  if (!sseClients[uid]) sseClients[uid] = [];
+  sseClients[uid].push(res);
 
-/* ---------------- wallet balance (compat) ---------------- */
-// GET /wallet/:uid/balance
-app.get('/wallet/:uid/balance', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    if(!db) return res.json({ ok:true, balance: 0 });
+  console.log(`SSE client connected for uid=${uid}`);
 
-    const snap = await db.ref(`users/${uid}/balance`).once('value');
-    const balance = safeNumber(snap.exists()?snap.val():0,0);
-    return res.json({ ok:true, balance });
-  } catch(e){
-    console.error('/wallet/:uid/balance error', e && e.message);
-    return res.status(500).json({ ok:false, error: String(e && e.message) });
-  }
-});
-
-/* ---------------- wallet SSE: /wallet/:uid/sse ---------------- */
-app.get('/wallet/:uid/sse', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if(!isSafeUid(uid)) { res.status(400).end(); return; }
-
-    // set SSE headers
-    res.setHeader('Content-Type','text/event-stream');
-    res.setHeader('Cache-Control','no-cache');
-    res.setHeader('Connection','keep-alive');
-    // some hosts require this to flush headers
-    try { res.flushHeaders(); } catch(e){ /* ignore */ }
-
-    // send an initial keepalive comment and initial snapshot
-    res.write(`: connected\n\n`);
-
-    // initial snapshot from RTDB if available
-    try {
-      if(db){
-        const snap = await db.ref(`users/${uid}/balance`).once('value');
-        const balance = safeNumber(snap.exists()?snap.val():0,0);
-        res.write(`event: balance\n`);
-        res.write(`data: ${JSON.stringify({ balance, time: now() })}\n\n`);
-      } else {
-        res.write(`event: balance\n`);
-        res.write(`data: ${JSON.stringify({ balance: 0, time: now() })}\n\n`);
-      }
-    } catch(e){
-      console.warn('wallet sse initial snapshot failed', e && e.message);
-    }
-
-    // register client
-    if(!global.__sseClientsPerUid[uid]) global.__sseClientsPerUid[uid] = [];
-    global.__sseClientsPerUid[uid].push(res);
-    global.__sseClientCount = Object.values(global.__sseClientsPerUid).reduce((s,a)=> s + a.length, 0);
-    console.log(`SSE client connected for uid=${uid} totalClients=${global.__sseClientCount}`);
-
-    // heartbeat ping every 15s to keep connection alive
-    const ka = setInterval(()=> {
-      try { res.write(':ka\n\n'); } catch(e){}
-    },15000);
-
-    req.on('close', () => {
-      clearInterval(ka);
-      // remove client
-      global.__sseClientsPerUid[uid] = (global.__sseClientsPerUid[uid] || []).filter(r => r !== res);
-      global.__sseClientCount = Object.values(global.__sseClientsPerUid).reduce((s,a)=> s + a.length, 0);
-      console.log(`SSE client disconnected for uid=${uid} totalClients=${global.__sseClientCount}`);
-      try { res.end(); } catch(e){}
-    });
-
-  } catch(e){ console.error('/wallet/:uid/sse error', e && e.message); try{ res.end(); } catch(e){} }
-});
-
-/* ---------------- update balance endpoint (used by admin / internal) ---------------- */
-// POST /wallet/:uid/update_balance  with header x-user-id
-app.post('/wallet/:uid/update_balance', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-
-    const headerUid = String(req.headers['x-user-id'] || req.headers['X-User-Id'] || '').trim();
-    if(!headerUid || headerUid !== uid) return res.status(400).json({ ok:false, error:'missing/invalid x-user-id' });
-
-    const amount = Number(req.body.amount);
-    if (!Number.isFinite(amount)) return res.status(400).json({ ok:false, error:'invalid amount' });
-
-    if(!db) return res.status(500).json({ ok:false, error:'no-db' });
-
-    // update RTDB
-    await db.ref(`users/${uid}`).update({ balance: amount, lastUpdate: now(), boost_last: now() });
-
-    // log an admin action entry
-    const actId = `API_SET-${now()}-${Math.floor(Math.random()*9000+1000)}`;
-    await db.ref(`admin_actions/${actId}`).set({
-      id: actId, type:'api_set_balance', user: uid, amount, by: headerUid, time: now()
-    });
-
-    // broadcast to this uid only (so others don't get it)
-    try {
-      broadcastSSE({ type:'balance_update', uid, balance: amount, time: now() }, uid);
-    } catch(e){ console.warn('broadcast failed', e && e.message); }
-
-    return res.json({ ok:true, balance: amount });
-  } catch(e){ console.error('/wallet/:uid/update_balance error', e && e.message); return res.status(500).json({ ok:false, error: String(e && e.message) }); }
-});
-
-/* ---------------- Keep original order stream route (leave intact) ---------------- */
-app.get('/api/orders/stream', async (req, res) => {
-  res.setHeader('Content-Type','text/event-stream');
-  res.setHeader('Cache-Control','no-cache');
-  res.setHeader('Connection','keep-alive');
-  try{ res.flushHeaders(); } catch(e){}
-
-  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} },15000);
-  global.__sseClients = global.__sseClients || [];
-  global.__sseClients.push(res);
-  req.on('close', ()=> {
-    clearInterval(ka);
-    global.__sseClients = (global.__sseClients || []).filter(r => r !== res);
+  req.on("close", () => {
+    sseClients[uid] = sseClients[uid].filter((c) => c !== res);
   });
 });
 
-/* ---------------- Firebase watchers: preserve original behavior but use broadcastSSE to target uid ---------------- */
-try {
-  if(db){
-    const ordersRef = db.ref('orders');
-    ordersRef.on('child_changed', (snap) => {
-      const kind = snap.key;
-      const val = snap.val() || {};
-      Object.values(val).forEach(ord => {
-        try {
-          if (ord && ord.userId) {
-            broadcastSSE({ type:'update', kind, order:ord }, ord.userId);
-          } else {
-            broadcastSSE({ type:'update', kind, order:ord });
-          }
-        } catch(e){
-          try { broadcastSSE({ type:'update', kind, order:ord }); } catch(e2){}
-        }
-      });
-    });
-  }
-} catch(e){ console.warn('firebase watcher setup failed', e && e.message); }
-
-/* ---------------- Final: start ---------------- */
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on ${PORT} (pid ${process.pid})`);
+/* ======== 钱包余额查询 ======== */
+app.get("/wallet/:uid/balance", async (req, res) => {
+  const uid = req.params.uid;
+  const snap = await rtdb.ref(`balances/${uid}`).get();
+  const bal = snap.exists() ? Number(snap.val()) : 0;
+  res.json({ ok: true, balance: bal });
 });
+
+/* ======== BuySell 下单 ======== */
+app.post("/buy_sell", async (req, res) => {
+  try {
+    const { uid, amount, side, coin, price } = req.body;
+
+    const time = Date.now();
+    await db.collection("orders").add({
+      uid,
+      amount,
+      side,
+      coin,
+      price,
+      status: "pending",
+      time,
+    });
+
+    await updateBalance(uid, amount * -1);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ======== 充值 ======== */
+app.post("/recharge", async (req, res) => {
+  try {
+    const { uid, amount, txid } = req.body;
+
+    const time = Date.now();
+    await db.collection("recharge").add({
+      uid,
+      amount,
+      txid,
+      time,
+      status: "pending",
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ======== 提现 ======== */
+app.post("/withdraw", async (req, res) => {
+  try {
+    const { uid, amount, address } = req.body;
+
+    const time = Date.now();
+    await db.collection("withdraw").add({
+      uid,
+      amount,
+      address,
+      time,
+      status: "pending",
+    });
+
+    await updateBalance(uid, -amount);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ============================================================
+   ===============   【后台管理 API 恢复版】   =================
+   ============================================================ */
+
+/* ===== 所有订单（BuySell）===== */
+app.get("/api/orders", async (req, res) => {
+  try {
+    const snapshot = await db.collection("orders").orderBy("time", "desc").get();
+    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    res.json({ ok: true, list: data });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ===== 所有充值 ===== */
+app.get("/api/recharge", async (req, res) => {
+  try {
+    const snapshot = await db.collection("recharge").orderBy("time", "desc").get();
+    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    res.json({ ok: true, list: data });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ===== 所有提现 ===== */
+app.get("/api/withdraw", async (req, res) => {
+  try {
+    const snapshot = await db.collection("withdraw").orderBy("time", "desc").get();
+    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    res.json({ ok: true, list: data });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ===== 所有交易（后台总表）===== */
+app.get("/api/transactions", async (req, res) => {
+  try {
+    const list = [];
+
+    const orders = await db.collection("orders").get();
+    orders.forEach((doc) => list.push({ type: "order", id: doc.id, ...doc.data() }));
+
+    const recharge = await db.collection("recharge").get();
+    recharge.forEach((doc) =>
+      list.push({ type: "recharge", id: doc.id, ...doc.data() })
+    );
+
+    const withdraw = await db.collection("withdraw").get();
+    withdraw.forEach((doc) =>
+      list.push({ type: "withdraw", id: doc.id, ...doc.data() })
+    );
+
+    list.sort((a, b) => b.time - a.time);
+
+    res.json({ ok: true, list });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ===== 充值审核 ===== */
+app.post("/api/recharge/update", async (req, res) => {
+  try {
+    const { id, status, uid, amount } = req.body;
+
+    await db.collection("recharge").doc(id).update({ status });
+
+    if (status === "success") {
+      await updateBalance(uid, Number(amount));
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ===== 提现审核 ===== */
+app.post("/api/withdraw/update", async (req, res) => {
+  try {
+    const { id, status } = req.body;
+
+    await db.collection("withdraw").doc(id).update({ status });
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.toString() });
+  }
+});
+
+/* ======== 启动 ======== */
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log(`🚀 Server running on ${PORT}`));
