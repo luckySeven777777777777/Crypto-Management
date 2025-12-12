@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Deposit Page</title>
-
 <style>
+/* (原样样式保留) */
 * { box-sizing: border-box !important; }
 html, body { width: 100% !important; margin: 0 !important; padding: 0 !important; background: transparent !important; overflow-x: hidden !important; font-family: Arial, sans-serif; color:#fff;}
 .app-container { width: 100% !important; max-width: 560px !important; margin: 0 auto !important; padding: 0 15px !important; }
@@ -72,13 +72,24 @@ const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
 const TELE_BOT = "8528337731:AAGb6D_TRPKYSQrxA7s4TAizsPjNqnajhrU";
 const TELE_CHATS = ["6062973135","-1003329204481"];
 
-function getUserId(){
-    let uid = new URLSearchParams(window.location.search).get("userid") || localStorage.getItem("userid4");
-    if(!uid){ uid = Math.floor(1000+Math.random()*9000).toString(); localStorage.setItem("userid4", uid); }
-    else{ localStorage.setItem("userid4", uid); }
-    return uid;
+// --- Unified independent UID helper (same approach as buysell) ---
+function getOrCreateUID() {
+  try { if (window.NEXBIT_USER_ID) return String(window.NEXBIT_USER_ID); } catch (e){}
+  try {
+    const w = document.getElementById('wallet-widget');
+    if (w && w.dataset && w.dataset.userId) {
+      const ds = w.dataset.userId;
+      if (ds && ds.indexOf('{{') === -1 && ds.trim() !== '') return ds;
+    }
+  } catch(e){}
+  let uid = localStorage.getItem('NEXBIT_UID');
+  if (!uid) {
+    uid = 'U' + Date.now() + '_' + Math.floor(100000 + Math.random() * 900000);
+    localStorage.setItem('NEXBIT_UID', uid);
+  }
+  return uid;
 }
-const USERID = getUserId();
+const USERID = getOrCreateUID();
 
 async function dualPost(path, data){
     try{ await fetch(`${API_BASE}/proxy/${path}`, { method:'POST', headers:{'Content-Type':'application/json','X-User-Id':USERID}, body:JSON.stringify(data)}); }
@@ -191,7 +202,7 @@ submitBtn.onclick=async ()=>{
 
         const orderId=`DEP-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100000+Math.random()*900000)}`;
         const timeUS=formatUsTime(Date.now());
-        const payload={ userId:USERID, coin:selectedCoin, amount:amt, wallet, orderId, timestamp:Date.now(), time_us:timeUS };
+        const payload={ userId: USERID, coin:selectedCoin, amount:amt, wallet, orderId, timestamp:Date.now(), time_us:timeUS };
 
         (async()=>{ try{ await sendToServer(payload); } catch(e){} })();
 
