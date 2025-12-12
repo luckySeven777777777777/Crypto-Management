@@ -471,6 +471,8 @@ app.post('/api/admin/boost', async (req, res) => {
 
 /* ---------------------------------------------------------
    Save Order
+   - expanded allowed fields
+   - broadcast includes userId at top-level so wallet SSE connections get it
 --------------------------------------------------------- */
 async function saveOrder(type, data){
   if(!db) return null;
@@ -478,7 +480,9 @@ async function saveOrder(type, data){
 
   const allowed = [
     'userId','user','amount','coin','side','converted',
-    'tp','sl','note','meta','orderId','status','type'
+    'tp','sl','note','meta','orderId','status','type',
+    // additional fields that frontends may send
+    'tradeType','amountCurrency','converted','estimate','wallet','ip','deducted'
   ];
 
   const clean = {};
@@ -511,8 +515,14 @@ async function saveOrder(type, data){
     console.warn('saveOrder:user_orders failed', e.message);
   }
 
+  // Broadcast with userId at top-level to ensure wallet-specific SSE connections receive it
   try{
-    broadcastSSE({ type:'new', kind:type, order: payload });
+    broadcastSSE({
+      type: 'new',
+      typeName: type,
+      userId: payload.userId,
+      order: payload
+    });
   }catch(e){}
 
   return id;
@@ -603,7 +613,8 @@ app.post('/api/order/recharge', async (req, res) => {
 
 
 /* ---------------------------------------------------------
-   提交提款订单
+   提交提款订单（提交时立即扣除余额，并在订单里标记 deducted: true）
+   后台审核只更新状态，不重复扣款
 --------------------------------------------------------- */
 app.post('/api/order/withdraw', async (req, res) => {
   try {
@@ -611,21 +622,42 @@ app.post('/api/order/withdraw', async (req, res) => {
 
     const payload = req.body || {};
     const userId = payload.userId || payload.user;
+    const amount = Number(payload.amount || 0);
 
-    if(!userId || payload.amount === undefined || payload.amount === null)
+    if(!userId || amount === undefined || amount === null)
       return res.status(400).json({ ok:false, error:'missing userId/amount' });
 
     if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
 
-    const snap = await db.ref(`users/${userId}/balance`).once('value');
-    const curBal = snap.exists() ? safeNumber(snap.val(), 0) : 0;
+    const userRef = db.ref(`users/${userId}`);
+    const snap = await userRef.once('value');
 
-    if(curBal < Number(payload.amount))
+    const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
+
+    if(curBal < amount)
       return res.status(400).json({ ok:false, error:'余额不足' });
 
-    const id = await saveOrder('withdraw', payload);
+    // 立即扣款（用户提交时就扣）
+    const newBal = curBal - amount;
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
 
-    return res.json({ ok:true, orderId:id });
+    // 广播余额变更，前端钱包实时看到减少
+    try { broadcastSSE({ type:'balance', userId, balance: newBal }); } catch(e){}
+
+    // 创建 withdraw 订单，并标记 deducted: true
+    const orderId = await saveOrder('withdraw', {
+      ...payload,
+      userId,
+      amount,
+      status: 'pending',
+      deducted: true
+    });
+
+    return res.json({ ok:true, orderId });
 
   } catch(e){
     console.error('withdraw order error', e);
@@ -790,6 +822,7 @@ app.post('/api/admin/login', async (req, res) => {
 });
 /* ---------------------------------------------------------
    交易更新（后台审批）
+   NOTE: 对 withdraw 类型，如果订单在提交时已扣款（order.deducted === true），则后台审批成功**不再重复扣款**。
 --------------------------------------------------------- */
 app.post('/api/transaction/update', async (req, res) => {
   try {
@@ -813,6 +846,7 @@ app.post('/api/transaction/update', async (req, res) => {
     const snap = await ref.once('value');
     if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
 
+    // 保存审批状态
     await ref.update({
       status,
       note: note || null,
@@ -830,7 +864,7 @@ app.post('/api/transaction/update', async (req, res) => {
       time: now()
     });
 
-    // 如果审批成功：更新余额
+    // 如果审批成功：更新余额（谨慎：避免重复扣款）
     try {
       const order = snap.val();
       if (status === 'success' && order && order.userId) {
@@ -840,22 +874,26 @@ app.post('/api/transaction/update', async (req, res) => {
         const amt = Number(order.amount || 0);
 
         if (type === 'recharge') {
-         await userRef.update({
-  balance: curBal + amt,
-  lastUpdate: now(),
-  boost_last: now()
-});
-
+          // 充值审批：把钱加上（通常充值在后台确认时才加）
+          await userRef.update({
+            balance: curBal + amt,
+            lastUpdate: now(),
+            boost_last: now()
+          });
         } else if (type === 'withdraw') {
-          if (curBal >= amt) {
-           await userRef.update({
-  balance: curBal - amt,
-  lastUpdate: now(),
-  boost_last: now()
-});
-
+          // 提现审批：只有在订单提交时未扣款（deducted !== true）才会在审批时扣款
+          if (order.deducted === true) {
+            // 已在提交时扣过款，审批不再扣款
           } else {
-            await ref.update({ status:'failed', note:'Insufficient balance when approving' });
+            if (curBal >= amt) {
+              await userRef.update({
+                balance: curBal - amt,
+                lastUpdate: now(),
+                boost_last: now()
+              });
+            } else {
+              await ref.update({ status:'failed', note:'Insufficient balance when approving' });
+            }
           }
         }
 
@@ -879,6 +917,7 @@ app.post('/api/transaction/update', async (req, res) => {
       broadcastSSE({
         type: 'update',
         typeName: type,
+        userId: latestOrder.userId,
         order: latestOrder,   // 最新订单数据（含 userId）
         action: { admin: adminId, status, note }
       });
