@@ -10,6 +10,14 @@ const app = express();
 app.disable('etag');
 const PORT = process.env.PORT || 8080;
 
+/* --------------------- Safety: global error handlers --------------------- */
+process.on('unhandledRejection', (reason, p) => {
+  console.error('UNHANDLED REJECTION at: Promise', p, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION', err);
+});
+
 /* ---------------------------------------------------------
    CORS
 --------------------------------------------------------- */
@@ -54,6 +62,16 @@ function genOrderId(prefix){ return `${prefix || 'ORD'}-${now()}-${Math.floor(10
 function safeNumber(v, fallback=0){
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+// isSafeUid: prevent firebase-invalid paths and template strings
+function isSafeUid(uid){
+  if(!uid || typeof uid !== 'string') return false;
+  // forbid firebase invalid chars and template markers
+  if(/[.#$\[\]]/.test(uid)) return false;
+  if(uid.indexOf('{{') !== -1 || uid.indexOf('}}') !== -1) return false;
+  if(uid.length < 2 || uid.length > 512) return false;
+  return true;
 }
 
 // SSE
@@ -130,12 +148,17 @@ app.post('/api/users/sync', async (req, res) => {
 
 
 /* ---------------------------------------------------------
-   GET balance
+   GET balance (robust: validate uid before using as Firebase path)
 --------------------------------------------------------- */
 app.get('/api/balance/:uid', async (req, res) => {
   try {
-    const uid = req.params.uid;
-    if (!uid) return res.json({ ok:true, balance: 0 });
+    const uid = String(req.params.uid || '').trim();
+    if(!isSafeUid(uid)) {
+      // invalid -> don't attempt Firebase read
+      console.warn('balance api: invalid uid request', uid);
+      return res.status(400).json({ ok:false, error:'invalid uid' });
+    }
+
     if (!db) return res.json({ ok:true, balance: 0 });
 
     const snap = await db.ref(`users/${uid}/balance`).once('value');
@@ -155,6 +178,8 @@ app.post('/api/admin/balance', async (req, res) => {
       return res.status(400).json({ ok:false, error:'missing user/amount' });
     if (!db) return res.json({ ok:false, message:'no-db' });
 
+    if(!isSafeUid(user)) return res.status(400).json({ ok:false, error:'invalid user id' });
+
     const ref = db.ref(`users/${user}`);
     const snap = await ref.once('value');
 
@@ -162,10 +187,10 @@ app.post('/api/admin/balance', async (req, res) => {
     const newBal = Number(amount);
 
     await ref.update({
-  balance: newBal,
-  lastUpdate: now(),
-  boost_last: now()
-});
+      balance: newBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
 
 
     // admin action
@@ -209,6 +234,8 @@ app.post('/api/admin/recharge', async (req, res) => {
       return res.status(400).json({ ok:false, error:"missing userId/amount" });
     if (!db) return res.status(500).json({ ok:false, error:'no-db' });
 
+    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid userId' });
+
     const ref = db.ref('users/' + userId);
     const snap = await ref.once('value');
 
@@ -216,10 +243,10 @@ app.post('/api/admin/recharge', async (req, res) => {
     const newBalance = Number(balance) + Number(amount);
 
     await ref.update({
-  balance: newBalance,
-  lastUpdate: now(),
-  boost_last: now()
-});
+      balance: newBalance,
+      lastUpdate: now(),
+      boost_last: now()
+    });
 
 
     const actId = genOrderId('ADMIN_ACT');
@@ -243,6 +270,13 @@ app.post('/api/admin/recharge', async (req, res) => {
       status:'success'
     });
 
+    // broadcast the recharge order so clients update quickly
+    try {
+      const snapNew = await db.ref(`orders/recharge/${ordId}`).once('value');
+      const latestOrder = { ...snapNew.val(), orderId: ordId };
+      broadcastSSE({ type:'update', typeName:'recharge', order: latestOrder, action:{ admin: req.headers['x-user-id'] || 'admin', status:'success' }});
+    } catch(e){}
+
     return res.json({ ok: true, balance: newBalance });
   } catch (e){
     console.error('admin recharge error', e);
@@ -261,6 +295,8 @@ app.post('/api/admin/deduct', async (req, res) => {
       return res.status(400).json({ ok:false, error:"missing userId/amount" });
     if (!db) return res.status(500).json({ ok:false, error:'no-db' });
 
+    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid userId' });
+
     const ref = db.ref('users/' + userId);
     const snap = await ref.once('value');
 
@@ -270,10 +306,10 @@ app.post('/api/admin/deduct', async (req, res) => {
 
     const newBalance = Number(balance) - Number(amount);
     await ref.update({
-  balance: newBalance,
-  lastUpdate: now(),
-  boost_last: now()
-});
+      balance: newBalance,
+      lastUpdate: now(),
+      boost_last: now()
+    });
 
 
     const actId = genOrderId('ADMIN_ACT');
@@ -297,6 +333,13 @@ app.post('/api/admin/deduct', async (req, res) => {
       status:'success'
     });
 
+    // broadcast deduction so client sees update
+    try {
+      const snapNew = await db.ref(`orders/withdraw/${ordId}`).once('value');
+      const latestOrder = { ...snapNew.val(), orderId: ordId };
+      broadcastSSE({ type:'update', typeName:'withdraw', order: latestOrder, action:{ admin: req.headers['x-user-id'] || 'admin', status:'success' }});
+    } catch(e){}
+
     return res.json({ ok:true, balance:newBalance });
   } catch (e){
     console.error('admin deduct error', e);
@@ -315,6 +358,8 @@ app.post('/api/admin/boost', async (req, res) => {
       return res.status(400).json({ ok:false, error:"missing userId/pct" });
     }
     if (!db) return res.status(500).json({ ok:false, error:"no-db" });
+
+    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid userId' });
 
     const ref = db.ref(`users/${userId}`);
 
@@ -405,6 +450,8 @@ app.post('/api/order/buysell', async (req, res) => {
     if(!uid || !side || !coin || amount === undefined || amount === null)
       return res.status(400).json({ ok:false, error:'missing fields' });
 
+    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+
     const userRef = db.ref(`users/${uid}`);
     const snap = await userRef.once('value');
 
@@ -452,6 +499,10 @@ app.post('/api/order/recharge', async (req, res) => {
     if(!db) return res.json({ ok:false, error:'no-db' });
 
     const payload = req.body || {};
+    const userId = payload.userId || payload.user;
+    if(!userId) return res.status(400).json({ ok:false, error:'missing userId' });
+    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
+
     const id = await saveOrder('recharge', payload);
 
     return res.json({ ok:true, orderId: id });
@@ -474,6 +525,8 @@ app.post('/api/order/withdraw', async (req, res) => {
 
     if(!userId || payload.amount === undefined || payload.amount === null)
       return res.status(400).json({ ok:false, error:'missing userId/amount' });
+
+    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
 
     const snap = await db.ref(`users/${userId}/balance`).once('value');
     const curBal = snap.exists() ? safeNumber(snap.val(), 0) : 0;
@@ -722,20 +775,18 @@ app.post('/api/transaction/update', async (req, res) => {
     }
 
     // 推送 SSE
- // 推送最新订单，确保 userId 存在
-try {
-  // 获取更新后的订单（最新数据）
-  const newSnap = await ref.once("value");
-  const latestOrder = { ...newSnap.val(), orderId };
+    try {
+      // 获取更新后的订单（最新数据）
+      const newSnap = await ref.once("value");
+      const latestOrder = { ...newSnap.val(), orderId };
 
-  broadcastSSE({
-    type: 'update',
-    typeName: type,
-    order: latestOrder,   // 最新订单数据（含 userId）
-    action: { admin: adminId, status, note }
-  });
-} catch(e){}
-
+      broadcastSSE({
+        type: 'update',
+        typeName: type,
+        order: latestOrder,   // 最新订单数据（含 userId）
+        action: { admin: adminId, status, note }
+      });
+    } catch(e){}
 
     return res.json({ ok:true });
 
