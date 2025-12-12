@@ -528,12 +528,8 @@ async function submitAdminLogin(){
    Render action buttons (all orders)
 ------------------------------ */
 function renderActionButtons(orderId, type){
-  return `
-    <button class="small-btn confirm-btn" onclick="txAction('${orderId}','${type}','approve')">通过✔</button>
-    <button class="small-btn cancel-btn" onclick="txAction('${orderId}','${type}','reject')">拒绝❌</button>
-    <button class="small-btn lock-btn" onclick="txAction('${orderId}','${type}','lock')">锁定🔒</button>
-    <button class="small-btn unlock-btn" onclick="txAction('${orderId}','${type}','unlock')">已解锁🔓</button>
-  `;
+  // Buttons removed from orders list per request; actions still available in order detail modal.
+  return ` `;
 }
 
 /* -----------------------------
