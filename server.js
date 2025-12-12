@@ -77,24 +77,70 @@ function isSafeUid(uid){
 // SSE
 global.__sseClients = global.__sseClients || [];
 
+/**
+ * sendSSE(res, payloadStr, eventName)
+ * If eventName provided, sends "event: <eventName>" before data,
+ * so frontends using addEventListener("<eventName>", ...) will receive it.
+ */
+function sendSSE(res, payloadStr, eventName){
+  try {
+    if (res.finished || (res.connection && res.connection.destroyed)) return false;
+    if (eventName) {
+      res.write(`event: ${eventName}\n`);
+    }
+    res.write(`data: ${payloadStr}\n\n`);
+    return true;
+  } catch(e){
+    return false;
+  }
+}
+
+/**
+ * broadcastSSE(payloadObj)
+ * - If payloadObj.order && payloadObj.order.userId exists, send only to matching uid connections and general connections (uid === null)
+ * - If payloadObj.userId exists (e.g., balance event), send to matching uid connections and general connections
+ * - Else broadcast global to all connections
+ *
+ * This function attempts to send `event: <type>` if payloadObj.type is set.
+ */
 function broadcastSSE(payloadObj){
   const payload = JSON.stringify(payloadObj);
-  const toRemove = [];
-  global.__sseClients.forEach(res=>{
+  const toKeep = [];
+  global.__sseClients.forEach(client => {
     try {
-      if (res.finished || (res.connection && res.connection.destroyed)) {
-        toRemove.push(res);
+      const { res, uid } = client;
+      if (!res || (res.finished || (res.connection && res.connection.destroyed))) {
         return;
       }
-      res.write(`data: ${payload}\n\n`);
+      const eventName = payloadObj && payloadObj.type ? String(payloadObj.type) : null;
+
+      if (payloadObj && payloadObj.order && payloadObj.order.userId) {
+        // send to matching uid or general connections
+        if (uid === null || uid === undefined || String(uid) === String(payloadObj.order.userId)) {
+          const ok = sendSSE(res, payload, eventName);
+          if (ok) toKeep.push(client);
+        } else {
+          // keep client but do not send
+          toKeep.push(client);
+        }
+      } else if (payloadObj && payloadObj.userId) {
+        // direct balance event: payloadObj.userId present
+        if (uid === null || uid === undefined || String(uid) === String(payloadObj.userId)) {
+          const ok = sendSSE(res, payload, eventName);
+          if (ok) toKeep.push(client);
+        } else {
+          toKeep.push(client);
+        }
+      } else {
+        // global event
+        const ok = sendSSE(res, payload, eventName);
+        if (ok) toKeep.push(client);
+      }
     } catch(e){
-      toRemove.push(res);
+      // ignore broken client
     }
   });
-
-  if(toRemove.length){
-    global.__sseClients = global.__sseClients.filter(r => !toRemove.includes(r));
-  }
+  global.__sseClients = toKeep;
 }
 
 function objToSortedArray(objOrNull){
@@ -149,6 +195,8 @@ app.post('/api/users/sync', async (req, res) => {
 
 /* ---------------------------------------------------------
    GET balance (robust: validate uid before using as Firebase path)
+   NOTE: this is the /api/balance/:uid route you already had,
+   and we also add /wallet/:uid/balance below for frontend compatibility.
 --------------------------------------------------------- */
 app.get('/api/balance/:uid', async (req, res) => {
   try {
@@ -168,6 +216,29 @@ app.get('/api/balance/:uid', async (req, res) => {
     return res.json({ ok:false, balance: 0 });
   }
 });
+
+/* ---------------------------------------------------------
+   NEW: /wallet/:uid/balance
+   This endpoint existed on the frontend in your logs (/wallet/.../balance).
+   Add this to avoid 404s and to let the page pull the current balance directly.
+--------------------------------------------------------- */
+app.get('/wallet/:uid/balance', async (req, res) => {
+  try {
+    const uid = String(req.params.uid || '').trim();
+    if(!isSafeUid(uid)) {
+      return res.status(400).json({ ok:false, error:'invalid uid' });
+    }
+    if (!db) return res.json({ ok:true, uid, balance: 0 });
+
+    const snap = await db.ref(`users/${uid}/balance`).once('value');
+    const balance = safeNumber(snap.exists() ? snap.val() : 0, 0);
+    return res.json({ ok:true, uid, balance });
+  } catch (e) {
+    console.error('/wallet/:uid/balance error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
 /* ---------------------------------------------------------
    Admin set balance
 --------------------------------------------------------- */
@@ -215,6 +286,11 @@ app.post('/api/admin/balance', async (req, res) => {
       type: 'admin_set_balance',
       status: 'completed'
     });
+
+    // Broadcast balance event so clients update
+    try {
+      broadcastSSE({ type: 'balance', userId: user, balance: newBal });
+    } catch(e){}
 
     return res.json({ ok:true, balance: newBal });
   } catch (e){
@@ -276,6 +352,9 @@ app.post('/api/admin/recharge', async (req, res) => {
       const latestOrder = { ...snapNew.val(), orderId: ordId };
       broadcastSSE({ type:'update', typeName:'recharge', order: latestOrder, action:{ admin: req.headers['x-user-id'] || 'admin', status:'success' }});
     } catch(e){}
+
+    // broadcast balance event as well
+    try { broadcastSSE({ type:'balance', userId: userId, balance: newBalance }); } catch(e){}
 
     return res.json({ ok: true, balance: newBalance });
   } catch (e){
@@ -339,6 +418,9 @@ app.post('/api/admin/deduct', async (req, res) => {
       const latestOrder = { ...snapNew.val(), orderId: ordId };
       broadcastSSE({ type:'update', typeName:'withdraw', order: latestOrder, action:{ admin: req.headers['x-user-id'] || 'admin', status:'success' }});
     } catch(e){}
+
+    // broadcast balance event as well
+    try { broadcastSSE({ type:'balance', userId: userId, balance: newBalance }); } catch(e){}
 
     return res.json({ ok:true, balance:newBalance });
   } catch (e){
@@ -483,6 +565,13 @@ app.post('/api/order/buysell', async (req, res) => {
       sl: sl || null,
       orderId
     });
+
+    // broadcast balance update as well
+    try {
+      const uSnap = await db.ref(`users/${uid}/balance`).once('value');
+      const newBal = safeNumber(uSnap.exists() ? uSnap.val() : 0, 0);
+      broadcastSSE({ type:'balance', userId: uid, balance: newBal });
+    } catch(e){}
 
     return res.json({ ok:true, orderId:id });
 
@@ -769,12 +858,19 @@ app.post('/api/transaction/update', async (req, res) => {
             await ref.update({ status:'failed', note:'Insufficient balance when approving' });
           }
         }
+
+        // broadcast balance event for this user
+        try {
+          const newUserSnap = await db.ref(`users/${order.userId}/balance`).once('value');
+          const newBal = safeNumber(newUserSnap.exists() ? newUserSnap.val() : 0, 0);
+          broadcastSSE({ type:'balance', userId: order.userId, balance: newBal });
+        } catch(e){}
       }
     } catch (e) {
       console.warn('post-processing failed', e.message);
     }
 
-    // 推送 SSE
+    // 推送 SSE（订单更新）
     try {
       // 获取更新后的订单（最新数据）
       const newSnap = await ref.once("value");
@@ -797,7 +893,6 @@ app.post('/api/transaction/update', async (req, res) => {
 });
 
 
-
 /* ---------------------------------------------------------
    SSE: 支持 /api/orders/stream (通用) 与 /wallet/:uid/sse（钱包专用，按 uid 过滤）
 --------------------------------------------------------- */
@@ -805,60 +900,14 @@ app.post('/api/transaction/update', async (req, res) => {
 global.__sseClients = global.__sseClients || [];
 
 /**
- * sendSSE(res, payloadString)
+ * sendSSE(res, payloadStr, eventName)
+ * implemented above
  */
-function sendSSE(res, payloadStr){
-  try {
-    if (res.finished || (res.connection && res.connection.destroyed)) return false;
-    res.write(`data: ${payloadStr}\n\n`);
-    return true;
-  } catch(e){
-    return false;
-  }
-}
 
 /**
  * broadcastSSE(payloadObj)
- * - 如果 payloadObj.order && payloadObj.order.userId 存在，则只发送给匹配该 uid 的连接，以及所有通用连接(uid === null)
- * - 否则发送给所有连接
+ * implemented above
  */
-function broadcastSSE(payloadObj){
-  const payload = JSON.stringify(payloadObj);
-  const toKeep = [];
-  global.__sseClients.forEach(client => {
-    try {
-      const { res, uid } = client;
-      if (!res || (res.finished || (res.connection && res.connection.destroyed))) {
-        return;
-      }
-      if (payloadObj && payloadObj.order && payloadObj.order.userId) {
-        // send to matching uid or general connections
-        if (uid === null || uid === undefined || String(uid) === String(payloadObj.order.userId)) {
-          const ok = sendSSE(res, payload);
-          if (ok) toKeep.push(client);
-        } else {
-          // keep client but do not send
-          toKeep.push(client);
-        }
-      } else if (payloadObj && payloadObj.userId) {
-        // direct balance event: payloadObj.userId present
-        if (uid === null || uid === undefined || String(uid) === String(payloadObj.userId)) {
-          const ok = sendSSE(res, payload);
-          if (ok) toKeep.push(client);
-        } else {
-          toKeep.push(client);
-        }
-      } else {
-        // global event
-        const ok = sendSSE(res, payload);
-        if (ok) toKeep.push(client);
-      }
-    } catch(e){
-      // ignore broken client
-    }
-  });
-  global.__sseClients = toKeep;
-}
 
 /**
  * sendInitialBalanceToRes(res, uid)
@@ -867,19 +916,19 @@ function broadcastSSE(payloadObj){
 async function sendInitialBalanceToRes(res, uid){
   try {
     if (!db) {
-      sendSSE(res, JSON.stringify({ type: 'balance', userId: uid, balance: 0 }));
+      sendSSE(res, JSON.stringify({ type: 'balance', userId: uid, balance: 0 }), 'balance');
       return;
     }
     if (!isSafeUid(uid)) {
-      sendSSE(res, JSON.stringify({ type:'error', message: 'invalid uid' }));
+      sendSSE(res, JSON.stringify({ type:'error', message: 'invalid uid' }), 'error');
       try{ res.end(); }catch(e){}
       return;
     }
     const snap = await db.ref(`users/${uid}/balance`).once('value');
     const bal = safeNumber(snap.exists() ? snap.val() : 0, 0);
-    sendSSE(res, JSON.stringify({ type: 'balance', userId: uid, balance: bal }));
+    sendSSE(res, JSON.stringify({ type: 'balance', userId: uid, balance: bal }), 'balance');
   } catch (e) {
-    sendSSE(res, JSON.stringify({ type:'error', message: 'failed to read balance' }));
+    sendSSE(res, JSON.stringify({ type:'error', message: 'failed to read balance' }), 'error');
   }
 }
 
