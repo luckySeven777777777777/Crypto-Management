@@ -527,9 +527,21 @@ async function submitAdminLogin(){
 /* -----------------------------
    Render action buttons (all orders)
 ------------------------------ */
-function renderActionButtons(orderId, type){
-  // Buttons removed from orders list per request; actions still available in order detail modal.
-  return ` `;
+function renderActionButtons(orderId, type, processed){
+  // Hide buttons when viewing Orders page (orders list should have no actions)
+  try{
+    const active = document.querySelector('.sidebar .icon.active')?.getAttribute('data-page') || '';
+    if(active === 'orders') return '';
+  }catch(e){}
+  // Disable approve/reject if already processed
+  const disabledAttr = processed ? 'disabled' : '';
+  const disabledClass = processed ? 'small-btn locked-btn' : 'small-btn';
+  return `
+    <button class="small-btn confirm-btn ${processed ? 'locked-btn' : ''}" ${disabledAttr} onclick="txAction('${orderId}','${type}','approve')">通过✔</button>
+    <button class="small-btn cancel-btn ${processed ? 'locked-btn' : ''}" ${disabledAttr} onclick="txAction('${orderId}','${type}','reject')">拒绝❌</button>
+    <button class="small-btn lock-btn" onclick="txAction('${orderId}','${type}','lock')">锁定🔒</button>
+    <button class="small-btn unlock-btn" onclick="txAction('${orderId}','${type}','unlock')">已解锁🔓</button>
+  `;
 }
 
 /* -----------------------------
@@ -576,7 +588,7 @@ function renderBuySellRow(o){
   <td>${o.ip || '--'}</td>
   <td>${(o.tp||'-')}/${(o.sl||'-')}</td>
   <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
-  <td>${renderActionButtons(o.orderId,'buysell')}</td>
+  <td>${renderActionButtons(o.orderId,'buysell', o.processed)}</td>
 </tr>`;
 }
 function renderRechargeRow(o){
@@ -590,7 +602,7 @@ function renderRechargeRow(o){
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
-  <td>${renderActionButtons(o.orderId,'recharge')}</td>
+  <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
 </tr>`;
 }
 function renderWithdrawRow(o){
@@ -604,7 +616,7 @@ function renderWithdrawRow(o){
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
-  <td>${renderActionButtons(o.orderId,'withdraw')}</td>
+  <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
 </tr>`;
 }
 
