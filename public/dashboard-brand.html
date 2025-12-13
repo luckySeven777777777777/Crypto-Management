@@ -231,6 +231,36 @@ button.primary{
 </head>
 
 <body>
+<script>
+/* ===== 强制管理员登录校验 ===== */
+const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
+const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+
+if (!token) {
+  // 未登录，直接踢回登录页
+  location.href = 'login.html';
+}
+</script>
+<div id="adminBar" style="
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 9999;
+">
+  <span id="adminName" style="font-size:13px; color:#bbb;">Admin</span>
+  <button id="logoutBtn" style="
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(135deg,#e53935,#b71c1c);
+    color:#fff;
+    font-size: 12px;
+  ">Logout</button>
+</div>
 <div class="top-header">
   <div class="brand">NEXBIT 管理后台（代理）</div>
   <div class="user">
@@ -802,5 +832,13 @@ async function loadDashboard(){
 document.addEventListener('DOMContentLoaded', ()=>{ document.querySelector('.sidebar .icon.active').click(); });
 
 </script>
+<script>
+document.getElementById('logoutBtn')?.addEventListener('click', () => {
+  localStorage.removeItem('nexbit_admin_token');
+  localStorage.removeItem('admin_user');
+  location.href = 'login.html';
+});
+</script>
+
 </body>
 </html>

@@ -1,14 +1,69 @@
-<!doctype html>
-<html><head><meta charset="utf-8"><title>退出</title>
-<link rel="stylesheet" href="assets/style.css">
+<!DOCTYPE html>
 
-</head><body>
-<div class="container"><div class="card"><h2>正在退出…</h2></div></div>
-<script> clearSession(); setTimeout(()=>location.href='login.html',300); </script>
-<!-- 统一加载登录验证 -->
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXBIT 退出登录</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      background: linear-gradient(135deg, #141e30, #243b55);
+      font-family: Arial, Helvetica, sans-serif;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .box {
+      background: rgba(0,0,0,0.65);
+      padding: 36px 40px;
+      border-radius: 14px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
+    .title {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .desc {
+      font-size: 13px;
+      color: #9aa4ad;
+      margin-bottom: 26px;
+    }
+    button {
+      padding: 12px 28px;
+      border-radius: 8px;
+      border: none;
+      background: linear-gradient(135deg, #e53935, #b71c1c);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="title">已安全退出</div>
+    <div class="desc">您的管理员会话已结束</div>
+    <button id="back">返回登录</button>
+  </div>
 
-<script>requireLogin();</script>
-<!-- 统一加载 API 封装 -->
-<script src="nexbit-api.js"></script>
+<script>
+  // 通知服务器清除 session / token
+  fetch('/api/admin/logout', { method: 'POST' }).finally(() => {
+    localStorage.removeItem('nexbit_admin_token');
+localStorage.removeItem('admin_user');
+  });
 
-</body></html>
+  document.getElementById('back').onclick = () => {
+    location.href = 'login.html';
+  };
+</script>
+
+</body>
+</html>
