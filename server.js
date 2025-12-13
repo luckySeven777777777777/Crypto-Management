@@ -537,31 +537,18 @@ const isApproved = (
 if (isApproved) {
   if (type === 'recharge') {
     curBal += amt;
-
-    // ① 写入余额（只一次）
     await userRef.update({
       balance: curBal,
       lastUpdate: now(),
       boost_last: now()
     });
 
-    // ② 立刻 SSE 推送（关键）
     broadcastSSE({
       type: 'balance',
       userId,
       balance: curBal,
       source: 'recharge_approved'
     });
-  }
-
-  else if (type === 'withdraw' && !order.deducted) {
-    curBal -= amt;
-    await userRef.update({
-      balance: curBal,
-      lastUpdate: now(),
-      boost_last: now()
-    });
-    broadcastSSE({ type:'balance', userId, balance: curBal });
   }
 
   else if (type === 'buysell') {
@@ -572,19 +559,49 @@ if (isApproved) {
         lastUpdate: now(),
         boost_last: now()
       });
+
       broadcastSSE({ type:'balance', userId, balance: curBal });
     }
   }
 }
+// ❌ Withdraw 被拒绝 → 退回余额（立即扣 / 失败退）
+if (
+  type === 'withdraw' &&
+  !isApproved &&
+  order.deducted === true &&
+  order.refunded !== true
+) {
+  curBal += amt;
+
+  await userRef.update({
+    balance: curBal,
+    lastUpdate: now(),
+    boost_last: now()
+  });
+
+  await ref.update({
+    refunded: true
+  });
+
+  broadcastSSE({
+    type: 'balance',
+    userId,
+    balance: curBal,
+    source: 'withdraw_refund'
+  });
+}
+}
+
 
 try {
-  if (
-    isApproved ||
-    statusNorm === 'failed' ||
-    statusNorm === 'rejected'
-  ) {
-    await ref.update({ processed: true });
-  }
+if (
+  isApproved ||
+  statusNorm === 'failed' ||
+  statusNorm === 'rejected'
+) {
+  await ref.update({ processed: true });
+}
+
 } catch (e) {
   console.error('update processed failed:', e);
 }
