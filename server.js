@@ -526,9 +526,8 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-     const okStatus = ['success','approved','completed','done'];
-if (okStatus.includes(String(status).toLowerCase())) {
-
+      const okStatus = ['success','approved','completed','done'];
+    if (okStatus.includes(String(status).toLowerCase())) {
         if (type === 'recharge') {
           curBal = curBal + amt;
           await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
