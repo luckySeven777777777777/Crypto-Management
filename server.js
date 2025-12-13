@@ -485,34 +485,7 @@ app.post('/api/admin/login', async (req, res) => {
 --------------------------------------------------------- */
 app.post('/api/transaction/update', async (req, res) => {
   try {
-    if (!db) return 
-// ===== ABSOLUTE RECHARGE FIX (ADMIN ONLY) =====
-if (type === 'recharge' && orderId) {
-  const oref = db.ref('orders/recharge');
-  const osnap = await oref.once('value');
-  const all = osnap.val() || {};
-  const key = Object.keys(all).find(k => k === orderId || all[k].orderId === orderId);
-  if (key) {
-    const order = all[key];
-    if (!order.processed) {
-      const uid = order.userId;
-      const amt2 = Number(order.amount || 0);
-      if (uid && amt2 > 0) {
-        const uref = db.ref(`users/${uid}`);
-        const us = await uref.once('value');
-        const cur = us.exists() && us.val().balance ? Number(us.val().balance) : 0;
-        const nb = cur + amt2;
-        await uref.update({ balance: nb, lastUpdate: now() });
-        await db.ref(`orders/recharge/${key}`).update({ processed:true, status:'success' });
-        if (typeof broadcastSSE === 'function') {
-          broadcastSSE({ type:'balance', userId:uid, balance:nb });
-        }
-      }
-    }
-  }
-}
-
-res.json({ ok:false, error:'no-db' });
+    if (!db) return res.json({ ok:false, error:'no-db' });
 
     const auth = req.headers['authorization'] || '';
     if (!auth.startsWith('Bearer ')) return res.status(403).json({ ok:false, error:'require admin auth' });
