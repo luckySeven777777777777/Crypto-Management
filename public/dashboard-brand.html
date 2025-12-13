@@ -40,15 +40,9 @@ body{
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  z-index: 1000;    
-  pointer-events: none;
-}
 
-/* ✅ 只恢复 header 内部点击 */
-.top-header *{
-  pointer-events: auto;
+  pointer-events: auto;   /* ✅ 必须是 auto */
 }
-
 .top-header .brand{
   font-weight:700;
   font-size:18px;
@@ -100,12 +94,6 @@ body{
 /* ====== FIX CLICK ISSUE ====== */
 
 /* header 不挡点击，只给内部按钮 */
-.top-header{
-  pointer-events: none;
-}
-.top-header *{
-  pointer-events: auto;
-}
 
 /* sidebar 必须可点 */
 .sidebar{
@@ -829,7 +817,6 @@ async function loadDashboard(){
 /* -----------------------------
    Init
 ------------------------------ */
-document.addEventListener('DOMContentLoaded', ()=>{
   loadDashboard();
 });
 
