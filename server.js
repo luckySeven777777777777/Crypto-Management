@@ -498,17 +498,9 @@ app.post('/api/transaction/update', async (req, res) => {
     const { type, orderId, status, note } = req.body;
     if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
 
-    let ref = db.ref(`orders/${type}/${orderId}`);
-    let snap = await ref.once('value');
-    if (!snap.exists()) {
-      // fallback: search by orderId field
-      const listSnap = await db.ref(`orders/${type}`).once('value');
-      const all = listSnap.val() || {};
-      const foundKey = Object.keys(all).find(k => String(all[k].orderId) === String(orderId));
-      if (!foundKey) return res.status(404).json({ ok:false, error:'order not found' });
-      ref = db.ref(`orders/${type}/${foundKey}`);
-      snap = await ref.once('value');
-    }
+    const ref = db.ref(`orders/${type}/${orderId}`);
+    const snap = await ref.once('value');
+    if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
 
     const order = snap.val();
 
