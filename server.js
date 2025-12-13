@@ -331,7 +331,12 @@ if (typeof realCoin === 'string' && realCoin.includes('USDT')) {
     const sideLower = String(side || '').toLowerCase();
 
 if(!uid || !sideLower || !realCoin || amt <= 0)
-  return res.status(400).json({ ok:false, error:'missing fields' });
+  return res.status(400).json({
+    ok:false,
+    error:'missing fields',
+    debug:{ uid, sideLower, realCoin, amt }
+  });
+
 
 
     if(!isSafeUid(uid))
