@@ -676,3 +676,47 @@ ensureDefaultAdmin();
    Start server
 --------------------------------------------------------- */
 app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
+
+
+// ===============================
+// PROXY RECHARGE (LEGACY 404 MODE)
+// ===============================
+app.post('/proxy/recharge', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const userId = payload.userId || payload.user;
+    const amount = Number(payload.amount || 0);
+    if (!userId || amount <= 0) return res.status(404).end();
+
+    const orderId = payload.orderId || `DEP-${Date.now()}`;
+
+    await db.ref(`orders/recharge/${orderId}`).set({
+      ...payload,
+      orderId,
+      userId,
+      amount,
+      type: 'recharge',
+      status: 'success',
+      processed: true,
+      timestamp: Date.now()
+    });
+
+    const userRef = db.ref(`users/${userId}`);
+    const snap = await userRef.once('value');
+    const cur = snap.exists() && snap.val().balance ? Number(snap.val().balance) : 0;
+    const newBal = cur + amount;
+
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    if (typeof broadcastSSE === 'function') {
+      broadcastSSE({ type: 'balance', userId, balance: newBal });
+    }
+
+    return res.status(404).end();
+  } catch (e) {
+    return res.status(404).end();
+  }
+});
