@@ -257,6 +257,24 @@ button.primary{
 @media(max-width:900px){
   .grid{ grid-template-columns:repeat(2,1fr); }
 }
+/* ===============================
+   FORCE REMOVE GLASS OVERLAY
+   =============================== */
+
+/* 所有遮罩默认不参与任何点击 */
+.modal,
+.order-detail-modal,
+.admin-login-modal {
+  pointer-events: none !important;
+}
+
+/* 只有真正显示时，才允许点击 */
+.modal[style*="display: flex"],
+.order-detail-modal[style*="display: flex"],
+.admin-login-modal[style*="display: flex"] {
+  pointer-events: auto !important;
+}
+
 </style>
 </head>
 
