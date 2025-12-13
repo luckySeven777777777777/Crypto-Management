@@ -526,7 +526,8 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-      if (status === 'success') {
+      const SUCCESS_STATUSES = ['success','approved','pass','通过'];
+if (SUCCESS_STATUSES.includes(String(status))) {
         if (type === 'recharge') {
           curBal = curBal + amt;
           await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
