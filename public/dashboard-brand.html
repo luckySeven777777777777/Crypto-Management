@@ -241,31 +241,27 @@ if (!token) {
   location.href = 'login.html';
 }
 </script>
-<div id="adminBar" style="
-  position: fixed;
-  top: 16px;
-  right: 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  z-index: 9999;
-">
-  <span id="adminName" style="font-size:13px; color:#bbb;">Admin</span>
-  <button id="logoutBtn" style="
-    padding: 6px 14px;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    background: linear-gradient(135deg,#e53935,#b71c1c);
-    color:#fff;
-    font-size: 12px;
-  ">Logout</button>
-</div>
 <div class="top-header">
   <div class="brand">NEXBIT 管理后台（代理）</div>
-  <div class="user">
-    <span id="easternNow">US/Eastern: --</span> &nbsp;·&nbsp; 已登录：admin
+
+  <div class="user" style="display:flex;align-items:center;gap:12px;">
+    <span id="adminUser">admin</span>
+
+    <button id="logoutBtn"
+      style="
+        padding:6px 14px;
+        border-radius:6px;
+        border:none;
+        cursor:pointer;
+        background:linear-gradient(135deg,#e53935,#b71c1c);
+        color:#fff;
+        font-size:12px;
+      ">
+      Logout
+    </button>
   </div>
+</div>
+
 </div>
 
 <div class="app">
