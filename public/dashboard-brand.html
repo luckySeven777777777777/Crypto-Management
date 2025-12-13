@@ -274,16 +274,6 @@ button.primary{
 </head>
 
 <body>
-<script>
-/* ===== 强制管理员登录校验 ===== */
-const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
-const token = localStorage.getItem(ADMIN_TOKEN_KEY);
-
-if (!token) {
-  // 未登录，直接踢回登录页
-  location.href = 'login.html';
-}
-</script>
 <div class="top-header">
   <div class="brand">NEXBIT 管理后台（代理）</div>
   <div class="user">
