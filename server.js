@@ -526,8 +526,7 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-      const okStatus = ['success','approved','completed','done'];
-      if (okStatus.includes(String(status).toLowerCase())) {
+      if (status === 'success') {
         if (type === 'recharge') {
           curBal = curBal + amt;
           await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
@@ -679,44 +678,41 @@ app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
 
 
 // ===============================
-// PROXY RECHARGE (LEGACY 404 MODE)
+// ADMIN APPROVE RECHARGE (FINAL)
 // ===============================
-app.post('/proxy/recharge', async (req, res) => {
+app.post('/api/recharge/approve', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const userId = payload.userId || payload.user;
-    const amount = Number(payload.amount || 0);
-    if (!userId || amount <= 0) return res.status(404).end();
+    const { orderId } = req.body || {};
+    if (!orderId) return res.status(400).json({ ok:false });
 
-    const orderId = payload.orderId || `DEP-${Date.now()}`;
+    const ref = db.ref('orders/recharge');
+    const snap = await ref.once('value');
+    const all = snap.val() || {};
+    const key = Object.keys(all).find(k => all[k].orderId === orderId || k === orderId);
+    if (!key) return res.status(404).json({ ok:false });
 
-    await db.ref(`orders/recharge/${orderId}`).set({
-      ...payload,
-      orderId,
-      userId,
-      amount,
-      type: 'recharge',
-      status: 'success',
-      processed: true,
-      timestamp: Date.now()
-    });
+    const order = all[key];
+    if (order.processed) return res.json({ ok:true });
+
+    const userId = order.userId;
+    const amount = Number(order.amount || 0);
+    if (!userId || amount <= 0) return res.status(400).json({ ok:false });
 
     const userRef = db.ref(`users/${userId}`);
-    const snap = await userRef.once('value');
-    const cur = snap.exists() && snap.val().balance ? Number(snap.val().balance) : 0;
+    const u = await userRef.once('value');
+    const cur = u.exists() && u.val().balance ? Number(u.val().balance) : 0;
     const newBal = cur + amount;
 
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: Date.now()
-    });
+    await userRef.update({ balance: newBal, lastUpdate: Date.now() });
+    await db.ref(`orders/recharge/${key}`).update({ status:'success', processed:true });
 
     if (typeof broadcastSSE === 'function') {
-      broadcastSSE({ type: 'balance', userId, balance: newBal });
+      broadcastSSE({ type:'balance', userId, balance:newBal });
     }
 
-    return res.status(404).end();
-  } catch (e) {
-    return res.status(404).end();
+    return res.json({ ok:true });
+  } catch(e){
+    console.error(e);
+    return res.status(500).json({ ok:false });
   }
 });
