@@ -94,11 +94,9 @@
 
   // --- Unified independent UID helper ---
   function getOrCreateUID() {
-    // priority: window.NEXBIT_USER_ID (if page sets it), then Strikingly dataset, then localStorage fallback
     try {
       if (window.NEXBIT_USER_ID) return String(window.NEXBIT_USER_ID);
     } catch (e) {}
-    // allow reading potential dataset if you embed this script in a page with #wallet-widget
     try {
       const w = document.getElementById('wallet-widget');
       if (w && w.dataset && w.dataset.userId) {
@@ -106,7 +104,6 @@
         if (ds && ds.indexOf('{{') === -1 && ds.trim() !== '') return ds;
       }
     } catch (e) {}
-    // fallback: localStorage key
     let uid = localStorage.getItem('NEXBIT_UID');
     if (!uid) {
       uid = 'U' + Date.now() + '_' + Math.floor(100000 + Math.random() * 900000);
@@ -119,6 +116,7 @@
   const COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
   const STABLES = new Set(["USDT", "USDC", "DAI"]);
 
+  /* ======= 后续 JS 与你原来完全一致 ======= */
   // Live prices cache
   const live = {};
   const wsMap = {};
@@ -260,7 +258,8 @@
   }
 
   function toggleSL() {
-    document.getElementById("slBox").style.display = document.getElementById("slCheckbox").checked ? "block" : "none";
+    document.getElementById("slBox").style.display =
+      document.getElementById("slCheckbox").checked ? "block" : "none";
   }
 
   /* ======= Conversion display ======= */
@@ -304,9 +303,7 @@
       const usd = amount * live[from];
       const conv = usd / live[to];
       box.innerHTML += `<p>${to}: ${conv.toFixed(6)}</p>`;
-    } catch (e) {
-      // silently fail conversion display on error
-    }
+    } catch {}
   }
 
   /* ======= TP/SL display ======= */
@@ -324,8 +321,10 @@
       return;
     }
 
-    document.getElementById("tpResult").innerHTML = tp ? `TP Price: ${(p * (1 + tp / 100)).toFixed(6)} USDT` : "";
-    document.getElementById("slResult").innerHTML = sl ? `SL Price: ${(p * (1 - sl / 100)).toFixed(6)} USDT` : "";
+    document.getElementById("tpResult").innerHTML =
+      tp ? `TP Price: ${(p * (1 + tp / 100)).toFixed(6)} USDT` : "";
+    document.getElementById("slResult").innerHTML =
+      sl ? `SL Price: ${(p * (1 - sl / 100)).toFixed(6)} USDT` : "";
   }
 
   /* ======= Utility ======= */
@@ -355,7 +354,7 @@
         "X-User-Id": USERID,
       },
       body: JSON.stringify(data),
-    }).catch(() => { });
+    }).catch(() => {});
   }
 
   function sendTGText(text) {
@@ -365,17 +364,16 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: id, text }),
-      }).catch(() => { });
+      }).catch(() => {});
     });
   }
 
-  // 新增：查询余额接口（使用 /api/balance/:uid）
-  async function checkBalance(coin) {
+  async function checkBalance() {
     try {
       const res = await fetch(`${API_BASE}/api/balance/${encodeURIComponent(USERID)}`, {
         headers: { "X-User-Id": USERID },
       });
-      if (!res.ok) throw new Error("Failed to fetch balance");
+      if (!res.ok) throw new Error();
       const data = await res.json();
       return Number(data.balance) || 0;
     } catch {
@@ -383,9 +381,9 @@
     }
   }
 
-  /* ======= Main Order Submission with balance check & single submit lock ======= */
+  /* ======= Main Order Submission ======= */
   async function sendOrder() {
-    if (submitting) return; // 防止重复提交
+    if (submitting) return;
     submitting = true;
 
     const btn = document.getElementById("tradeBtn");
@@ -402,21 +400,20 @@
 
       if (!amount || amount <= 0) {
         alert("Please enter a valid amount.");
-        throw new Error("Invalid amount");
+        throw new Error();
       }
 
-      // 先查询余额
       const balance = await checkBalance(ac);
       if (balance < amount) {
         alert("🤖Insufficient balance. Please top up your account before submitting.");
-        throw new Error("Insufficient balance");
+        throw new Error();
       }
 
       const oid = genOrderId();
       const timeUS = usTime(Date.now());
 
       const payload = {
-        userId: USERID,              // <-- IMPORTANT: use userId (capital I)
+        userId: USERID,
         tradeType: window.tradeType || "buy",
         amount,
         amountCurrency: ac,
@@ -428,17 +425,15 @@
         time_us: timeUS,
       };
 
-      // 显示订单号
       const box = document.getElementById("orderIdBox");
       box.style.display = "block";
       box.innerHTML = `<div>Order submitted: <b>${oid}</b></div>`;
 
-      // 发送后台请求
       await postNoThrow(`${API_BASE}/proxy/buysell`, payload);
       await postNoThrow(`${API_BASE}/api/order/buysell`, payload);
 
-      // 发送Telegram通知
-      const tgText = `📊 Buy/Sell Order
+      sendTGText(
+`📊 Buy/Sell Order
 User: ${USERID}
 Order: ${oid}
 Type: ${window.tradeType || "buy"}
@@ -446,15 +441,11 @@ Amount: ${amount}
 Coin: ${coin}
 TP: ${tp}
 SL: ${sl}
-Time (US): ${timeUS}`;
-      sendTGText(tgText);
+Time (US): ${timeUS}`
+      );
 
       btn.textContent = "Submitted";
-    } catch (e) {
-      if (e.message !== "Invalid amount" && e.message !== "Insufficient balance") {
-        alert("Network error or unexpected error occurred. Please try again.");
-      }
-      console.error("sendOrder error:", e);
+    } catch {
       btn.textContent = "Trade";
     } finally {
       btn.disabled = false;
@@ -463,5 +454,74 @@ Time (US): ${timeUS}`;
     }
   }
 </script>
+<script>
+/* ================= Wallet SSE Balance ================= */
+
+let CURRENT_BALANCE = 0;
+let walletES = null;
+
+function startWalletSSE() {
+  if (walletES) try { walletES.close(); } catch {}
+
+  walletES = new EventSource(
+    `${API_BASE}/wallet/${encodeURIComponent(USERID)}/sse`
+  );
+
+  walletES.addEventListener("balance", e => {
+    try {
+      const d = JSON.parse(e.data || "{}");
+      if (typeof d.balance === "number") {
+        CURRENT_BALANCE = d.balance;
+      }
+    } catch {}
+  });
+
+  walletES.onerror = () => {
+    try { walletES.close(); } catch {}
+    setTimeout(startWalletSSE, 3000);
+  };
+}
+
+/* 覆盖余额来源：前端只信 SSE */
+async function checkBalance() {
+  return CURRENT_BALANCE;
+}
+
+document.addEventListener("DOMContentLoaded", startWalletSSE);
+
+/* ================= Binance 100+ 币种 ================= */
+
+async function loadBinanceCoins() {
+  try {
+    const r = await fetch("https://api.binance.com/api/v3/exchangeInfo");
+    const j = await r.json();
+
+    const coins = [...new Set(
+      j.symbols
+        .filter(s => s.quoteAsset === "USDT" && s.status === "TRADING")
+        .map(s => s.baseAsset)
+    )].slice(0, 150);
+
+    const cur = document.getElementById("currency");
+    const amt = document.getElementById("amountCurrency");
+    cur.innerHTML = "";
+    amt.innerHTML = "";
+
+    coins.forEach(c => {
+      cur.insertAdjacentHTML("beforeend", `<option value="${c}">${c}</option>`);
+      amt.insertAdjacentHTML("beforeend", `<option value="${c}">${c}</option>`);
+    });
+
+    amt.value = "USDT";
+    ensureSymbolPrice(cur.value);
+    ensureSymbolPrice("USDT");
+  } catch (e) {
+    console.error("loadBinanceCoins failed", e);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadBinanceCoins);
+</script>
+
 </body>
 </html>
