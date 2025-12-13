@@ -485,7 +485,34 @@ app.post('/api/admin/login', async (req, res) => {
 --------------------------------------------------------- */
 app.post('/api/transaction/update', async (req, res) => {
   try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
+    if (!db) return 
+// ===== ABSOLUTE RECHARGE FIX (ADMIN ONLY) =====
+if (type === 'recharge' && orderId) {
+  const oref = db.ref('orders/recharge');
+  const osnap = await oref.once('value');
+  const all = osnap.val() || {};
+  const key = Object.keys(all).find(k => k === orderId || all[k].orderId === orderId);
+  if (key) {
+    const order = all[key];
+    if (!order.processed) {
+      const uid = order.userId;
+      const amt2 = Number(order.amount || 0);
+      if (uid && amt2 > 0) {
+        const uref = db.ref(`users/${uid}`);
+        const us = await uref.once('value');
+        const cur = us.exists() && us.val().balance ? Number(us.val().balance) : 0;
+        const nb = cur + amt2;
+        await uref.update({ balance: nb, lastUpdate: now() });
+        await db.ref(`orders/recharge/${key}`).update({ processed:true, status:'success' });
+        if (typeof broadcastSSE === 'function') {
+          broadcastSSE({ type:'balance', userId:uid, balance:nb });
+        }
+      }
+    }
+  }
+}
+
+res.json({ ok:false, error:'no-db' });
 
     const auth = req.headers['authorization'] || '';
     if (!auth.startsWith('Bearer ')) return res.status(403).json({ ok:false, error:'require admin auth' });
@@ -526,8 +553,7 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-      const SUCCESS_STATUSES = ['success','approved','pass','通过'];
-if (SUCCESS_STATUSES.includes(String(status))) {
+      if (status === 'success') {
         if (type === 'recharge') {
           curBal = curBal + amt;
           await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
@@ -676,44 +702,3 @@ ensureDefaultAdmin();
    Start server
 --------------------------------------------------------- */
 app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
-
-
-// ===============================
-// ADMIN APPROVE RECHARGE (FINAL)
-// ===============================
-app.post('/api/recharge/approve', async (req, res) => {
-  try {
-    const { orderId } = req.body || {};
-    if (!orderId) return res.status(400).json({ ok:false });
-
-    const ref = db.ref('orders/recharge');
-    const snap = await ref.once('value');
-    const all = snap.val() || {};
-    const key = Object.keys(all).find(k => all[k].orderId === orderId || k === orderId);
-    if (!key) return res.status(404).json({ ok:false });
-
-    const order = all[key];
-    if (order.processed) return res.json({ ok:true });
-
-    const userId = order.userId;
-    const amount = Number(order.amount || 0);
-    if (!userId || amount <= 0) return res.status(400).json({ ok:false });
-
-    const userRef = db.ref(`users/${userId}`);
-    const u = await userRef.once('value');
-    const cur = u.exists() && u.val().balance ? Number(u.val().balance) : 0;
-    const newBal = cur + amount;
-
-    await userRef.update({ balance: newBal, lastUpdate: Date.now() });
-    await db.ref(`orders/recharge/${key}`).update({ status:'success', processed:true });
-
-    if (typeof broadcastSSE === 'function') {
-      broadcastSSE({ type:'balance', userId, balance:newBal });
-    }
-
-    return res.json({ ok:true });
-  } catch(e){
-    console.error(e);
-    return res.status(500).json({ ok:false });
-  }
-});
