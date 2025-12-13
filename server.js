@@ -308,15 +308,26 @@ const {
   orderId, wallet, ip
 } = req.body;
 
-const realCoin =
+let realCoin =
   coin ||
   currency ||
   symbol ||
   pair ||
   null;
 
+if (typeof realCoin === 'string' && realCoin.includes('USDT')) {
+  realCoin = realCoin.replace('USDT', '');
+}
+
+
     const uid = userId || user;
-    const amt = Number(amount || 0);
+    const amt = Number(
+  amount ??
+  req.body.usdt ??
+  req.body.value ??
+  0
+);
+
     const sideLower = String(side || '').toLowerCase();
 
 if(!uid || !sideLower || !realCoin || amt <= 0)
