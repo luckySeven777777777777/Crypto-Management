@@ -117,10 +117,15 @@
 
     try {
       const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+  id: username,
+  password
+})
+
+});
+
       const data = await res.json();
 
      if (data.ok) {
