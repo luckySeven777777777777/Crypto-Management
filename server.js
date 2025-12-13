@@ -246,16 +246,16 @@ async function saveOrder(type, data){
   if(!clean.userId && clean.user) clean.userId = clean.user;
   const id = clean.orderId || genOrderId(type.toUpperCase());
 
-  const payload = {
-    ...clean,
-    orderId: id,
-    timestamp: ts,
-    time_us: usTime(ts),
-    status: clean.status || 'processing',
-    type,
-    processed: false,
-    coin: clean.coin || clean.currency || null
-  };
+const payload = {
+  ...clean,
+  orderId: id,
+  timestamp: ts,
+  time_us: usTime(ts),
+  status: clean.status || 'processing',
+  type,
+  processed: clean.processed === true,
+  coin: clean.coin || clean.currency || null
+};
 
   await db.ref(`orders/${type}/${id}`).set(payload);
 
@@ -285,37 +285,95 @@ async function saveOrder(type, data){
    - both /proxy/buysell and /api/order/buysell share same logic
    - buy: immediate deduction; sell: create order (admin approval required to credit)
 --------------------------------------------------------- */
+// ====== 省略说明，以下是你原代码完整 + BuySell 修复 ======
+
+/* ---------------------------------------------------------
+   BuySell endpoints（已修复）
+   BUY：立即扣钱 + 立即完成
+   SELL：建单，后台成功才加钱
+--------------------------------------------------------- */
 async function handleBuySellRequest(req, res){
   try {
     if(!db) return res.json({ ok:false, error:'no-db' });
 
-    const { userId, user, side, coin, amount, converted, tp, sl, orderId, wallet, ip } = req.body;
+    const {
+      userId, user,
+      side, coin,
+      amount,
+      converted, tp, sl,
+      orderId, wallet, ip
+    } = req.body;
+
     const uid = userId || user;
     const amt = Number(amount || 0);
+    const sideLower = String(side || '').toLowerCase();
 
-    if(!uid || !side || !coin || amt <= 0) return res.status(400).json({ ok:false, error:'missing fields' });
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+    if(!uid || !sideLower || !coin || amt <= 0)
+      return res.status(400).json({ ok:false, error:'missing fields' });
+
+    if(!isSafeUid(uid))
+      return res.status(400).json({ ok:false, error:'invalid uid' });
 
     const userRef = db.ref(`users/${uid}`);
     const snap = await userRef.once('value');
     const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-    const sideLower = String(side).toLowerCase();
 
+    /* ---------------- BUY ---------------- */
     if(sideLower === 'buy'){
-      if(balance < amt) return res.status(400).json({ ok:false, error:'余额不足' });
+      if(balance < amt)
+        return res.status(400).json({ ok:false, error:'余额不足' });
+
       const newBal = balance - amt;
       await userRef.update({ balance: newBal, lastUpdate: now() });
-      try { broadcastSSE({ type:'balance', userId: uid, balance: newBal }); } catch(e){}
-    } else {
-      // sell: do nothing now, wait for admin approval
+
+      broadcastSSE({
+        type:'balance',
+        userId: uid,
+        balance: newBal
+      });
+
+      const id = await saveOrder('buysell', {
+        userId: uid,
+        side: 'BUY',
+        coin,
+        amount: amt,
+        converted: converted || null,
+        tp: tp || null,
+        sl: sl || null,
+        wallet: wallet || null,
+        ip: ip || null,
+
+        status: 'completed',   // ✅ 即时成交
+        deducted: true,
+        processed: true        // ✅ 防止后台二次处理
+      });
+
+      return res.json({ ok:true, orderId: id });
     }
 
-    const id = await saveOrder('buysell', {
-      userId: uid, side, coin, amount: amt, converted: converted || null, tp: tp || null, sl: sl || null,
-      orderId, deducted: (sideLower === 'buy'), wallet: wallet || null, ip: ip || null, processed: false
-    });
+    /* ---------------- SELL ---------------- */
+    if(sideLower === 'sell'){
+      const id = await saveOrder('buysell', {
+        userId: uid,
+        side: 'SELL',
+        coin,
+        amount: amt,
+        converted: converted || null,
+        tp: tp || null,
+        sl: sl || null,
+        wallet: wallet || null,
+        ip: ip || null,
 
-    return res.json({ ok:true, orderId: id });
+        status: 'pending',     // ✅ 等后台
+        deducted: false,
+        processed: false
+      });
+
+      return res.json({ ok:true, orderId: id });
+    }
+
+    return res.status(400).json({ ok:false, error:'invalid side' });
+
   } catch(e){
     console.error('handleBuySellRequest error', e);
     return res.status(500).json({ ok:false, error: e.message });
@@ -324,6 +382,7 @@ async function handleBuySellRequest(req, res){
 
 app.post('/proxy/buysell', handleBuySellRequest);
 app.post('/api/order/buysell', handleBuySellRequest);
+
 
 /* ---------------------------------------------------------
    Recharge endpoint
