@@ -296,20 +296,32 @@ async function handleBuySellRequest(req, res){
   try {
     if(!db) return res.json({ ok:false, error:'no-db' });
 
-    const {
-      userId, user,
-      side, coin,
-      amount,
-      converted, tp, sl,
-      orderId, wallet, ip
-    } = req.body;
+const {
+  userId, user,
+  side,
+  coin,
+  currency,
+  symbol,
+  pair,
+  amount,
+  converted, tp, sl,
+  orderId, wallet, ip
+} = req.body;
+
+const realCoin =
+  coin ||
+  currency ||
+  symbol ||
+  pair ||
+  null;
 
     const uid = userId || user;
     const amt = Number(amount || 0);
     const sideLower = String(side || '').toLowerCase();
 
-    if(!uid || !sideLower || !coin || amt <= 0)
-      return res.status(400).json({ ok:false, error:'missing fields' });
+if(!uid || !sideLower || !realCoin || amt <= 0)
+  return res.status(400).json({ ok:false, error:'missing fields' });
+
 
     if(!isSafeUid(uid))
       return res.status(400).json({ ok:false, error:'invalid uid' });
@@ -335,7 +347,7 @@ async function handleBuySellRequest(req, res){
       const id = await saveOrder('buysell', {
         userId: uid,
         side: 'BUY',
-        coin,
+        coin: realCoin,
         amount: amt,
         converted: converted || null,
         tp: tp || null,
@@ -356,7 +368,7 @@ async function handleBuySellRequest(req, res){
       const id = await saveOrder('buysell', {
         userId: uid,
         side: 'SELL',
-        coin,
+    coin: realCoin,
         amount: amt,
         converted: converted || null,
         tp: tp || null,
