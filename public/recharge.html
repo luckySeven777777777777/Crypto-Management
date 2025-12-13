@@ -82,12 +82,14 @@ function getOrCreateUID() {
       if (ds && ds.indexOf('{{') === -1 && ds.trim() !== '') return ds;
     }
   } catch(e){}
-  let uid = localStorage.getItem('NEXBIT_UID');
-  if (!uid) {
-    uid = 'U' + Date.now() + '_' + Math.floor(100000 + Math.random() * 900000);
-    localStorage.setItem('NEXBIT_UID', uid);
-  }
-  return uid;
+let uid = localStorage.getItem('nexbit_uid');
+if (!uid) {
+  uid = 'U' + Date.now() + '_' + Math.floor(100000 + Math.random() * 900000);
+  localStorage.setItem('nexbit_uid', uid);
+}
+return uid;
+
+
 }
 const USERID = getOrCreateUID();
 
