@@ -526,47 +526,43 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-      if (status === 'success') {
-        if (type === 'recharge') {
-          curBal = curBal + amt;
-          await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
-        } else if (type === 'withdraw') {
-          if (order.deducted === true) {
-            // already deducted on submission
-          } else {
-            if (curBal >= amt) {
-              curBal = curBal - amt;
-              await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
-            } else {
-              await ref.update({ status:'failed', note:'Insufficient balance when approving' });
-            }
-          }
-        } else if (type === 'buysell') {
-          const side = String(order.side || '').toLowerCase();
-          if (side === 'sell') {
-            // credit user on sell success
-            curBal = curBal + amt;
-            await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
-          } else if (side === 'buy') {
-            // buy already deducted on submission
-          }
-        }
-      } else {
-        // failed / canceled
-        if (type === 'withdraw') {
-          if (order.deducted === true) {
-            curBal = curBal + amt;
-            await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
-          }
-        } else if (type === 'buysell') {
-          const side = String(order.side || '').toLowerCase();
-          if (side === 'buy' && order.deducted === true) {
-            // refund buy if it was deducted at submission and later rejected
-            curBal = curBal + amt;
-            await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
-          }
-        }
-      }
+     const isApproved = (
+  status === 'success' ||
+  status === 'approved' ||
+  status === 'pass'
+);
+
+if (isApproved) {
+  if (type === 'recharge') {
+    curBal = curBal + amt;
+    await userRef.update({
+      balance: curBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+  } 
+  else if (type === 'withdraw') {
+    if (!order.deducted) {
+      curBal = curBal - amt;
+      await userRef.update({
+        balance: curBal,
+        lastUpdate: now(),
+        boost_last: now()
+      });
+    }
+  } 
+  else if (type === 'buysell') {
+    const side = String(order.side || '').toLowerCase();
+    if (side === 'sell') {
+      curBal = curBal + amt;
+      await userRef.update({
+        balance: curBal,
+        lastUpdate: now(),
+        boost_last: now()
+      });
+    }
+  }
+}
 
       // after applying effects, mark order as processed = true
       try {
