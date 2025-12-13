@@ -1,3 +1,10 @@
+
+// PATCHED VERSION – Recharge + BuySell fixed
+// Key fixes:
+// 1) Admin approve accepts: success / approved / completed / ok / 通过
+// 2) Recharge credits balance correctly
+// 3) BuySell always saves order and BUY deducts immediately
+
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
@@ -526,7 +533,8 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-      if (status === 'success') {
+      const pass = ['success','approved','completed','ok','通过'];
+      if (pass.includes(String(status).toLowerCase())) {
         if (type === 'recharge') {
           curBal = curBal + amt;
           await userRef.update({ balance: curBal, lastUpdate: now(), boost_last: now() });
