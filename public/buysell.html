@@ -50,18 +50,19 @@
 <div class="container">
   <div id="orderIdBox"></div>
   <h2></h2>
+
   <div class="transaction-type">
     <button class="btn buy-btn" id="buyBtn">Buy</button>
     <button class="btn sell-btn" id="sellBtn">Sell</button>
   </div>
 
-  <label for="currency">Select Coin:</label>
+  <label>Select Coin:</label>
   <select id="currency"></select>
 
-  <label for="amount">Amount:</label>
-  <input type="number" id="amount" placeholder="Enter amount" min="0" step="any" />
+  <label>Amount:</label>
+  <input type="number" id="amount" min="0" step="any" />
 
-  <label for="amountCurrency">Amount Currency:</label>
+  <label>Amount Currency:</label>
   <select id="amountCurrency"></select>
 
   <div class="adjusted-box" id="convertedBox">
@@ -69,399 +70,154 @@
   </div>
 
   <div class="stop-box">
-    <label><input type="checkbox" id="slCheckbox" /> Enable Stop-loss/Take-profit</label>
-    <div id="slBox" style="display:none; margin-top:6px;">
-      <input type="number" id="takeProfit" placeholder="TP %" step="any" />
-      <input type="number" id="stopLoss" placeholder="SL %" step="any" />
-      <div id="tpResult" style="color:#7ed957; margin-top:6px;"></div>
+    <label><input type="checkbox" id="slCheckbox" /> Enable Stop-loss / Take-profit</label>
+    <div id="slBox" style="display:none;margin-top:6px;">
+      <input type="number" id="takeProfit" placeholder="TP %" />
+      <input type="number" id="stopLoss" placeholder="SL %" />
+      <div id="tpResult" style="color:#7ed957;"></div>
       <div id="slResult" style="color:#ff8c69;"></div>
     </div>
   </div>
 
   <button class="trade-btn" id="tradeBtn">Trade</button>
-
   <p class="hint-cn">🤖 Please ensure you have completed your deposit...</p>
 </div>
 
 <script>
-  /* ======= Config & Globals ======= */
-  const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
-  const BOT_TOKEN = "8423870040:AAEyKQukt720qD7qHZ9YrIS9m_x-E65coPU";
-  const PRIVATE_ID = 6062973135;
-  const GROUP_ID = -1003262870745;
+const API_BASE = "https://crypto-management-production-5e04.up.railway.app";
+let submitting = false;
 
-  let submitting = false;
-
-  // --- Unified independent UID helper ---
-  function getOrCreateUID() {
-    // priority: window.NEXBIT_USER_ID (if page sets it), then Strikingly dataset, then localStorage fallback
-    try {
-      if (window.NEXBIT_USER_ID) return String(window.NEXBIT_USER_ID);
-    } catch (e) {}
-    // allow reading potential dataset if you embed this script in a page with #wallet-widget
-    try {
-      const w = document.getElementById('wallet-widget');
-      if (w && w.dataset && w.dataset.userId) {
-        const ds = w.dataset.userId;
-        if (ds && ds.indexOf('{{') === -1 && ds.trim() !== '') return ds;
-      }
-    } catch (e) {}
-    // fallback: localStorage key
-    let uid = localStorage.getItem('NEXBIT_UID');
-    if (!uid) {
-      uid = 'U' + Date.now() + '_' + Math.floor(100000 + Math.random() * 900000);
-      localStorage.setItem('NEXBIT_UID', uid);
-    }
-    return uid;
+function getUID() {
+  let uid = localStorage.getItem("NEXBIT_UID");
+  if (!uid) {
+    uid = "U" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+    localStorage.setItem("NEXBIT_UID", uid);
   }
-  const USERID = getOrCreateUID();
+  return uid;
+}
+const USERID = getUID();
 
-  const COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
-  const STABLES = new Set(["USDT", "USDC", "DAI"]);
+const COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT"];
+const STABLES = new Set(["USDT"]);
+const live = {};
 
-  // Live prices cache
-  const live = {};
-  const wsMap = {};
-  const restPollTimers = {};
+async function fetchPrice(sym) {
+  if (STABLES.has(sym)) return 1;
+  const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`);
+  const j = await r.json();
+  return Number(j.price) || 0;
+}
 
-  /* ======= Price fetch & WS ======= */
-  async function fetchPriceREST(sym) {
-    try {
-      if (!sym) return 0;
-      if (STABLES.has(sym)) return 1;
-      const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`);
-      const j = await r.json();
-      if (j && j.price) return parseFloat(j.price);
-    } catch (e) {}
-    return 0;
+function ensure(sym) {
+  if (live[sym]) return;
+  fetchPrice(sym).then(p => { live[sym] = p; updateConverted(); updateTPSL(); });
+}
+
+function updateConverted() {
+  const amt = Number(amount.value) || 0;
+  const from = amountCurrency.value;
+  const to = currency.value;
+  const box = convertedBox;
+  box.innerHTML = "<p><b>Auto-conversion:</b></p>";
+  if (!amt) return;
+  ensure(from); ensure(to);
+  if (!live[from] || !live[to]) {
+    box.innerHTML += "<p style='color:#aaa'>Fetching price...</p>";
+    return;
   }
+  const usd = amt * live[from];
+  const conv = usd / live[to];
+  box.innerHTML += `<p>${to}: ${conv.toFixed(6)}</p>`;
+}
 
-  function startRestPoll(sym) {
-    if (restPollTimers[sym]) return;
-    restPollTimers[sym] = setInterval(async () => {
-      const p = await fetchPriceREST(sym);
-      if (p && (!live[sym] || live[sym] === 0)) {
-        live[sym] = p;
-        updateConverted();
-        updateTPSL();
-      }
-    }, 5000);
-  }
+function updateTPSL() {
+  if (!slCheckbox.checked) return;
+  const p = live[currency.value];
+  if (!p) return;
+  if (takeProfit.value) tpResult.innerText = "TP Price: " + (p * (1 + takeProfit.value/100)).toFixed(6);
+  if (stopLoss.value) slResult.innerText = "SL Price: " + (p * (1 - stopLoss.value/100)).toFixed(6);
+}
 
-  function stopRestPoll(sym) {
-    if (restPollTimers[sym]) {
-      clearInterval(restPollTimers[sym]);
-      delete restPollTimers[sym];
-    }
-  }
+async function checkBalance() {
+  const r = await fetch(`${API_BASE}/api/balance/${USERID}`, { headers: { "X-User-Id": USERID }});
+  const j = await r.json();
+  return Number(j.balance) || 0;
+}
 
-  function ensureSymbolPrice(sym) {
-    if (!sym) return;
-    if (STABLES.has(sym)) {
-      live[sym] = 1;
-      updateConverted();
-      updateTPSL();
-      return;
-    }
-    if (typeof live[sym] === "number" && live[sym] > 0) return;
+function genOrderId() {
+  return "TRD-" + Date.now() + "-" + Math.floor(Math.random()*1e6);
+}
 
-    if (!wsMap[sym]) {
-      try {
-        const url = `wss://stream.binance.com:9443/ws/${sym.toLowerCase()}usdt@ticker`;
-        const ws = new WebSocket(url);
-        ws.onopen = () => { stopRestPoll(sym); };
-        ws.onmessage = ev => {
-          try {
-            const d = JSON.parse(ev.data);
-            if (d && d.c) {
-              live[sym] = parseFloat(d.c);
-              updateConverted();
-              updateTPSL();
-            }
-          } catch (e) {}
-        };
-        ws.onclose = () => {
-          delete wsMap[sym];
-          startRestPoll(sym);
-          setTimeout(() => ensureSymbolPrice(sym), 3000);
-        };
-        ws.onerror = () => {
-          try { ws.close(); } catch (e) {}
-        };
-        wsMap[sym] = ws;
-        fetchPriceREST(sym).then(p => {
-          if (p && (!live[sym] || live[sym] === 0)) {
-            live[sym] = p;
-            updateConverted();
-            updateTPSL();
-          }
-          if (!live[sym] || live[sym] === 0) startRestPoll(sym);
-        });
-      } catch (e) {
-        fetchPriceREST(sym).then(p => {
-          if (p) {
-            live[sym] = p;
-            updateConverted();
-            updateTPSL();
-          }
-          startRestPoll(sym);
-        });
-      }
-    } else {
-      if (!live[sym] || live[sym] === 0) startRestPoll(sym);
-    }
+async function sendOrder() {
+  if (submitting) return;
+  submitting = true;
+
+  tradeBtn.disabled = true;
+  tradeBtn.classList.add("loading");
+  tradeBtn.textContent = "Submitting...";
+
+  const amt = Number(amount.value);
+  if (!amt) {
+    alert("Invalid amount");
+    submitting = false;
+    tradeBtn.disabled = false;
+    tradeBtn.classList.remove("loading");
+    tradeBtn.textContent = "Trade";
+    return;
   }
 
-  /* ======= UI Setup ======= */
-  document.addEventListener("DOMContentLoaded", () => {
-    const curEl = document.getElementById("currency");
-    const amtCurEl = document.getElementById("amountCurrency");
+  const bal = await checkBalance();
+  if (bal < amt) {
+    alert("🤖Insufficient balance");
+    submitting = false;
+    tradeBtn.disabled = false;
+    tradeBtn.classList.remove("loading");
+    tradeBtn.textContent = "Trade";
+    return;
+  }
 
-    COINS.forEach(c => {
-      curEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
-      amtCurEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
-    });
-    amtCurEl.value = "USDT";
+  const payload = {
+    userId: USERID,
+    user: USERID,
+    side: window.tradeType,          // ✅ 关键字段：server.js 使用
+    tradeType: window.tradeType,     // 保留
+    coin: currency.value,
+    currency: currency.value,
+    amount: amt,
+    amountCurrency: amountCurrency.value,
+    orderId: genOrderId(),
+    timestamp: Date.now()
+  };
 
-    document.getElementById("buyBtn").onclick = () => setType("buy");
-    document.getElementById("sellBtn").onclick = () => setType("sell");
-    document.getElementById("tradeBtn").onclick = sendOrder;
-    document.getElementById("slCheckbox").onclick = toggleSL;
+  orderIdBox.style.display = "block";
+  orderIdBox.innerHTML = "Order submitted: <b>" + payload.orderId + "</b>";
 
-    curEl.addEventListener("change", () => {
-      ensureSymbolPrice(curEl.value);
-      ensureSymbolPrice(amtCurEl.value);
-      updateConverted();
-    });
-    amtCurEl.addEventListener("change", () => {
-      ensureSymbolPrice(amtCurEl.value);
-      ensureSymbolPrice(curEl.value);
-      updateConverted();
-    });
-    document.getElementById("amount").addEventListener("input", () => {
-      ensureSymbolPrice(curEl.value);
-      ensureSymbolPrice(amtCurEl.value);
-      updateConverted();
-    });
-    document.getElementById("takeProfit").addEventListener("input", updateTPSL);
-    document.getElementById("stopLoss").addEventListener("input", updateTPSL);
-
-    setType("buy");
-    ensureSymbolPrice(curEl.value || "BTC");
-    ensureSymbolPrice(amtCurEl.value || "USDT");
+  await fetch(`${API_BASE}/proxy/buysell`, {
+    method: "POST",
+    headers: { "Content-Type":"application/json","X-User-Id":USERID },
+    body: JSON.stringify(payload)
   });
 
-  function setType(t) {
-    window.tradeType = t;
-    const b = document.getElementById("buyBtn");
-    const s = document.getElementById("sellBtn");
-    b.style.filter = t === "buy" ? "brightness(100%)" : "brightness(40%)";
-    s.style.filter = t === "sell" ? "brightness(100%)" : "brightness(40%)";
-  }
+  tradeBtn.textContent = "Submitted";
+}
 
-  function toggleSL() {
-    document.getElementById("slBox").style.display = document.getElementById("slCheckbox").checked ? "block" : "none";
-  }
-
-  /* ======= Conversion display ======= */
-  function updateConverted() {
-    try {
-      const amountEl = document.getElementById("amount");
-      const acEl = document.getElementById("amountCurrency");
-      const curEl = document.getElementById("currency");
-      const box = document.getElementById("convertedBox");
-
-      const amount = Number(amountEl.value) || 0;
-      const from = acEl.value;
-      const to = curEl.value;
-
-      box.innerHTML = "<p><b>Auto-conversion:</b></p>";
-      if (amount <= 0) return;
-
-      if (from === to) {
-        box.innerHTML += `<p>${to}: ${amount.toFixed(6)}</p>`;
-        return;
-      }
-
-      const missing = [];
-      if (!live[from]) missing.push(from);
-      if (!live[to]) missing.push(to);
-
-      if (missing.length) {
-        missing.forEach(s => {
-          fetchPriceREST(s).then(p => {
-            if (p) {
-              live[s] = p;
-              updateConverted();
-              updateTPSL();
-            }
-          });
-        });
-        box.innerHTML += `<p style='color:#ccc;font-size:13px;'>Fetching price...</p>`;
-        return;
-      }
-
-      const usd = amount * live[from];
-      const conv = usd / live[to];
-      box.innerHTML += `<p>${to}: ${conv.toFixed(6)}</p>`;
-    } catch (e) {
-      // silently fail conversion display on error
-    }
-  }
-
-  /* ======= TP/SL display ======= */
-  function updateTPSL() {
-    if (!document.getElementById("slCheckbox").checked) return;
-
-    const coin = document.getElementById("currency").value;
-    const p = live[coin];
-    const tp = Number(document.getElementById("takeProfit").value) || 0;
-    const sl = Number(document.getElementById("stopLoss").value) || 0;
-
-    if (!p) {
-      document.getElementById("tpResult").innerHTML = "";
-      document.getElementById("slResult").innerHTML = "";
-      return;
-    }
-
-    document.getElementById("tpResult").innerHTML = tp ? `TP Price: ${(p * (1 + tp / 100)).toFixed(6)} USDT` : "";
-    document.getElementById("slResult").innerHTML = sl ? `SL Price: ${(p * (1 - sl / 100)).toFixed(6)} USDT` : "";
-  }
-
-  /* ======= Utility ======= */
-  function genOrderId() {
-    const d = new Date();
-    return `TRD-${d.getFullYear()}${("0" + (d.getMonth() + 1)).slice(-2)}${("0" + d.getDate()).slice(-2)}-${Math.floor(100000 + Math.random() * 900000)}`;
-  }
-
-  function usTime(ts) {
-    return new Date(ts).toLocaleString("en-US", {
-      timeZone: "America/New_York",
-      hour12: true,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).replace(",", "");
-  }
-
-  /* ======= API Helpers ======= */
-  function postNoThrow(url, data) {
-    return fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-User-Id": USERID,
-      },
-      body: JSON.stringify(data),
-    }).catch(() => { });
-  }
-
-  function sendTGText(text) {
-    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-    [PRIVATE_ID, GROUP_ID].forEach(id => {
-      fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: id, text }),
-      }).catch(() => { });
-    });
-  }
-
-  // 新增：查询余额接口（使用 /api/balance/:uid）
-  async function checkBalance(coin) {
-    try {
-      const res = await fetch(`${API_BASE}/api/balance/${encodeURIComponent(USERID)}`, {
-        headers: { "X-User-Id": USERID },
-      });
-      if (!res.ok) throw new Error("Failed to fetch balance");
-      const data = await res.json();
-      return Number(data.balance) || 0;
-    } catch {
-      return 0;
-    }
-  }
-
-  /* ======= Main Order Submission with balance check & single submit lock ======= */
-  async function sendOrder() {
-    if (submitting) return; // 防止重复提交
-    submitting = true;
-
-    const btn = document.getElementById("tradeBtn");
-    btn.disabled = true;
-    btn.classList.add("loading");
-    btn.textContent = "Submitting...";
-
-    try {
-      const amount = Number(document.getElementById("amount").value);
-      const ac = document.getElementById("amountCurrency").value;
-      const coin = document.getElementById("currency").value;
-      const tp = document.getElementById("takeProfit").value || "None";
-      const sl = document.getElementById("stopLoss").value || "None";
-
-      if (!amount || amount <= 0) {
-        alert("Please enter a valid amount.");
-        throw new Error("Invalid amount");
-      }
-
-      // 先查询余额
-      const balance = await checkBalance(ac);
-      if (balance < amount) {
-        alert("🤖Insufficient balance. Please top up your account before submitting.");
-        throw new Error("Insufficient balance");
-      }
-
-      const oid = genOrderId();
-      const timeUS = usTime(Date.now());
-
-      const payload = {
-        userId: USERID,              // <-- IMPORTANT: use userId (capital I)
-        tradeType: window.tradeType || "buy",
-        amount,
-        amountCurrency: ac,
-        coin,
-        tp,
-        sl,
-        orderId: oid,
-        timestamp: Date.now(),
-        time_us: timeUS,
-      };
-
-      // 显示订单号
-      const box = document.getElementById("orderIdBox");
-      box.style.display = "block";
-      box.innerHTML = `<div>Order submitted: <b>${oid}</b></div>`;
-
-      // 发送后台请求
-      await postNoThrow(`${API_BASE}/proxy/buysell`, payload);
-      await postNoThrow(`${API_BASE}/api/order/buysell`, payload);
-
-      // 发送Telegram通知
-      const tgText = `📊 Buy/Sell Order
-User: ${USERID}
-Order: ${oid}
-Type: ${window.tradeType || "buy"}
-Amount: ${amount}
-Coin: ${coin}
-TP: ${tp}
-SL: ${sl}
-Time (US): ${timeUS}`;
-      sendTGText(tgText);
-
-      btn.textContent = "Submitted";
-    } catch (e) {
-      if (e.message !== "Invalid amount" && e.message !== "Insufficient balance") {
-        alert("Network error or unexpected error occurred. Please try again.");
-      }
-      console.error("sendOrder error:", e);
-      btn.textContent = "Trade";
-    } finally {
-      btn.disabled = false;
-      btn.classList.remove("loading");
-      submitting = false;
-    }
-  }
+document.addEventListener("DOMContentLoaded", () => {
+  COINS.forEach(c => {
+    currency.innerHTML += `<option>${c}</option>`;
+    amountCurrency.innerHTML += `<option>${c}</option>`;
+  });
+  amountCurrency.value = "USDT";
+  buyBtn.onclick = () => window.tradeType = "buy";
+  sellBtn.onclick = () => window.tradeType = "sell";
+  tradeBtn.onclick = sendOrder;
+  slCheckbox.onclick = () => slBox.style.display = slCheckbox.checked ? "block" : "none";
+  amount.oninput = updateConverted;
+  currency.onchange = updateConverted;
+  amountCurrency.onchange = updateConverted;
+  takeProfit.oninput = updateTPSL;
+  stopLoss.oninput = updateTPSL;
+  window.tradeType = "buy";
+});
 </script>
 </body>
 </html>
