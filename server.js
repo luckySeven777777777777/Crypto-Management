@@ -254,7 +254,7 @@ async function saveOrder(type, data){
     status: clean.status || 'processing',
     type,
     processed: false,
-    coin: clean.coin || clean.currency || null
+    coin: clean.coin
   };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
