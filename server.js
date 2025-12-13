@@ -537,19 +537,34 @@ const isApproved = (
 if (isApproved) {
   if (type === 'recharge') {
     curBal += amt;
+
+    // ① 写入余额（只一次）
     await userRef.update({
       balance: curBal,
       lastUpdate: now(),
       boost_last: now()
     });
-  } else if (type === 'withdraw' && !order.deducted) {
+
+    // ② 立刻 SSE 推送（关键）
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal,
+      source: 'recharge_approved'
+    });
+  }
+
+  else if (type === 'withdraw' && !order.deducted) {
     curBal -= amt;
     await userRef.update({
       balance: curBal,
       lastUpdate: now(),
       boost_last: now()
     });
-  } else if (type === 'buysell') {
+    broadcastSSE({ type:'balance', userId, balance: curBal });
+  }
+
+  else if (type === 'buysell') {
     if (String(order.side || '').toLowerCase() === 'sell') {
       curBal += amt;
       await userRef.update({
@@ -557,6 +572,7 @@ if (isApproved) {
         lastUpdate: now(),
         boost_last: now()
       });
+      broadcastSSE({ type:'balance', userId, balance: curBal });
     }
   }
 }
@@ -575,11 +591,6 @@ try {
 
 
       // broadcast new balance
-      try {
-        const newUserSnap = await db.ref(`users/${userId}/balance`).once('value');
-        const newBal = safeNumber(newUserSnap.exists() ? newUserSnap.val() : 0, 0);
-        broadcastSSE({ type:'balance', userId: userId, balance: newBal });
-      } catch(e){}
     }
 
     // broadcast order update
@@ -647,9 +658,7 @@ try {
       try {
         const uid = snap.key;
         const data = snap.val() || {};
-        if (data && Object.prototype.hasOwnProperty.call(data, 'balance')) {
-          broadcastSSE({ type:'balance', userId: uid, balance: safeNumber(data.balance,0) });
-        }
+   
       } catch(e){}
     });
   }
