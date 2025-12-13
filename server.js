@@ -526,35 +526,32 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-     const isApproved = (
-  status === 'success' ||
-  status === 'approved' ||
-  status === 'pass'
+const statusNorm = String(status || '').toLowerCase();
+
+const isApproved = (
+  statusNorm === 'success' ||
+  statusNorm === 'approved' ||
+  statusNorm === 'pass'
 );
 
 if (isApproved) {
   if (type === 'recharge') {
-    curBal = curBal + amt;
+    curBal += amt;
     await userRef.update({
       balance: curBal,
       lastUpdate: now(),
       boost_last: now()
     });
-  } 
-  else if (type === 'withdraw') {
-    if (!order.deducted) {
-      curBal = curBal - amt;
-      await userRef.update({
-        balance: curBal,
-        lastUpdate: now(),
-        boost_last: now()
-      });
-    }
-  } 
-  else if (type === 'buysell') {
-    const side = String(order.side || '').toLowerCase();
-    if (side === 'sell') {
-      curBal = curBal + amt;
+  } else if (type === 'withdraw' && !order.deducted) {
+    curBal -= amt;
+    await userRef.update({
+      balance: curBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+  } else if (type === 'buysell') {
+    if (String(order.side || '').toLowerCase() === 'sell') {
+      curBal += amt;
       await userRef.update({
         balance: curBal,
         lastUpdate: now(),
@@ -564,10 +561,18 @@ if (isApproved) {
   }
 }
 
-      // after applying effects, mark order as processed = true
-      try {
-        await ref.update({ processed: true });
-      } catch(e){}
+try {
+  if (
+    isApproved ||
+    statusNorm === 'failed' ||
+    statusNorm === 'rejected'
+  ) {
+    await ref.update({ processed: true });
+  }
+} catch (e) {
+  console.error('update processed failed:', e);
+}
+
 
       // broadcast new balance
       try {
