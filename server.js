@@ -528,11 +528,14 @@ app.post('/api/transaction/update', async (req, res) => {
 
 const statusNorm = String(status || '').toLowerCase();
 
-const isApproved = (
+const isApproved =
   statusNorm === 'success' ||
   statusNorm === 'approved' ||
-  statusNorm === 'pass'
-);
+  statusNorm === 'pass' ||
+  statusNorm === 'ok' ||
+  statusNorm === 'yes' ||
+  statusNorm === 'true' ||
+  statusNorm === '通过';
 
 if (isApproved) {
   if (type === 'recharge') {
@@ -548,9 +551,9 @@ if (isApproved) {
     // ② 立刻 SSE 推送（关键）
     broadcastSSE({
       type: 'balance',
-      userId,
-      balance: curBal,
-      source: 'recharge_approved'
+      userId: String(userId),
+      balance: Number(curBal),
+      ts: Date.now()
     });
   }
 
