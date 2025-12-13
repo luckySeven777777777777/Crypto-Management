@@ -590,8 +590,6 @@ if (
     source: 'withdraw_refund'
   });
 }
-}
-
 
 try {
 if (
