@@ -526,7 +526,8 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-const statusNorm = String(status || '').toLowerCase();
+const statusNorm = String(status || '').trim().toLowerCase();
+
 
 const isApproved =
   statusNorm === 'success' ||
@@ -580,18 +581,9 @@ if (isApproved) {
   }
 }
 
-try {
-  if (
-    isApproved ||
-    statusNorm === 'failed' ||
-    statusNorm === 'rejected'
-  ) {
-    await ref.update({ processed: true });
-  }
-} catch (e) {
-  console.error('update processed failed:', e);
+if (isApproved) {
+  await ref.update({ processed: true });
 }
-
 
       // broadcast new balance
     }
