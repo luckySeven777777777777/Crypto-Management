@@ -28,17 +28,23 @@ body{
 
 /* ----------- HEADER ---------- */
 .top-header{
-  position:fixed;
-  top:0; left:0;
-  width:100%; height:64px;
-  background:var(--top-blue);
-  color:#fff;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:0 20px;
+  position: fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:64px;
+  background: var(--top-blue);
   z-index:1000;
+
+  /* 保留这一句，让 header 本身不挡下面 */
+  pointer-events: none;
 }
+
+/* ✅ 关键补救：只恢复 header 内部可点击 */
+.top-header *{
+  pointer-events: auto;
+}
+
 .top-header .brand{
   font-weight:700;
   font-size:18px;
@@ -819,6 +825,5 @@ document.getElementById('logoutBtn')?.addEventListener('click', () => {
   location.href = 'login.html';
 });
 </script>
-
 </body>
 </html>
