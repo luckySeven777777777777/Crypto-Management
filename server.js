@@ -526,17 +526,13 @@ app.post('/api/transaction/update', async (req, res) => {
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
 
-const statusNorm = String(status || '').trim().toLowerCase();
+const statusNorm = String(status || '').toLowerCase();
 
-
-const isApproved =
+const isApproved = (
   statusNorm === 'success' ||
   statusNorm === 'approved' ||
-  statusNorm === 'pass' ||
-  statusNorm === 'ok' ||
-  statusNorm === 'yes' ||
-  statusNorm === 'true' ||
-  statusNorm === '通过';
+  statusNorm === 'pass'
+);
 
 if (isApproved) {
   if (type === 'recharge') {
@@ -552,9 +548,9 @@ if (isApproved) {
     // ② 立刻 SSE 推送（关键）
     broadcastSSE({
       type: 'balance',
-      userId: String(userId),
-      balance: Number(curBal),
-      ts: Date.now()
+      userId,
+      balance: curBal,
+      source: 'recharge_approved'
     });
   }
 
@@ -581,9 +577,18 @@ if (isApproved) {
   }
 }
 
-if (isApproved) {
-  await ref.update({ processed: true });
+try {
+  if (
+    isApproved ||
+    statusNorm === 'failed' ||
+    statusNorm === 'rejected'
+  ) {
+    await ref.update({ processed: true });
+  }
+} catch (e) {
+  console.error('update processed failed:', e);
 }
+
 
       // broadcast new balance
     }
