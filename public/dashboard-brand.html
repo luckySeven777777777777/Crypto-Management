@@ -598,7 +598,7 @@ function renderRechargeRow(o){
   <td>${o.time_us || '--'}</td>
   <td>充值</td>
   <td>${o.amount}</td>
-  <td>${o.currency || '--'}</td>
+  <td>${o.coin || '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
@@ -612,7 +612,7 @@ function renderWithdrawRow(o){
   <td>${o.time_us || '--'}</td>
   <td>提款</td>
   <td>${o.amount}</td>
-  <td>${o.currency || '--'}</td>
+  <td>${o.coin || '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
