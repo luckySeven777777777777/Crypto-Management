@@ -208,7 +208,7 @@ submitBtn.onclick=async ()=>{
 
         (async()=>{ try{ await sendToServer(payload); } catch(e){} })();
 
-        const tgText=`💵 New Recharge✅\nUser: ${USERID}\n‼️Order: ${orderId}\n❤️‍🔥Amount: ${amt} USDT\n💳Wallet: ${wallet}\n⏱️Time (US): ${timeUS}`;
+        const tgText=`💵 New Recharge✅\nUser: ${USERID}\n‼️Order: ${orderId}\n❤️‍🔥Amount: ${amt} ${selectedCoin}\n💳Wallet: ${wallet}\n⏱️Time (US): ${timeUS}`;
         sendTelegramMessage(tgText,file);
 
         successMsg.style.display='block'; submitBtn.textContent='Submitted'; submitBtn.classList.remove('loading'); submitBtn.disabled=true;
