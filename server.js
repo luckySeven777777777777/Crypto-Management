@@ -289,30 +289,62 @@ async function handleBuySellRequest(req, res){
   try {
     if(!db) return res.json({ ok:false, error:'no-db' });
 
-    const { userId, user, side, coin, amount, converted, tp, sl, orderId, wallet, ip } = req.body;
+    const {
+      userId,
+      user,
+      side,
+      tradeType,   // ✅ 兼容 buysell.html
+      coin,
+      amount,
+      converted,
+      tp,
+      sl,
+      orderId,
+      wallet,
+      ip
+    } = req.body;
+
     const uid = userId || user;
+    const realSide = side || tradeType;   // ✅ 关键修复
     const amt = Number(amount || 0);
 
-    if(!uid || !side || !coin || amt <= 0) return res.status(400).json({ ok:false, error:'missing fields' });
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+    if(!uid || !realSide || !coin || amt <= 0){
+      return res.status(400).json({ ok:false, error:'missing fields' });
+    }
+    if(!isSafeUid(uid)){
+      return res.status(400).json({ ok:false, error:'invalid uid' });
+    }
 
     const userRef = db.ref(`users/${uid}`);
     const snap = await userRef.once('value');
     const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-    const sideLower = String(side).toLowerCase();
 
+    const sideLower = String(realSide).toLowerCase();
+
+    // ✅ BUY：立即扣钱
     if(sideLower === 'buy'){
-      if(balance < amt) return res.status(400).json({ ok:false, error:'余额不足' });
+      if(balance < amt){
+        return res.status(400).json({ ok:false, error:'余额不足' });
+      }
       const newBal = balance - amt;
       await userRef.update({ balance: newBal, lastUpdate: now() });
-      try { broadcastSSE({ type:'balance', userId: uid, balance: newBal }); } catch(e){}
-    } else {
-      // sell: do nothing now, wait for admin approval
+      broadcastSSE({ type:'balance', userId: uid, balance: newBal });
     }
 
+    // SELL：不动余额，等后台审批
     const id = await saveOrder('buysell', {
-      userId: uid, side, coin, amount: amt, converted: converted || null, tp: tp || null, sl: sl || null,
-      orderId, deducted: (sideLower === 'buy'), wallet: wallet || null, ip: ip || null, processed: false
+      userId: uid,
+      side: sideLower,     // ✅ 统一存 side
+      coin,
+      amount: amt,
+      converted: converted || null,
+      tp: tp || null,
+      sl: sl || null,
+      orderId,
+      deducted: (sideLower === 'buy'),
+      wallet: wallet || null,
+      ip: ip || null,
+      processed: false
     });
 
     return res.json({ ok:true, orderId: id });
@@ -321,7 +353,6 @@ async function handleBuySellRequest(req, res){
     return res.status(500).json({ ok:false, error: e.message });
   }
 }
-
 app.post('/proxy/buysell', handleBuySellRequest);
 app.post('/api/order/buysell', handleBuySellRequest);
 
