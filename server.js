@@ -453,40 +453,15 @@ app.post('/api/order/withdraw', async (req, res) => {
 app.get('/api/transactions', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer ')) {
-  return res.json({
-    ok: true,
-    recharge: [],
-    withdraw: [],
-    buysell: [],
-    users: {},
-    stats: {}
-  });
-}
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok:false });
 
     const token = auth.slice(7);
-
-    // ✅ 只校验 token，不强制 2FA
     if (!await isValidAdminToken(token))
       return res.status(403).json({ ok:false });
 
-    if(!db) return res.json({ ok:true, recharge:[], withdraw:[], buysell:[], users:{}, stats:{} });
-
-    const fetchOrderId = req.query.fetchOrder;
-    if(fetchOrderId){
-      const paths = ['orders/recharge','orders/withdraw','orders/buysell'];
-      for(const p of paths){
-        const snap = await db.ref(p).once('value');
-        const obj = snap.val() || {};
-        const found = Object.values(obj).find(o => String(o.orderId) === String(fetchOrderId));
-        if(found){
-          const actionsSnap = await db.ref('admin_actions').orderByChild('orderId').equalTo(fetchOrderId).once('value');
-          const actions = Object.values(actionsSnap.val() || {});
-          return res.json({ ok:true, order:found, orderEvents:actions });
-        }
-      }
-      return res.json({ ok:false, error:'order not found' });
-    }
+    if(!db)
+      return res.json({ ok:true, recharge:[], withdraw:[], buysell:[], users:{}, stats:{} });
 
     const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] = await Promise.all([
       db.ref('orders/recharge').once('value'),
@@ -495,26 +470,18 @@ app.get('/api/transactions', async (req, res) => {
       db.ref('users').once('value')
     ]);
 
-    const recharge = objToSortedArray(rechargeSnap.val() || {});
-    const withdraw = objToSortedArray(withdrawSnap.val() || {});
-    const buysell  = objToSortedArray(buysellSnap.val()  || {});
-    const users    = usersSnap.val() || {};
-
     return res.json({
       ok:true,
-      recharge,
-      withdraw,
-      buysell,
-      users,
-      stats:{
-        todayRecharge: recharge.length,
-        todayWithdraw: withdraw.length,
-        todayOrders: recharge.length + withdraw.length + buysell.length,
-        alerts:0
-      }
+      recharge: Object.values(rechargeSnap.val() || {}),
+      withdraw: Object.values(withdrawSnap.val() || {}),
+      buysell:  Object.values(buysellSnap.val() || {}),
+      users: usersSnap.val() || {}
     });
 
-  } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
+  } catch (e) {
+    console.error('transactions error', e);
+    return res.status(500).json({ ok:false });
+  }
 });
 
 /* ---------------------------------------------------------
