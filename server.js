@@ -73,45 +73,93 @@ function isSafeUid(uid){
   if(uid.length < 2 || uid.length > 512) return false;
   return true;
 }
-// ===============================
-// USDT 估算工具（统一）
-// ===============================
+// ================================
+// USDT 价格缓存（CoinGecko）
+// ================================
 const PRICE_CACHE = {
   USDT: 1
 };
 
-// ===============================
-// Binance REST 行情（稳定，不 451）
-// ===============================
-async function fetchBinancePrices(){
-  try {
+// CoinGecko 币种映射（常用 + 可无限扩展）
+const COINGECKO_IDS = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  BNB: 'binancecoin',
+  SOL: 'solana',
+  XRP: 'ripple',
+  ADA: 'cardano',
+  DOGE: 'dogecoin',
+  TRX: 'tron',
+  AVAX: 'avalanche-2',
+  DOT: 'polkadot',
+  MATIC: 'matic-network',
+  LTC: 'litecoin',
+  BCH: 'bitcoin-cash',
+  LINK: 'chainlink',
+  ATOM: 'cosmos',
+  ETC: 'ethereum-classic',
+  FIL: 'filecoin',
+  ICP: 'internet-computer',
+  APT: 'aptos',
+  ARB: 'arbitrum',
+  OP: 'optimism',
+  NEAR: 'near',
+  EOS: 'eos',
+  XTZ: 'tezos',
+  XLM: 'stellar',
+  SAND: 'the-sandbox',
+  MANA: 'decentraland',
+  APE: 'apecoin',
+  AXS: 'axie-infinity',
+  GALA: 'gala',
+  FTM: 'fantom',
+  RUNE: 'thorchain',
+  KAVA: 'kava',
+  CRV: 'curve-dao-token',
+  UNI: 'uniswap',
+  AAVE: 'aave',
+  CAKE: 'pancakeswap-token',
+  DYDX: 'dydx',
+  INJ: 'injective-protocol',
+  SUI: 'sui'
+};
+
+// 拉取 CoinGecko 行情（稳定，不封云）
+async function fetchCoinGeckoPrices(){
+  try{
+    const ids = Object.values(COINGECKO_IDS).join(',');
     const res = await axios.get(
-      'https://api.binance.com/api/v3/ticker/price'
+      'https://api.coingecko.com/api/v3/simple/price',
+      {
+        params: {
+          ids,
+          vs_currencies: 'usd'
+        },
+        timeout: 10000
+      }
     );
 
-    res.data.forEach(item => {
-      if (!item.symbol.endsWith('USDT')) return;
-
-      const coin = item.symbol.replace('USDT','');
-      const price = Number(item.price);
-
-      if (price > 0) {
-        PRICE_CACHE[coin] = price;
+    for(const [symbol, id] of Object.entries(COINGECKO_IDS)){
+      const price = res.data[id]?.usd;
+      if(price && price > 0){
+        PRICE_CACHE[symbol] = price;
       }
-    });
+    }
 
     PRICE_CACHE.USDT = 1;
-  } catch (e) {
-    console.log('[BINANCE] REST error:', e.message);
+    console.log('[PRICE] CoinGecko updated:', Object.keys(PRICE_CACHE).length);
+
+  }catch(e){
+    console.log('[PRICE] CoinGecko error:', e.message);
   }
 }
 
-// 启动 & 每 5 秒刷新
-fetchBinancePrices();
-setInterval(fetchBinancePrices, 5000);
+// 启动 & 定时刷新（10 秒一次，后台足够）
+fetchCoinGeckoPrices();
+setInterval(fetchCoinGeckoPrices, 10000);
 
 // ================================
-// USDT 估算工具（实时）
+// USDT 估算工具（统一）
 // ================================
 function getUSDTPrice(coin){
   if(!coin) return null;
@@ -123,7 +171,6 @@ function calcEstimateUSDT(amount, coin){
   if(!p) return null;
   return Number((safeNumber(amount, 0) * p).toFixed(4));
 }
-
 /* ---------------------------------------------------------
    SSE utilities
 --------------------------------------------------------- */
