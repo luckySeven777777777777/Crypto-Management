@@ -422,6 +422,84 @@ button.primary{
         <tbody id="o_table"><tr><td colspan="9" class="small">暂无数据</td></tr></tbody>
       </table>
     </div>
+    <!-- ===============================
+     系统设置 / 管理员管理
+=============================== -->
+<div id="page-settings" class="container" style="display:none">
+
+  <div class="page-title">系统设置</div>
+
+  <!-- 管理员账号管理 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="page-title" style="font-size:16px">管理员账号管理</div>
+
+    <div class="filters">
+      <input id="newAdminId" placeholder="管理员账号">
+      <input id="newAdminPassword" placeholder="初始密码">
+
+      <label><input type="checkbox" value="recharge"> 充值</label>
+      <label><input type="checkbox" value="withdraw"> 提款</label>
+      <label><input type="checkbox" value="buysell"> BuySell</label>
+
+      <button class="primary" onclick="createAdmin()">新增管理员</button>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>账号</th>
+          <th>权限</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="adminTable">
+        <tr><td colspan="4">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+<!-- Google 二级验证码 -->
+<div class="card" style="margin-top:16px">
+  <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
+
+  <div class="filters">
+    <input id="gaAdminId" placeholder="管理员账号">
+    <button class="primary" onclick="generateGoogle2FA()">生成绑定</button>
+  </div>
+
+  <div id="gaBox" style="display:none;margin-top:12px">
+    <div class="small">请使用 Google Authenticator 扫码：</div>
+    <img id="gaQr" style="margin:8px 0">
+    <input id="gaCode" placeholder="输入 6 位验证码">
+    <button class="primary" onclick="verifyGoogle2FA()">确认绑定</button>
+  </div>
+</div>
+
+<!-- 管理员密码重置 -->
+<div class="card" style="margin-bottom:16px">
+  <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
+
+  <div class="filters">
+    <input id="resetAdminId" placeholder="管理员账号">
+    <input id="resetAdminPassword" placeholder="新登录密码">
+    <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
+  </div>
+</div>
+
+  <!-- 用户提款密码重置 -->
+  <div class="card">
+    <div class="page-title" style="font-size:16px">重置用户提款密码</div>
+
+    <div class="filters">
+      <input id="searchWithdrawWallet" placeholder="已提款的钱包地址">
+<input id="searchWithdrawOrder" placeholder="订单号（可选）">
+<input id="newWithdrawPassword" placeholder="新提款密码">
+<button class="primary" onclick="resetWithdrawPassword()">重置</button>
+
+    </div>
+  </div>
+
+</div>
 
     <div class="footer-note">系统生成：<span id="genTime"></span></div>
   </div>
