@@ -775,18 +775,25 @@ await ref.update({
 // 2️⃣ 统一计算状态
 const statusNorm = String(status || '').toLowerCase();
 
+// ✅ 统一批准
 const isApproved = (
   statusNorm === 'success' ||
   statusNorm === 'approved' ||
-  statusNorm === 'pass'
+  statusNorm === 'pass' ||
+  statusNorm === '通过'
 );
 
+// ✅ 统一拒绝 / 取消（补全中文 & 常见值）
 const isRejected = (
   statusNorm === 'failed' ||
   statusNorm === 'reject' ||
   statusNorm === 'rejected' ||
   statusNorm === 'cancel' ||
-  statusNorm === 'canceled'
+  statusNorm === 'canceled' ||
+  statusNorm === 'decline' ||
+  statusNorm === 'deny' ||
+  statusNorm === '拒绝' ||
+  statusNorm === '取消'
 );
 
 if (isApproved) {
