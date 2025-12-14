@@ -376,19 +376,22 @@ app.post('/api/admin/balance', async (req, res) => {
    - broadcasts both 'new' and buysell events so admin UI and wallet UI both receive
 --------------------------------------------------------- */
 async function saveOrder(type, data){
-  if(!db) return null;
+  if (!db) return null;
+
   const ts = now();
 
   const allowed = [
-    'userId','user','amount','coin','side','converted','tp','sl','note','meta','orderId','status','type','deducted','wallet','ip','currency'
+    'userId','user','amount','coin','side','converted','tp','sl',
+    'note','meta','orderId','status','deducted','wallet','ip','currency'
   ];
 
   const clean = {};
-  Object.keys(data||{}).forEach(k=>{
-    if(allowed.includes(k)) clean[k] = data[k];
+  Object.keys(data || {}).forEach(k => {
+    if (allowed.includes(k)) clean[k] = data[k];
   });
 
-  if(!clean.userId && clean.user) clean.userId = clean.user;
+  if (!clean.userId && clean.user) clean.userId = clean.user;
+
   const id = clean.orderId || genOrderId(type.toUpperCase());
 
   const payload = {
@@ -399,29 +402,45 @@ async function saveOrder(type, data){
     status: clean.status || 'processing',
     type,
     processed: false,
-    coin: clean.coin,
-  // ✅ 新增：估算 USDT
-  estimate: calcEstimateUSDT(clean.amount, clean.coin)
-};
+    coin: clean.coin || null,
+
+    // ✅【唯一正确的位置】USDT 估算
+    estimate: calcEstimateUSDT(clean.amount, clean.coin)
+  };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
 
-  try {
-    if (payload.userId) {
-      await db.ref(`user_orders/${payload.userId}/${id}`).set({ orderId: id, type, timestamp: ts });
+  // user_orders 索引
+  if (payload.userId) {
+    try {
+      await db.ref(`user_orders/${payload.userId}/${id}`).set({
+        orderId: id,
+        type,
+        timestamp: ts
+      });
+    } catch(e){
+      console.warn('user_orders write failed:', e.message);
     }
-  } catch(e){ console.warn('saveOrder:user_orders failed', e.message); }
+  }
 
-  try{
-    // generic 'new' event for admin panels
-    broadcastSSE({ type: 'new', typeName: type, userId: payload.userId, order: payload });
-  }catch(e){}
-  try{
-    // buysell-specific event too
+  // SSE 广播
+  try {
+    broadcastSSE({
+      type: 'new',
+      typeName: type,
+      userId: payload.userId,
+      order: payload
+    });
+
     if (type === 'buysell') {
-      broadcastSSE({ type: 'buysell', typeName: type, userId: payload.userId, order: payload });
+      broadcastSSE({
+        type: 'buysell',
+        typeName: type,
+        userId: payload.userId,
+        order: payload
+      });
     }
-  }catch(e){}
+  } catch(e){}
 
   return id;
 }
