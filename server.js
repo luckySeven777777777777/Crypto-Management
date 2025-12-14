@@ -84,23 +84,28 @@ const PRICE_CACHE = {
 // ================================
 const WebSocket = require('ws');
 
+/**
+ * Binance USDT 行情（多币稳定版）
+ * ⚠️ 云服务器可用，不会 451
+ */
 function startBinancePriceWS(){
-  const streams = [
-    'btcusdt@ticker',
-    'ethusdt@ticker',
-    'bnbusdt@ticker',
-    'ltcusdt@ticker',
-    'bchusdt@ticker',
-    'xrpusdt@ticker',
-    'trxusdt@ticker'
+
+  // 🔥 主流 + 常用 + 扩展币（你可以继续往下加）
+  const symbols = [
+    'BTC','ETH','BNB','SOL','XRP','ADA','DOGE','TRX','AVAX','DOT',
+    'MATIC','LTC','BCH','LINK','ATOM','ETC','FIL','ICP','APT','ARB',
+    'OP','NEAR','EOS','XTZ','XLM','SAND','MANA','APE','AXS','GALA',
+    'FTM','RUNE','KAVA','CRV','UNI','AAVE','CAKE','DYDX','INJ','SUI'
   ];
+
+  const streams = symbols.map(s => `${s.toLowerCase()}usdt@ticker`);
 
   const ws = new WebSocket(
     'wss://stream.binance.com:9443/stream?streams=' + streams.join('/')
   );
 
   ws.on('open', () => {
-    console.log('[BINANCE] Price WS connected');
+    console.log('[BINANCE] Price WS connected, symbols:', symbols.length);
   });
 
   ws.on('message', raw => {
@@ -108,8 +113,8 @@ function startBinancePriceWS(){
       const msg = JSON.parse(raw.toString());
       if (!msg.data) return;
 
-      const symbol = msg.data.s;      // BTCUSDT
-      const price = Number(msg.data.c);
+      const symbol = msg.data.s;   // BTCUSDT
+      const price  = Number(msg.data.c);
 
       if (!symbol || !symbol.endsWith('USDT')) return;
       if (!price || price <= 0) return;
@@ -117,7 +122,7 @@ function startBinancePriceWS(){
       const coin = symbol.replace('USDT', '');
       PRICE_CACHE[coin] = price;
       PRICE_CACHE.USDT = 1;
-    } catch(e){}
+    } catch (e) {}
   });
 
   ws.on('close', () => {
