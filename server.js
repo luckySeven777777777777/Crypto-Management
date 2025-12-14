@@ -84,47 +84,51 @@ const PRICE_CACHE = {
 // ================================
 const WebSocket = require('ws');
 
-// 启动 Binance 行情 WS（所有 USDT 交易对）
 function startBinancePriceWS(){
-  const ws = new WebSocket('wss://stream.binance.com:9443/ws/!ticker@arr');
+  const streams = [
+    'btcusdt@ticker',
+    'ethusdt@ticker',
+    'bnbusdt@ticker',
+    'ltcusdt@ticker',
+    'bchusdt@ticker',
+    'xrpusdt@ticker',
+    'trxusdt@ticker'
+  ];
 
-  ws.on('open', ()=>{
+  const ws = new WebSocket(
+    'wss://stream.binance.com:9443/stream?streams=' + streams.join('/')
+  );
+
+  ws.on('open', () => {
     console.log('[BINANCE] Price WS connected');
   });
 
   ws.on('message', raw => {
-    try{
-      const list = JSON.parse(raw.toString());
-      list.forEach(t => {
-        // 只处理 USDT 交易对
-        if(!t.s || !t.s.endsWith('USDT')) return;
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (!msg.data) return;
 
-        const coin = t.s.replace('USDT', '');
-        const price = Number(t.c);
+      const symbol = msg.data.s;      // BTCUSDT
+      const price = Number(msg.data.c);
 
-        if(price > 0){
-          PRICE_CACHE[coin] = price;
-        }
-      });
+      if (!symbol || !symbol.endsWith('USDT')) return;
+      if (!price || price <= 0) return;
 
-      // USDT 永远固定
+      const coin = symbol.replace('USDT', '');
+      PRICE_CACHE[coin] = price;
       PRICE_CACHE.USDT = 1;
-    }catch(e){
-      // ignore parse error
-    }
+    } catch(e){}
   });
 
-  ws.on('close', ()=>{
+  ws.on('close', () => {
     console.log('[BINANCE] WS closed, reconnecting...');
     setTimeout(startBinancePriceWS, 3000);
   });
 
-  ws.on('error', err=>{
-    console.error('[BINANCE] WS error:', err.message);
-    try{ ws.close(); }catch(e){}
+  ws.on('error', err => {
+    console.log('[BINANCE] WS error:', err.message);
   });
 }
-
 // ================================
 // USDT 估算工具（实时）
 // ================================
