@@ -627,11 +627,18 @@ function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="
 /* -----------------------------
    Fetch all orders helper
 ------------------------------ */
-async function fetchAll(params = {}){
-  const url = new URL(API_TRANSACTIONS, window.location.origin);
-  Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
-  const res = await fetch(url.toString());
-  return await res.json();
+async function fetchAll(params){
+  const qs = new URLSearchParams(params).toString();
+  const token = localStorage.getItem('nexbit_admin_token');
+
+  const res = await fetch('/api/transactions?' + qs, {
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
+  });
+
+  if(!res.ok) throw new Error('fetchAll failed');
+  return res.json();
 }
 
 /* -----------------------------
@@ -905,19 +912,19 @@ async function r_search(){
   if($('#r_status').value) params.status = $('#r_status').value;
 
   const tbody = $('#r_table');
-  tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
     const list = all.recharge || [];
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`;
       return;
     }
     tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join('');
     postRenderDecorate();
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10">加载失败</td></tr>`;
   }
 }
 
@@ -931,19 +938,19 @@ async function w_search(){
   if($('#w_status').value) params.status = $('#w_status').value;
 
   const tbody = $('#w_table');
-  tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
     const list = all.withdraw || [];
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`;
       return;
     }
     tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join('');
     postRenderDecorate();
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10">加载失败</td></tr>`;
   }
 }
 
@@ -961,7 +968,7 @@ async function o_search(){
   try{
     const all = await fetchAll(params);
     const rows = [ ...(all.recharge || []), ...(all.withdraw || []), ...(all.buysell || []) ];
-    if(!rows.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; }
+    if(!rows.length){ tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`; return; }
     tbody.innerHTML = rows.map(o=>{
       const type = o.type || (o.side ? 'buysell' : 'unknown');
       return `<tr>
@@ -977,7 +984,7 @@ async function o_search(){
       </tr>`;
     }).join('');
     postRenderDecorate();
-  }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
+  }catch(e){ tbody.innerHTML = `<tr><td colspan="10">加载失败</td></tr>`; }
 }
 
 /* -----------------------------
