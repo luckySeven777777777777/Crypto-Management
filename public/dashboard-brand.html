@@ -959,36 +959,33 @@ async function loadDashboard(){
 </script>
 function prependOrderToTable(type, order){
   let tbody, html;
+<script>
+function OrderToTable(type, order){
+  let tbody, html;
 
   if(type === 'recharge'){
     tbody = document.getElementById('r_table');
     html = renderRechargeRow(order);
-  }
-  else if(type === 'withdraw'){
+  }else if(type === 'withdraw'){
     tbody = document.getElementById('w_table');
     html = renderWithdrawRow(order);
-  }
-  else if(type === 'buysell'){
+  }else if(type === 'buysell'){
     tbody = document.getElementById('bs_table');
     html = renderBuySellRow(order);
-  }
-  else {
+  }else{
     return;
   }
 
   if(!tbody) return;
-
-  // 防止重复插入
   if(document.getElementById('row-' + order.orderId)) return;
 
   const temp = document.createElement('tbody');
   temp.innerHTML = html;
   const tr = temp.firstElementChild;
   tr.id = 'row-' + order.orderId;
-
   tbody.prepend(tr);
-  postRenderDecorate();
 }
+</script>
 <script>
 document.getElementById('logoutBtn')?.addEventListener('click', () => {
   localStorage.removeItem('nexbit_admin_token');
