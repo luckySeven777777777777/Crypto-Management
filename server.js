@@ -856,7 +856,7 @@ else if (
 if (isApproved || isRejected) {
   await ref.update({ processed: true });
 }
-
+}
     // ===== 再广播订单更新 =====
     const newSnap = await ref.once('value');
     const latestOrder = { ...newSnap.val(), orderId };
