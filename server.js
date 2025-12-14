@@ -79,61 +79,36 @@ const PRICE_CACHE = {
   USDT: 1
 };
 
-// ================================
-// Binance WebSocket 实时 USDT 行情
-// ================================
-const WebSocket = require('ws');
+// ===============================
+// Binance REST 行情（稳定，不 451）
+// ===============================
+async function fetchBinancePrices(){
+  try {
+    const res = await axios.get(
+      'https://api.binance.com/api/v3/ticker/price'
+    );
 
-/**
- * Binance USDT 行情（多币稳定版）
- * ⚠️ 云服务器可用，不会 451
- */
-function startBinancePriceWS(){
+    res.data.forEach(item => {
+      if (!item.symbol.endsWith('USDT')) return;
 
-  // 🔥 主流 + 常用 + 扩展币（你可以继续往下加）
-  const symbols = [
-    'BTC','ETH','BNB','SOL','XRP','ADA','DOGE','TRX','AVAX','DOT',
-    'MATIC','LTC','BCH','LINK','ATOM','ETC','FIL','ICP','APT','ARB',
-    'OP','NEAR','EOS','XTZ','XLM','SAND','MANA','APE','AXS','GALA',
-    'FTM','RUNE','KAVA','CRV','UNI','AAVE','CAKE','DYDX','INJ','SUI'
-  ];
+      const coin = item.symbol.replace('USDT','');
+      const price = Number(item.price);
 
-  const streams = symbols.map(s => `${s.toLowerCase()}usdt@ticker`);
+      if (price > 0) {
+        PRICE_CACHE[coin] = price;
+      }
+    });
 
-  const ws = new WebSocket(
-    'wss://stream.binance.com:9443/stream?streams=' + streams.join('/')
-  );
-
-  ws.on('open', () => {
-    console.log('[BINANCE] Price WS connected, symbols:', symbols.length);
-  });
-
-  ws.on('message', raw => {
-    try {
-      const msg = JSON.parse(raw.toString());
-      if (!msg.data) return;
-
-      const symbol = msg.data.s;   // BTCUSDT
-      const price  = Number(msg.data.c);
-
-      if (!symbol || !symbol.endsWith('USDT')) return;
-      if (!price || price <= 0) return;
-
-      const coin = symbol.replace('USDT', '');
-      PRICE_CACHE[coin] = price;
-      PRICE_CACHE.USDT = 1;
-    } catch (e) {}
-  });
-
-  ws.on('close', () => {
-    console.log('[BINANCE] WS closed, reconnecting...');
-    setTimeout(startBinancePriceWS, 3000);
-  });
-
-  ws.on('error', err => {
-    console.log('[BINANCE] WS error:', err.message);
-  });
+    PRICE_CACHE.USDT = 1;
+  } catch (e) {
+    console.log('[BINANCE] REST error:', e.message);
+  }
 }
+
+// 启动 & 每 5 秒刷新
+fetchBinancePrices();
+setInterval(fetchBinancePrices, 5000);
+
 // ================================
 // USDT 估算工具（实时）
 // ================================
@@ -912,5 +887,5 @@ ensureDefaultAdmin();
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
-startBinancePriceWS();
+
 app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
