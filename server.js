@@ -446,6 +446,12 @@ app.post('/api/order/withdraw', async (req, res) => {
     return res.json({ ok:true, orderId });
   } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
 });
+// ===== 工具函数：按时间倒序 =====
+function sortByTimeDesc(arr) {
+  return (arr || []).sort(
+    (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
+  );
+}
 
 /* ---------------------------------------------------------
    Get transactions for admin UI
@@ -460,21 +466,30 @@ app.get('/api/transactions', async (req, res) => {
     if (!await isValidAdminToken(token))
       return res.status(403).json({ ok:false });
 
-    if(!db)
-      return res.json({ ok:true, recharge:[], withdraw:[], buysell:[], users:{}, stats:{} });
+    if (!db) {
+      return res.json({
+        ok:true,
+        recharge: [],
+        withdraw: [],
+        buysell: [],
+        users: {},
+        stats: {}
+      });
+    }
 
-    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] = await Promise.all([
-      db.ref('orders/recharge').once('value'),
-      db.ref('orders/withdraw').once('value'),
-      db.ref('orders/buysell').once('value'),
-      db.ref('users').once('value')
-    ]);
+    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] =
+      await Promise.all([
+        db.ref('orders/recharge').once('value'),
+        db.ref('orders/withdraw').once('value'),
+        db.ref('orders/buysell').once('value'),
+        db.ref('users').once('value')
+      ]);
 
     return res.json({
-      ok:true,
-      recharge: Object.values(rechargeSnap.val() || {}),
-      withdraw: Object.values(withdrawSnap.val() || {}),
-      buysell:  Object.values(buysellSnap.val() || {}),
+      ok: true,
+      recharge: sortByTimeDesc(Object.values(rechargeSnap.val() || {})),
+      withdraw: sortByTimeDesc(Object.values(withdrawSnap.val() || {})),
+      buysell:  sortByTimeDesc(Object.values(buysellSnap.val() || {})),
       users: usersSnap.val() || {}
     });
 
@@ -483,7 +498,6 @@ app.get('/api/transactions', async (req, res) => {
     return res.status(500).json({ ok:false });
   }
 });
-
 /* ---------------------------------------------------------
    Admin token helpers
 --------------------------------------------------------- */
