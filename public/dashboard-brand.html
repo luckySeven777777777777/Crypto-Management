@@ -601,12 +601,15 @@ function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="
 /* -----------------------------
    Fetch all orders helper
 ------------------------------ */
-async function fetchAll(params = {}){
+async function fetchAll(params = {}) {
   const url = new URL(API_TRANSACTIONS, window.location.origin);
   Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), {
+    headers: authHeaders()   // ✅ 关键就在这一行
+  });
   return await res.json();
 }
+
 
 /* -----------------------------
    Admin auth helpers (token stored in localStorage)
