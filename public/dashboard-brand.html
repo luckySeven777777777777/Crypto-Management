@@ -370,7 +370,7 @@ button.primary{
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
         <tbody id="r_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
@@ -389,7 +389,7 @@ button.primary{
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></thead>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></thead>
         <tbody id="w_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
@@ -726,9 +726,11 @@ function renderRechargeRow(o){
   <td>充值</td>
   <td>${o.amount}</td>
   <td>${o.coin || '--'}</td>
+  <!-- ✅ 补回估算 USDT -->
+  <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-  <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+  <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
 </tr>`;
 }
@@ -740,13 +742,14 @@ function renderWithdrawRow(o){
   <td>提款</td>
   <td>${o.amount}</td>
   <td>${o.coin || '--'}</td>
+  <!-- ✅ 补回估算 USDT -->
+  <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-  <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+  <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
 </tr>`;
 }
-
 /* -----------------------------
    Fetch single order for modal (server handles fetchOrder)
 ------------------------------ */
