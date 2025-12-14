@@ -370,8 +370,21 @@ button.primary{
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody id="r_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead>
+<tr>
+<th>订单/会员/钱包</th>
+<th>时间</th>
+<th>类型</th>
+<th>金额</th>
+<th>币种</th>
+<th>估算 USDT</th>
+<th>wallet</th>
+<th>IP</th>
+<th>状态</th>
+<th>操作</th></tr>
+</thead>
+
+        <tbody id="r_table"><tr><td colspan="10" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -389,8 +402,21 @@ button.primary{
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></thead>
-        <tbody id="w_table"><tr><td colspan="9" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead>
+<tr>
+<th>订单/会员/钱包</th>
+<th>时间</th>
+<th>类型</th>
+<th>金额</th>
+<th>币种</th>
+<th>估算 USDT</th>
+<th>wallet</th>
+<th>IP</th>
+<th>状态</th>
+<th>操作</th></tr>
+</thead>
+
+        <tbody id="w_table"><tr><td colspan="10" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -601,15 +627,12 @@ function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="
 /* -----------------------------
    Fetch all orders helper
 ------------------------------ */
-async function fetchAll(params = {}) {
+async function fetchAll(params = {}){
   const url = new URL(API_TRANSACTIONS, window.location.origin);
   Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
-  const res = await fetch(url.toString(), {
-    headers: authHeaders()   // ✅ 关键就在这一行
-  });
+  const res = await fetch(url.toString());
   return await res.json();
 }
-
 
 /* -----------------------------
    Admin auth helpers (token stored in localStorage)
@@ -696,7 +719,7 @@ function renderBuySellRow(o){
   <td>${o.side}</td>
   <td>${o.amount}</td>
   <td>${o.coin}</td>
-  <td>${o.estimate || '--'}</td>
+  <td>${o.estimate ?? '-'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td>${(o.tp||'-')}/${(o.sl||'-')}</td>
@@ -712,12 +735,21 @@ function renderRechargeRow(o){
   <td>充值</td>
   <td>${o.amount}</td>
   <td>${o.coin || '--'}</td>
+  <td>${o.estimate ?? '-'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-  <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+  <td>
+    <span class="badge" style="
+      background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' };
+      color:#fff;
+    ">
+      ${o.status}
+    </span>
+  </td>
   <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
 </tr>`;
 }
+
 function renderWithdrawRow(o){
   return `
 <tr>
@@ -726,12 +758,22 @@ function renderWithdrawRow(o){
   <td>提款</td>
   <td>${o.amount}</td>
   <td>${o.coin || '--'}</td>
+  <td>${o.estimate ?? '-'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-  <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
-  <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
+  <td>
+    <span class="badge" style="
+      background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' };
+      color:#fff;
+    ">
+      ${o.status}
+    </span>
+  </td>
+  <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
 </tr>`;
 }
+
+
 
 /* -----------------------------
    Fetch single order for modal (server handles fetchOrder)
@@ -799,42 +841,42 @@ function postRenderDecorate(){
 }
 
 /* -----------------------------
-   SSE realtime orders
+   SSE realtime orders（最终版：即时插入，不再 search）
 ------------------------------ */
 let orderEventSource = null;
+
 function connectOrderSSE(){
   try{
     if(orderEventSource) orderEventSource.close();
-    orderEventSource = new EventSource('/api/orders/stream');
-    orderEventSource.onmessage = function(ev){
-      try{
-        const d = JSON.parse(ev.data);
-        if(d && d.order){
-          // flash alert if locked/failed
-          if(d.order.status === 'locked' || d.order.status === 'failed'){
-            let badge = document.getElementById('globalAlertBadge');
-            if(!badge){
-              badge = document.createElement('span');
-              badge.id = 'globalAlertBadge';
-              badge.className = 'badge-alert flash';
-              badge.innerText = '异常订单';
-              document.querySelector('.top-header .user').appendChild(badge);
-            }
-          }
-          // refresh active page
-          const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page');
-          if(active==='recharge') r_search();
-          else if(active==='withdraw') w_search();
-          else if(active==='buysell') bs_search();
-          else o_search();
-        }
-      }catch(e){}
-    };
-    orderEventSource.onerror = function(){ setTimeout(connectOrderSSE,3000); };
-  }catch(e){ console.warn('SSE not available', e); }
-}
-connectOrderSSE();
 
+    orderEventSource = new EventSource('/api/orders/stream');
+
+    // 统一监听 new 事件
+    orderEventSource.addEventListener('new', e => {
+      const data = JSON.parse(e.data);
+      if(!data || !data.order || !data.typeName) return;
+
+      prependOrderToTable(data.typeName, data.order);
+    });
+
+    // BuySell 单独事件（如果你后端有分）
+    orderEventSource.addEventListener('buysell', e => {
+      const data = JSON.parse(e.data);
+      if(!data || !data.order) return;
+
+      prependOrderToTable('buysell', data.order);
+    });
+
+    orderEventSource.onerror = () => {
+      setTimeout(connectOrderSSE, 3000);
+    };
+
+  }catch(e){
+    console.warn('SSE not available', e);
+  }
+}
+
+connectOrderSSE();
 /* -----------------------------
    Search functions (bs_search / r_search / w_search / o_search)
    Each will call postRenderDecorate() after rendering
@@ -856,7 +898,7 @@ async function r_search(){
   if($('#r_wallet').value) params.q = $('#r_wallet').value;
   if($('#r_currency').value) params.currency = $('#r_currency').value;
   if($('#r_status').value) params.status = $('#r_status').value;
-  const tbody = $('#r_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+  const tbody = $('#r_table'); tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
   try{ const all = await fetchAll(params); const list = all.recharge || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
 async function w_search(){
@@ -866,7 +908,7 @@ async function w_search(){
   if($('#w_wallet').value) params.q = $('#w_wallet').value;
   if($('#w_currency').value) params.currency = $('#w_currency').value;
   if($('#w_status').value) params.status = $('#w_status').value;
-  const tbody = $('#w_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+  const tbody = $('#w_table'); tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
   try{ const all = await fetchAll(params); const list = all.withdraw || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
 }
 async function o_search(){
@@ -875,7 +917,7 @@ async function o_search(){
   if($('#o_end').value) params.end = $('#o_end').value;
   if($('#o_q').value) params.q = $('#o_q').value;
   if($('#o_type').value) params.type = $('#o_type').value;
-  const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+  const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
   try{
     const all = await fetchAll(params);
     const rows = [ ...(all.recharge || []), ...(all.withdraw || []), ...(all.buysell || []) ];
@@ -915,6 +957,38 @@ async function loadDashboard(){
   loadDashboard();
 
 </script>
+function prependOrderToTable(type, order){
+  let tbody, html;
+
+  if(type === 'recharge'){
+    tbody = document.getElementById('r_table');
+    html = renderRechargeRow(order);
+  }
+  else if(type === 'withdraw'){
+    tbody = document.getElementById('w_table');
+    html = renderWithdrawRow(order);
+  }
+  else if(type === 'buysell'){
+    tbody = document.getElementById('bs_table');
+    html = renderBuySellRow(order);
+  }
+  else {
+    return;
+  }
+
+  if(!tbody) return;
+
+  // 防止重复插入
+  if(document.getElementById('row-' + order.orderId)) return;
+
+  const temp = document.createElement('tbody');
+  temp.innerHTML = html;
+  const tr = temp.firstElementChild;
+  tr.id = 'row-' + order.orderId;
+
+  tbody.prepend(tr);
+  postRenderDecorate();
+}
 <script>
 document.getElementById('logoutBtn')?.addEventListener('click', () => {
   localStorage.removeItem('nexbit_admin_token');
