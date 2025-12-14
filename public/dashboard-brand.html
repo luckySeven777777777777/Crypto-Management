@@ -896,33 +896,57 @@ async function bs_search(){
   try{ const all = await fetchAll(params); const list = all.buysell || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="11">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderBuySellRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="11">加载失败</td></tr>`; }
 }
 async function r_search(){
-  if(!getAdminToken()){
-    await ensureLoggedIn();
-    if(!getAdminToken()) return;
-  }
-  const params = {};
+  const params = { type: 'recharge' };   // ✅ 必须加
+
   if($('#r_start').value) params.start = $('#r_start').value;
   if($('#r_end').value) params.end = $('#r_end').value;
   if($('#r_wallet').value) params.q = $('#r_wallet').value;
   if($('#r_currency').value) params.currency = $('#r_currency').value;
   if($('#r_status').value) params.status = $('#r_status').value;
-  const tbody = $('#r_table'); tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
-  try{ const all = await fetchAll(params); const list = all.recharge || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
-}
-async function w_search(){
-  if(!getAdminToken()){
-    await ensureLoggedIn();
-    if(!getAdminToken()) return;
+
+  const tbody = $('#r_table');
+  tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+
+  try{
+    const all = await fetchAll(params);
+    const list = all.recharge || [];
+    if(!list.length){
+      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join('');
+    postRenderDecorate();
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`;
   }
-  const params = {};
+}
+
+async function w_search(){
+  const params = { type: 'withdraw' };   // ✅ 必须加
+
   if($('#w_start').value) params.start = $('#w_start').value;
   if($('#w_end').value) params.end = $('#w_end').value;
   if($('#w_wallet').value) params.q = $('#w_wallet').value;
   if($('#w_currency').value) params.currency = $('#w_currency').value;
   if($('#w_status').value) params.status = $('#w_status').value;
-  const tbody = $('#w_table'); tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
-  try{ const all = await fetchAll(params); const list = all.withdraw || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`; }
+
+  const tbody = $('#w_table');
+  tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
+
+  try{
+    const all = await fetchAll(params);
+    const list = all.withdraw || [];
+    if(!list.length){
+      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join('');
+    postRenderDecorate();
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`;
+  }
 }
+
 async function o_search(){
   if(!getAdminToken()){
     await ensureLoggedIn();
@@ -939,7 +963,7 @@ async function o_search(){
     const rows = [ ...(all.recharge || []), ...(all.withdraw || []), ...(all.buysell || []) ];
     if(!rows.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; }
     tbody.innerHTML = rows.map(o=>{
-      const type = o.side ? 'buy/sell' : o.password ? 'withdraw' : 'recharge';
+      const type = o.type || (o.side ? 'buysell' : 'unknown');
       return `<tr>
         <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
         <td>${o.time_us || '--'}</td>
