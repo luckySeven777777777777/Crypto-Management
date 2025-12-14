@@ -755,8 +755,6 @@ if (!await isValidAdminToken(token))
     }
 
     // update order status and mark processed after applying business logic
-    await ref.update({ status, note: note || null, updated: now() });
-
     const actId = uuidv4();
     await db.ref(`admin_actions/${actId}`).set({ id: actId, admin: adminId, type, orderId, status, note, time: now() });
 
@@ -767,13 +765,28 @@ if (!await isValidAdminToken(token))
       const uSnap = await userRef.once('value');
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.amount || 0);
+// 1️⃣ 先更新状态（不 processed）
+await ref.update({
+  status,
+  note: note || null,
+  updated: now()
+});
 
+// 2️⃣ 统一计算状态
 const statusNorm = String(status || '').toLowerCase();
 
 const isApproved = (
   statusNorm === 'success' ||
   statusNorm === 'approved' ||
   statusNorm === 'pass'
+);
+
+const isRejected = (
+  statusNorm === 'failed' ||
+  statusNorm === 'reject' ||
+  statusNorm === 'rejected' ||
+  statusNorm === 'cancel' ||
+  statusNorm === 'canceled'
 );
 
 if (isApproved) {
@@ -792,38 +805,24 @@ if (isApproved) {
       source: 'recharge_approved'
     });
   }
+ }
 
-  else if (type === 'buysell') {
-    if (String(order.side || '').toLowerCase() === 'sell') {
-      curBal += amt;
-      await userRef.update({
-        balance: curBal,
-        lastUpdate: now(),
-        boost_last: now()
-      });
-
-      broadcastSSE({ type:'balance', userId, balance: curBal });
-    }
-  }
-}
-// ❌ Withdraw 被拒绝 → 退回余额（立即扣 / 失败退）
+// ===== 所有余额业务逻辑 =====
+// withdraw 拒绝 → 退钱
 if (
   type === 'withdraw' &&
-  !isApproved &&
+  isRejected &&
   order.deducted === true &&
   order.refunded !== true
 ) {
   curBal += amt;
-
   await userRef.update({
     balance: curBal,
     lastUpdate: now(),
     boost_last: now()
   });
 
-  await ref.update({
-    refunded: true
-  });
+  await ref.update({ refunded: true });
 
   broadcastSSE({
     type: 'balance',
@@ -833,33 +832,44 @@ if (
   });
 }
 
-try {
-if (
-  isApproved ||
-  statusNorm === 'failed' ||
-  statusNorm === 'rejected'
+// buysell sell 通过 → 加钱（✅ 必须加 isApproved）
+else if (
+  type === 'buysell' &&
+  isApproved &&
+  String(order.side || '').toLowerCase() === 'sell'
 ) {
+  curBal += amt;
+  await userRef.update({
+    balance: curBal,
+    lastUpdate: now(),
+    boost_last: now()
+  });
+
+  broadcastSSE({
+    type: 'balance',
+    userId,
+    balance: curBal
+  });
+}
+
+// ===== ✅【唯一正确位置】统一标记 processed =====
+if (isApproved || isRejected) {
   await ref.update({ processed: true });
 }
 
-} catch (e) {
-  console.error('update processed failed:', e);
-}
+// ===== 再广播订单更新 =====
+const newSnap = await ref.once('value');
+const latestOrder = { ...newSnap.val(), orderId };
 
-
-      // broadcast new balance
-    }
-
-    // broadcast order update
-    try {
-      const newSnap = await ref.once("value");
-      const latestOrder = { ...newSnap.val(), orderId };
-      broadcastSSE({ type: 'update', typeName: type, userId: latestOrder.userId, order: latestOrder, action: { admin: adminId, status, note } });
-    } catch(e){}
-
-    return res.json({ ok:true });
-  } catch(e){ console.error('transaction.update err', e); return res.status(500).json({ ok:false, error:e.message }); }
+broadcastSSE({
+  type: 'update',
+  typeName: type,
+  userId: latestOrder.userId,
+  order: latestOrder,
+  action: { admin: adminId, status, note }
 });
+
+return res.json({ ok: true });
 
 /* ---------------------------------------------------------
    SSE endpoints
