@@ -72,6 +72,72 @@ function isSafeUid(uid){
   if(uid.length < 2 || uid.length > 512) return false;
   return true;
 }
+// ===============================
+// USDT 估算工具（统一）
+// ===============================
+const PRICE_CACHE = {
+  USDT: 1
+};
+
+// ================================
+// Binance WebSocket 实时 USDT 行情
+// ================================
+const WebSocket = require('ws');
+
+// 启动 Binance 行情 WS（所有 USDT 交易对）
+function startBinancePriceWS(){
+  const ws = new WebSocket('wss://stream.binance.com:9443/ws/!ticker@arr');
+
+  ws.on('open', ()=>{
+    console.log('[BINANCE] Price WS connected');
+  });
+
+  ws.on('message', raw => {
+    try{
+      const list = JSON.parse(raw.toString());
+      list.forEach(t => {
+        // 只处理 USDT 交易对
+        if(!t.s || !t.s.endsWith('USDT')) return;
+
+        const coin = t.s.replace('USDT', '');
+        const price = Number(t.c);
+
+        if(price > 0){
+          PRICE_CACHE[coin] = price;
+        }
+      });
+
+      // USDT 永远固定
+      PRICE_CACHE.USDT = 1;
+    }catch(e){
+      // ignore parse error
+    }
+  });
+
+  ws.on('close', ()=>{
+    console.log('[BINANCE] WS closed, reconnecting...');
+    setTimeout(startBinancePriceWS, 3000);
+  });
+
+  ws.on('error', err=>{
+    console.error('[BINANCE] WS error:', err.message);
+    try{ ws.close(); }catch(e){}
+  });
+}
+
+// ================================
+// USDT 估算工具（实时）
+// ================================
+function getUSDTPrice(coin){
+  if(!coin) return null;
+  return PRICE_CACHE[String(coin).toUpperCase()] || null;
+}
+
+function calcEstimateUSDT(amount, coin){
+  const p = getUSDTPrice(coin);
+  if(!p) return null;
+  return Number((safeNumber(amount, 0) * p).toFixed(4));
+}
 
 /* ---------------------------------------------------------
    SSE utilities
@@ -301,8 +367,10 @@ async function saveOrder(type, data){
     status: clean.status || 'processing',
     type,
     processed: false,
-    coin: clean.coin
-  };
+    coin: clean.coin,
+  // ✅ 新增：估算 USDT
+  estimate: calcEstimateUSDT(clean.amount, clean.coin)
+};
 
   await db.ref(`orders/${type}/${id}`).set(payload);
 
@@ -835,4 +903,5 @@ ensureDefaultAdmin();
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
+startBinancePriceWS();
 app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
