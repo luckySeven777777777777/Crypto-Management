@@ -1,19 +1,18 @@
 require('dotenv').config();
-
 const express = require('express');
-const path = require('path');
 const cors = require('cors');
-const axios = require('axios');
-
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
-
-const speakeasy = require('speakeasy');
-const QRCode = require('qrcode');
+const admin = require('firebase-admin');
+const path = require('path');
 
 const app = express();
 app.disable('etag');
+app.use(cors());
+app.use(express.json());
+
 const PORT = process.env.PORT || 8080;
+
 
 /* --------------------- Global safety handlers --------------------- */
 process.on('unhandledRejection', (reason, p) => {
@@ -206,11 +205,16 @@ app.get('/wallet/:uid/balance', async (req, res) => {
 --------------------------------------------------------- */
 app.post('/api/admin/balance', async (req, res) => {
   try {
-    // 🔐【统一：Token + 2FA 强制校验】
-    const token = await adminAuthWith2FA(req, res);
-    if (!token) {
-      return res.status(403).json({ ok:false, error:'auth/2fa' });
-    }
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok:false });
+
+    const token = auth.slice(7);
+    if (!await isValidAdminToken(token))
+      return res.status(403).json({ ok:false });
+
+    // 👇 下面才是 balance 逻辑
 
     // ===============================
     // ✅ 后面只写业务逻辑（不要再验 token）
@@ -448,8 +452,23 @@ app.post('/api/order/withdraw', async (req, res) => {
 --------------------------------------------------------- */
 app.get('/api/transactions', async (req, res) => {
   try {
-       const token = await adminAuthWith2FA(req, res);
-if (!token) return res.status(403).json({ ok:false });
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer ')) {
+  return res.json({
+    ok: true,
+    recharge: [],
+    withdraw: [],
+    buysell: [],
+    users: {},
+    stats: {}
+  });
+}
+
+    const token = auth.slice(7);
+
+    // ✅ 只校验 token，不强制 2FA
+    if (!await isValidAdminToken(token))
+      return res.status(403).json({ ok:false });
 
     if(!db) return res.json({ ok:true, recharge:[], withdraw:[], buysell:[], users:{}, stats:{} });
 
@@ -513,173 +532,8 @@ async function isValidAdminToken(token){
     return true;
   } catch(e){ return false; }
 }
-/* ---------------------------------------------------------
-   Admin 2FA validation
---------------------------------------------------------- */
-async function requireAdmin2FA(token, code){
-  if(!db) return false;
 
-  const tSnap = await db.ref(`admins_by_token/${token}`).once('value');
-  if(!tSnap.exists()) return false;
 
-  const adminId = tSnap.val().id;
-  const aSnap = await db.ref(`admins/${adminId}/twofa`).once('value');
-  if(!aSnap.exists()) return true;
-
-  const { enabled, secret } = aSnap.val();
-  if(!enabled) return true;
-
-  return speakeasy.totp.verify({
-    secret,
-    encoding: 'base32',
-    token: String(code),
-    window: 1
-  });
-}
-async function adminAuthWith2FA(req, res) {
-  const auth = req.headers.authorization || '';
-  if (!auth.startsWith('Bearer '))
-    return false;
-
-  const token = auth.slice(7);
-
-  if (!await isValidAdminToken(token))
-    return false;
-
-  const code = req.headers['x-2fa-code'];
-  if (!await requireAdmin2FA(token, code))
-    return false;
-
-  return token;
-}
-
-/* ---------------------------------------------------------
-   Google 2FA helpers
---------------------------------------------------------- */
-
-// 生成 2FA secret（用于新增管理员）
-async function generateAdmin2FA(adminId) {
-  const secret = speakeasy.generateSecret({
-    length: 20,
-    name: `NEXBIT (${adminId})`
-  });
-
-  await db.ref(`admins/${adminId}/twofa`).set({
-    secret: secret.base32,
-    enabled: false
-  });
-
-  const qr = await QRCode.toDataURL(secret.otpauth_url);
-
-  return {
-    qr,
-    secret: secret.base32
-  };
-}
-
-// 校验 2FA
-async function verifyAdmin2FA(adminId, token) {
-  const snap = await db.ref(`admins/${adminId}/twofa`).once('value');
-  if (!snap.exists()) return false;
-
-  const { secret, enabled } = snap.val();
-  if (!enabled) return true; // 没开启 2FA 直接放行
-
-  return speakeasy.totp.verify({
-    secret,
-    encoding: 'base32',
-    token,
-    window: 1
-  });
-}
-app.post('/api/admin/2fa/generate', async (req, res) => {
-  try {
-    if (!db) return res.status(500).json({ ok:false });
-
-    const auth = req.headers['authorization'] || '';
-    if (!auth.startsWith('Bearer ')) {
-      return res.status(403).json({ ok:false });
-    }
-
-    const token = auth.slice(7);
-    const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (!tokenSnap.exists()) {
-      return res.status(403).json({ ok:false });
-    }
-
-    const adminId = tokenSnap.val().id;
-
-    const secret = speakeasy.generateSecret({
-      name: `NEXBIT (${adminId})`,
-      length: 20
-    });
-
-    await db.ref(`admins/${adminId}/twofa`).set({
-      enabled: false,
-      secret: secret.base32
-    });
-
-    const qr = await QRCode.toDataURL(secret.otpauth_url);
-
-    res.json({
-      ok: true,
-      qr,
-      secret: secret.base32
-    });
-
-  } catch (e) {
-    console.error('2fa generate error', e);
-    res.status(500).json({ ok:false });
-  }
-});
-/* ---------------------------------------------------------
-   Admin 2FA verify (ENABLE)
---------------------------------------------------------- */
-app.post('/api/admin/2fa/verify', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok:false });
-
-    const token = auth.slice(7);
-    const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (!tokenSnap.exists())
-      return res.status(403).json({ ok:false });
-
-    const adminId = tokenSnap.val().id;
-    const { code } = req.body;
-    if (!code)
-      return res.status(400).json({ ok:false, error:'missing code' });
-
-    const snap = await db.ref(`admins/${adminId}/twofa`).once('value');
-    if (!snap.exists())
-      return res.status(400).json({ ok:false, error:'2fa not initialized' });
-
-    const { secret } = snap.val();
-
-    const verified = speakeasy.totp.verify({
-      secret,
-      encoding: 'base32',
-      token: String(code),
-      window: 1
-    });
-
-    if (!verified)
-      return res.status(401).json({ ok:false, error:'invalid 2fa code' });
-
-    // ✅ 正式启用 2FA
-    await db.ref(`admins/${adminId}/twofa`).update({
-      enabled: true,
-      enabledAt: now()
-    });
-
-    return res.json({ ok:true });
-
-  } catch (e) {
-    console.error('2fa verify error', e);
-    return res.status(500).json({ ok:false });
-  }
-});
 
 /* ---------------------------------------------------------
    Admin create/login (kept)
@@ -687,120 +541,79 @@ app.post('/api/admin/2fa/verify', async (req, res) => {
 app.post('/api/admin/create', async (req, res) => {
   try {
     const { id, password, createToken } = req.body;
-    if(!id || !password) return res.status(400).json({ ok:false, error:'missing id/password' });
-
-    if(process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN){
-    } else {
-      const auth = req.headers['authorization'] || '';
-      if(!auth.startsWith('Bearer ')) return res.status(403).json({ ok:false, error:'forbidden' });
-      const token = auth.slice(7);
-      if(!await isValidAdminToken(token)) return res.status(403).json({ ok:false, error:'forbidden' });
+    if (!id || !password) {
+      return res.status(400).json({ ok:false, error:'missing id/password' });
     }
 
-    await db.ref(`admins/${id}`).set({
+    // 允许 bootstrap token 或 已登录 admin 创建
+    if (process.env.ADMIN_BOOTSTRAP_TOKEN &&
+        createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
+      // pass
+    } else {
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer '))
+    return res.status(403).json({ ok:false, error:'forbidden' });
+
+  const adminToken = auth.slice(7);
+  if (!await isValidAdminToken(adminToken))
+    return res.status(403).json({ ok:false, error:'forbidden' });
+  // ✅ 不要求 2FA
+}
+
+    const hashed = await bcrypt.hash(password, 10);
+const token = uuidv4();
+const created = now();
+
+await db.ref(`admins/${id}`).set({
   id,
   hashed,
   created,
-  token,
+  isSuper: false   // 或 true
+});
 
-  // 🔐 强制 2FA：默认未绑定
-  twofa: {
-    enabled: false
-  }
+await db.ref(`admins_by_token/${token}`).set({
+  id,
+  created
 });
 
     return res.json({ ok:true, id, token });
-  } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
-});
 
-app.post('/api/admin/login', async (req, res) => {
-  try {
-    const { id, password, twofaCode } = req.body;
-    if (!id || !password)
-      return res.status(400).json({ ok:false, error:'missing' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok:false, error:'notfound' });
-
-    const admin = snap.val();
-
-    const passOk = await bcrypt.compare(password, admin.hashed);
-    if (!passOk)
-      return res.status(401).json({ ok:false, error:'invalid' });
-
-    // 🔐【强制要求已绑定 2FA】
-    if (!admin.twofa || admin.twofa.enabled !== true) {
-      return res.status(403).json({
-        ok:false,
-        need2faSetup:true,
-        message:'2FA required'
-      });
-    }
-
-    // 🔐【强制校验 2FA code】
-    if (!twofaCode) {
-      return res.status(403).json({
-        ok:false,
-        need2fa:true,
-        message:'2FA code required'
-      });
-    }
-
-    const verified = speakeasy.totp.verify({
-      secret: admin.twofa.secret,
-      encoding: 'base32',
-      token: String(twofaCode),
-      window: 1
-    });
-
-    if (!verified) {
-      return res.status(401).json({
-        ok:false,
-        error:'2FA invalid'
-      });
-    }
-
-    // ✅ 全部通过，才发 token
-    const token = uuidv4();
-    const created = now();
-
-    await db.ref(`admins_by_token/${token}`).set({
-      id,
-      created
-    });
-
-    res.json({ ok:true, token, id });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok:false });
+    console.error('admin create error', e);
+    return res.status(500).json({ ok:false });
   }
 });
 
-/* ---------------------------------------------------------
-   Admin 2FA setup
---------------------------------------------------------- */
-app.post('/api/admin/2fa/setup', async (req, res) => {
+
+/* --------------------------------------------------
+   Utils
+-------------------------------------------------- */
+
+app.post('/api/admin/login', async (req, res) => {
   try {
-    const auth = req.headers['authorization'] || '';
-    if (!auth.startsWith('Bearer ')) {
-      return res.status(403).json({ ok:false });
-    }
+    const { id, password } = req.body;
+    if (!id || !password)
+      return res.status(400).json({ ok:false });
 
-    const token = auth.slice(7);
-    const adminSnap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (!adminSnap.exists()) {
-      return res.status(403).json({ ok:false });
-    }
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok:false });
 
-    const adminId = adminSnap.val().id;
+    const admin = snap.val();
+    const passOk = await bcrypt.compare(password, admin.hashed);
+    if (!passOk)
+      return res.status(401).json({ ok:false });
 
-    const data = await generateAdmin2FA(adminId);
-    return res.json({ ok:true, ...data });
+    const token = uuidv4();
+    await db.ref(`admins_by_token/${token}`).set({
+      id,
+      created: now()
+    });
 
+    return res.json({ ok:true, token });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ ok:false });
+    res.status(500).json({ ok:false });
   }
 });
 
@@ -812,8 +625,13 @@ app.post('/api/transaction/update', async (req, res) => {
   try {
     if (!db) return res.json({ ok:false, error:'no-db' });
 
-    const token = await adminAuthWith2FA(req, res);
-if (!token) return res.status(403).json({ ok:false });
+const auth = req.headers.authorization || '';
+if (!auth.startsWith('Bearer '))
+  return res.status(403).json({ ok:false });
+
+const token = auth.slice(7);
+if (!await isValidAdminToken(token))
+  return res.status(403).json({ ok:false });
 
 
     const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
@@ -1010,7 +828,7 @@ async function ensureDefaultAdmin() {
   if (!db) return;
 
   const snap = await db.ref('admins/admin').once('value');
-  if (snap.exists()) return; // ⭐ 关键：已存在就不动
+  if (snap.exists()) return;
 
   const hashed = await bcrypt.hash('970611', 10);
   const token = uuidv4();
@@ -1020,7 +838,6 @@ async function ensureDefaultAdmin() {
     id: 'admin',
     hashed,
     created,
-    token,
     isSuper: true
   });
 
