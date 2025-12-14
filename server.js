@@ -857,24 +857,25 @@ if (isApproved || isRejected) {
   await ref.update({ processed: true });
 }
 
-// ===== 再广播订单更新 =====
-const newSnap = await ref.once('value');
-const latestOrder = { ...newSnap.val(), orderId };
+    // ===== 再广播订单更新 =====
+    const newSnap = await ref.once('value');
+    const latestOrder = { ...newSnap.val(), orderId };
 
-broadcastSSE({
-  type: 'update',
-  typeName: type,
-  userId: latestOrder.userId,
-  order: latestOrder,
-  action: { admin: adminId, status, note }
-});
+    broadcastSSE({
+      type: 'update',
+      typeName: type,
+      userId: latestOrder.userId,
+      order: latestOrder,
+      action: { admin: adminId, status, note }
+    });
 
-return res.json({ ok: true });
-} catch (e) {
+    return res.json({ ok: true });
+
+  } catch (e) {
     console.error('transaction.update err', e);
-    return res.status(500).json({ ok:false, error:e.message });
+    return res.status(500).json({ ok:false, error: e.message });
   }
-});
+}); 
 /* ---------------------------------------------------------
    SSE endpoints
 --------------------------------------------------------- */
