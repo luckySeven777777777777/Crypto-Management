@@ -875,7 +875,7 @@ if (finalStatus) {
 // ===== 再广播订单更新 =====
 const newSnap = await ref.once('value');
 const latestOrder = { ...newSnap.val(), orderId };
-if (latestOrder && latestOrder.userId) {
+
 broadcastSSE({
   type: 'update',
   typeName: type,
