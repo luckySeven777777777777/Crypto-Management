@@ -442,6 +442,18 @@ function handleSSE(d){
 
 // ③ 同步本地 withdrawal history（核心）
 function syncWithdrawStatus(orderId, newStatus){
+// ✅【就放在这里：函数最开头】
+  const s = String(newStatus).toLowerCase();
+  if (["success","approved","pass","通过"].includes(s)) {
+    newStatus = "approved";
+  } else if (
+    ["failed","reject","rejected","cancel","canceled","decline","deny","拒绝","取消"]
+      .includes(s)
+  ) {
+    newStatus = "rejected";
+  } else {
+    return; // 非最终状态，直接忽略
+  }
   let history = JSON.parse(
     localStorage.getItem("withdraw_history") || "[]"
   );
