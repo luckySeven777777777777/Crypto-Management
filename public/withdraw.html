@@ -196,8 +196,6 @@ function confirmWallet(){
   txHash = "TX-" + Math.random().toString(36).substr(2,8).toUpperCase();
   document.getElementById("hashBox").innerText = "Hash:\n" + txHash;
    // ✅【就在这里】记录已成功使用过的钱包地址
-  localStorage.setItem("withdraw_wallet", wallet);
-
   document.getElementById("copyHashBtn").style.display = "block";
   document.getElementById("submitBtn").style.display = "block";
   document.getElementById("submitBtn").disabled = false;
@@ -427,6 +425,22 @@ function showWithdrawHistory(){
 
   box.style.display = box.style.display === "none" ? "block" : "none";
 }
+/*************************************************
+ * ✅ SSE 连接 + 提款状态同步 + 自动提醒（最终版）
+ *************************************************/
+
+// ② 处理后台推送的 update
+function handleSSE(d){
+  if(
+    d.type === "update" &&
+    d.order &&
+    d.order.type === "withdraw"
+  ){
+    syncWithdrawStatus(d.order.orderId, d.order.status);
+  }
+}
+
+// ③ 同步本地 withdrawal history（核心）
 function syncWithdrawStatus(orderId, newStatus){
   let history = JSON.parse(
     localStorage.getItem("withdraw_history") || "[]"
@@ -444,7 +458,6 @@ function syncWithdrawStatus(orderId, newStatus){
         let okWallets = JSON.parse(
           localStorage.getItem("approved_wallets") || "[]"
         );
-
         if(!okWallets.includes(o.wallet)){
           okWallets.push(o.wallet);
           localStorage.setItem(
@@ -463,14 +476,14 @@ function syncWithdrawStatus(orderId, newStatus){
     JSON.stringify(history)
   );
 
-  // 🔔 自动弹窗提醒
+  // ④ 🔔 自动弹窗提醒
   if(newStatus === "approved"){
-    alert("✅ Withdrawal Approved!");
+    alert("✅ Withdrawal Approved");
   }else if(newStatus === "rejected"){
-    alert("❌ Withdrawal Rejected!");
+    alert("❌ Withdrawal Rejected");
   }
 
-  // 🔄 如果历史框已打开，自动刷新
+  // 🔄 若历史框是打开的，自动刷新
   const box = document.getElementById("historyBox");
   if(box && box.style.display === "block"){
     showWithdrawHistory();
@@ -504,6 +517,7 @@ sse.onmessage = function(ev){
 sse.onerror = function(){
   console.warn("⚠️ SSE disconnected");
 };
+
 </script>
 
 </body>
