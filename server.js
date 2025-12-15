@@ -875,9 +875,20 @@ if (isApproved || isRejected) {
       order: latestOrder,
       action: { admin: adminId, status, note }
     });
-
+// ✅【新增但不影响其他功能】提款专用状态同步
+if(type === 'withdraw'){
+  broadcastSSE({
+    type: "update",
+    userId: latestOrder.userId,
+    order: {
+      orderId: orderId,
+      type: "withdraw",
+      status: status   // approved / rejected
+    }
+  });
+}
     return res.json({ ok: true });
-
+ 
   } catch (e) {
     console.error('transaction.update err', e);
     return res.status(500).json({ ok:false, error: e.message });
