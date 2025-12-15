@@ -891,6 +891,11 @@ if (type === 'withdraw') {
 }
 
 return res.json({ ok: true });
+  } catch (e) {
+    console.error('transaction.update err', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
 
 /* ---------------------------------------------------------
    SSE endpoints
