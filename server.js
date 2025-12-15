@@ -884,7 +884,7 @@ if(type === 'withdraw'){
       orderId: orderId,
       type: "withdraw",
       status: status   // approved / rejected
-      userId: latestOrder.userId      // ⭐⭐⭐ 核心字段
+      userId: latestOrder.userId,      // ⭐⭐⭐ 核心字段
     }
   });
 }
