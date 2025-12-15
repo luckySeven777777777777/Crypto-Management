@@ -62,6 +62,28 @@ input[type=number], input[type=text] { font-family: inherit; font-size:14px; bac
 
         <button id="submitBtn" disabled>Submit</button>
         <div id="successMsg">Submission Successful!</div>
+<!-- Recharge History Toggle -->
+<button onclick="showRechargeHistory()"
+        style="
+          margin-top:12px;
+          background:transparent;
+          border:1px solid rgba(255,255,255,.4);
+          color:#fff;
+          padding:10px;
+          border-radius:6px;
+          cursor:pointer;
+        ">
+  📥 View Recharge Records
+</button>
+
+<!-- Recharge History Box -->
+<div id="rechargeHistoryBox"
+     style="display:none;margin-top:10px;
+          
+            padding-top:10px;font-size:13px;
+            color:#fff;">
+</div>
+
     </div>
 </div>
 
@@ -211,7 +233,29 @@ submitBtn.onclick=async ()=>{
         const tgText=`💵 New Recharge✅\nUser: ${USERID}\n‼️Order: ${orderId}\n❤️‍🔥Amount: ${amt} ${selectedCoin}\n💳Wallet: ${wallet}\n⏱️Time (US): ${timeUS}`;
         sendTelegramMessage(tgText,file);
 
-        successMsg.style.display='block'; submitBtn.textContent='Submitted'; submitBtn.classList.remove('loading'); submitBtn.disabled=true;
+        successMsg.style.display = 'block';
+submitBtn.textContent = 'Submitted';
+submitBtn.classList.remove('loading');
+submitBtn.disabled = true;
+
+/* 📜 保存充值历史（= 提款逻辑，最终正确版） */
+let rechargeHistory = JSON.parse(
+  localStorage.getItem("recharge_history") || "[]"
+);
+
+rechargeHistory.unshift({
+  orderId: orderId,
+  time: timeUS,
+  coin: selectedCoin,
+  amount: amt,
+  wallet: wallet,
+  status: "pending"
+});
+
+localStorage.setItem(
+  "recharge_history",
+  JSON.stringify(rechargeHistory)
+);
 
         const orderBox=document.createElement('div');
         orderBox.style.marginTop='10px'; orderBox.style.padding='10px'; orderBox.style.border='1px solid rgba(255,255,255,0.2)'; orderBox.style.borderRadius='8px'; orderBox.style.fontSize='14px'; orderBox.style.color='#fff';
@@ -222,6 +266,60 @@ submitBtn.onclick=async ()=>{
 };
 
 renderDropdown(); updateUSDT();
+/* 📜 查看充值历史（和提款一模一样） */
+function showRechargeHistory(){
+  const box = document.getElementById("rechargeHistoryBox");
+  const list = JSON.parse(
+    localStorage.getItem("recharge_history") || "[]"
+  );
+
+  if(list.length === 0){
+    box.innerHTML = "No recharge history.";
+  }else{
+    box.innerHTML = list.map(o => `
+      <div style="margin-bottom:10px;
+                  border-bottom:1px solid rgba(255,255,255,.2);
+                  padding-bottom:8px;">
+
+        <!-- Wallet + Status -->
+        <div style="display:flex;
+                    justify-content:space-between;
+                    align-items:center;">
+          <div style="font-size:12px;
+                      opacity:.7;
+                      max-width:70%;
+                      overflow:hidden;
+                      text-overflow:ellipsis;">
+            ${o.wallet}
+          </div>
+
+          <div style="font-size:12px;
+                      font-weight:bold;
+                      color:${
+                        o.status === 'approved' ? '#00ff88' :
+                        o.status === 'rejected' ? '#ff6666' :
+                        '#ffaa00'
+                      }">
+            ${o.status.toUpperCase()}
+          </div>
+        </div>
+
+        <!-- Detail -->
+        <div style="font-size:13px;margin-top:4px;">
+          ${o.coin} ${o.amount}
+        </div>
+
+        <div style="font-size:11px;opacity:.6;">
+          ${o.time}
+        </div>
+      </div>
+    `).join("");
+  }
+
+  box.style.display =
+    box.style.display === "none" ? "block" : "none";
+}
+
 </script>
 </body>
 </html>
