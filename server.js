@@ -863,7 +863,7 @@ else if (
 if (isApproved || isRejected) {
   await ref.update({ processed: true });
 }
-}
+
     // ===== 再广播订单更新 =====
     const newSnap = await ref.once('value');
     const latestOrder = { ...newSnap.val(), orderId };
@@ -881,11 +881,11 @@ if(type === 'withdraw'){
     type: "update",
     userId: latestOrder.userId,
     order: {
-      orderId: orderId,
-      type: "withdraw",
-      status: status   // approved / rejected
-      userId: latestOrder.userId,      // ⭐⭐⭐ 核心字段
-    }
+  orderId: orderId,
+  type: "withdraw",
+  status: status   // approved / rejected
+  userId: latestOrder.userId,  // ⭐⭐⭐ 核心字段
+}
   });
 }
     return res.json({ ok: true });
