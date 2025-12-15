@@ -45,11 +45,18 @@ input[type=number], input[type=text] { font-family: inherit; font-size:14px; bac
         <label for="amountInput">Enter Amount (USDT)</label>
         <input type="number" id="amountInput" placeholder="0.00" min="0">
 
-        <div id="usdtDisplay">USDT: 0.00</div>
+        <div id="usdtDisplay" style="display:none;">USDT: 0.00</div>
         <div id="boostDisplay" style="display:none; color:#00ff00; font-weight:600;">First Deposit Boost: +0.00</div>
         <div id="boostHint" style="display:none;">
             <div id="boostTimerText" class="boost-note">🤖 Please deposit within <span id="boostSeconds">120</span> seconds to receive the first deposit 41% bonus</div>
         </div>
+<!-- ✅ 新增：动态币数量显示 -->
+<div id="coinAmountDisplay"
+     style="font-size:13px;opacity:.85;display:none;">
+</div>
+<div id="coinAmountDisplay"
+     style="display:none;font-size:13px;color:#aaa;margin-bottom:6px;">
+</div>
         <div id="totalDisplay">Total: 0.00 USDT</div>
 
         <label for="walletAddressInput">Wallet Address</label>
@@ -146,7 +153,17 @@ async function renderDropdown(){
         const img=document.createElement('img'); img.src=`https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/${sym.replace('USDT','').toLowerCase()}.svg`;
         img.onerror=()=>{ img.src='https://via.placeholder.com/24?text=?'; };
         div.appendChild(img); div.appendChild(document.createTextNode(sym));
-        div.onclick=()=>{ selectedCoin=sym.replace('USDT',''); document.getElementById('coinSelected').textContent=selectedCoin; dd.style.display='none'; };
+      div.onclick = async () => {
+  selectedCoin = sym.replace('USDT','');
+  document.getElementById('coinSelected').textContent = selectedCoin;
+  dd.style.display = 'none';
+
+  // ✅ 这里才是真正给 coinPriceUSDT 赋值
+  coinPriceUSDT = await fetchCoinPriceUSDT(selectedCoin);
+
+  updateUSDT(); // ⭐ 重新计算
+};
+
         dd.appendChild(div);
     });
 }
@@ -167,11 +184,33 @@ const boostHint=document.getElementById('boostHint');
 const boostSeconds=document.getElementById('boostSeconds');
 const boostTimerText=document.getElementById('boostTimerText');
 const totalDisplay=document.getElementById('totalDisplay');
+const coinAmountDisplay = document.getElementById('coinAmountDisplay');
 let firstDepositUsed=localStorage.getItem('first_deposit_used')==='1';
 let countdown=120, countdownTimer=null;
+let coinPriceUSDT = 0;   // ⭐ 当前选中币的 USDT 价格
+async function fetchCoinPriceUSDT(coin){
+  try{
+    const res = await fetch(
+      `https://api.binance.com/api/v3/ticker/price?symbol=${coin}USDT`
+    );
+    const data = await res.json();
+    return Number(data.price);
+  }catch(e){
+    return 0;
+  }
+}
 
 function updateUSDT(){
     const v=parseFloat(amountInput.value)||0;
+ // ===== 新增：动态计算所选币数量 =====
+if(selectedCoin && coinPriceUSDT > 0 && v > 0){
+  const coinAmount = (v / coinPriceUSDT).toFixed(6);
+  coinAmountDisplay.textContent = `≈ ${coinAmount} ${selectedCoin}`;
+  coinAmountDisplay.style.display = 'block';
+}else{
+  coinAmountDisplay.style.display = 'none';
+}
+
     usdtDisplay.textContent=`USDT: ${v.toFixed(2)}`;
     if(!firstDepositUsed && v>0 && (countdown>0 || countdownTimer)){
         const boost=v*0.41;
@@ -247,11 +286,18 @@ let rechargeHistory = JSON.parse(
   localStorage.getItem("recharge_history") || "[]"
 );
 
+// ✅ 从页面已计算好的 Total 里取 USDT
+const tradeUSDT = Number(
+  totalDisplay.textContent.replace(/[^0-9.]/g, '')
+);
+
+
 rechargeHistory.unshift({
   orderId: orderId,
   time: timeUS,
   coin: selectedCoin,
   amount: amt,
+  usdt: tradeUSDT,
   wallet: wallet,
   status: "pending"
 });
@@ -280,44 +326,42 @@ function showRechargeHistory(){
   if(list.length === 0){
     box.innerHTML = "No recharge history.";
   }else{
-    box.innerHTML = list.map(o => `
-      <div style="margin-bottom:10px;
-                  border-bottom:1px solid rgba(255,255,255,.2);
-                  padding-bottom:8px;">
+  box.innerHTML = list.map(o => `
+  <div style="margin-bottom:10px;
+              border-bottom:1px solid rgba(255,255,255,.2);
+              padding-bottom:8px;">
 
-        <!-- Wallet + Status -->
-        <div style="display:flex;
-                    justify-content:space-between;
-                    align-items:center;">
-          <div style="font-size:12px;
-                      opacity:.7;
-                      max-width:70%;
-                      overflow:hidden;
-                      text-overflow:ellipsis;">
-            ${o.wallet}
-          </div>
-
-          <div style="font-size:12px;
-                      font-weight:bold;
-                      color:${
-                        o.status === 'approved' ? '#00ff88' :
-                        o.status === 'rejected' ? '#ff6666' :
-                        '#ffaa00'
-                      }">
-            ${o.status.toUpperCase()}
-          </div>
-        </div>
-
-        <!-- Detail -->
-        <div style="font-size:13px;margin-top:4px;">
-          ${o.coin} ${o.amount}
-        </div>
-
-        <div style="font-size:11px;opacity:.6;">
-          ${o.time}
-        </div>
+    <div style="display:flex;justify-content:space-between;">
+      <div style="font-size:12px;opacity:.7;">
+        ${o.wallet}
       </div>
-    `).join("");
+      <div style="font-size:12px;font-weight:bold;
+        color:${
+          o.status === 'approved' ? '#00ff88' :
+          o.status === 'rejected' ? '#ff6666' :
+          '#ffaa00'
+        }">
+        ${o.status.toUpperCase()}
+      </div>
+    </div>
+
+    <div style="font-size:13px;margin-top:4px;">
+      ${o.coin} ${o.amount}
+    </div>
+
+    <div style="font-size:12px;opacity:.8;">
+      USDT: ${Number(o.usdt).toFixed(2)}
+    </div>
+
+    <div style="font-size:11px;opacity:.6;">
+      ${o.time}
+    </div>
+
+    <div style="font-size:11px;opacity:.6;">
+      Order ID: ${o.orderId}
+    </div>
+  </div>
+`).join("");
   }
 
   box.style.display =
