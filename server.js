@@ -858,10 +858,18 @@ else if (
     balance: curBal
   });
 }
+// ===== ✅【最终正确】统一写回最终状态 + processed =====
+let finalStatus = null;
 
-// ===== ✅【唯一正确位置】统一标记 processed =====
-if (isApproved || isRejected) {
-  await ref.update({ processed: true });
+if (isApproved) finalStatus = "approved";
+if (isRejected) finalStatus = "rejected";
+
+if (finalStatus) {
+  await ref.update({
+    status: finalStatus,
+    processed: true,
+    updated: now()
+  });
 }
 
 // ===== 再广播订单更新 =====
@@ -875,20 +883,6 @@ broadcastSSE({
   order: latestOrder,
   action: { admin: adminId, status, note }
 });
-
-// ✅【新增但不影响其他功能】提款专用状态同步
-if (type === 'withdraw') {
-  broadcastSSE({
-    type: "update",
-    userId: latestOrder.userId,
-    order: {
-      orderId: orderId,
-      type: "withdraw",
-      status: status,
-      userId: latestOrder.userId   // ⭐ 核心字段
-    }
-  });
-}
 }
 return res.json({ ok: true });
 
