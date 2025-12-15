@@ -50,6 +50,32 @@
   </div>
 
   <button onclick="forgotPassword()">Forgot Password?</button>
+   <!-- Reset Withdraw Password Box -->
+<div id="resetBox" style="display:none;margin-top:15px;border-top:1px dashed rgba(255,255,255,.4);padding-top:15px;">
+
+  <!-- Old Password OR Used Wallet (side by side) -->
+<div style="display:flex;gap:10px;flex-wrap:wrap;">
+
+  <div style="flex:1;min-width:150px;">
+    <label>Old Password</label>
+    <input type="password" id="oldPwd" placeholder="Old withdraw password" />
+  </div>
+
+  <div style="flex:1;min-width:150px;">
+    <label>Used Wallet</label>
+    <input id="verifyWallet" placeholder="Used withdraw wallet" />
+  </div>
+<div style="margin-top:6px;font-size:12px;color:#999;text-align:center;">
+  🤖 Enter enther the old withdraw password OR a previously used withdrawal wallet address to reset your withdraw password.
+</div>
+</div>
+
+  <label>New Withdraw Password</label>
+  <input type="password" id="newPwd" placeholder="Set new withdraw password" />
+
+  <button onclick="resetWithdrawPassword()">Reset Withdraw Password</button>
+
+</div>
 
   <label>Wallet Address</label>
   <input id="wallet" placeholder="Paste wallet address" />
@@ -61,6 +87,19 @@
     <button id="copyHashBtn" onclick="copyHash()">Copy Hash</button>
     <button id="submitBtn" onclick="submitWithdrawal()">Submit Withdrawal</button>
   </div>
+</div>
+<!-- Withdrawal History Toggle -->
+<button onclick="showWithdrawHistory()"
+        style="margin-top:12px;background:#333;">
+  📥 View Withdrawal Records
+</button>
+
+<!-- Withdrawal History Box -->
+<div id="historyBox"
+     style="display:none;margin-top:10px;
+            border-top:1px dashed rgba(255,255,255,.3);
+            padding-top:10px;font-size:13px;
+            color:#fff;">
 </div>
 
 <script>
@@ -139,8 +178,9 @@ function confirmPassword(){
 }
 
 function forgotPassword(){
-  alert("Please contact admin to reset.");
+  document.getElementById("resetBox").style.display = "block";
 }
+
 
 /************************************
  * 钱包逻辑
@@ -155,6 +195,8 @@ function confirmWallet(){
 
   txHash = "TX-" + Math.random().toString(36).substr(2,8).toUpperCase();
   document.getElementById("hashBox").innerText = "Hash:\n" + txHash;
+   // ✅【就在这里】记录已成功使用过的钱包地址
+  localStorage.setItem("withdraw_wallet", wallet);
 
   document.getElementById("copyHashBtn").style.display = "block";
   document.getElementById("submitBtn").style.display = "block";
@@ -279,9 +321,189 @@ async function submitWithdrawal(){
   );
 
   alert("🤖Withdrawal Request Submitted!");
+/* 📜 保存提款历史（给用户查看） */
+let history = JSON.parse(localStorage.getItem("withdraw_history") || "[]");
+
+history.unshift({
+  orderId,
+  time,
+  coin,
+  amount,
+  wallet,
+  estimate,
+  status: "pending"
+});
+
+localStorage.setItem("withdraw_history", JSON.stringify(history));
+
   btn.innerText = "Submitted";
   submitting = false;
 }
+function resetWithdrawPassword(){
+/* 🔑 每天仅允许一次重置 */
+  const today = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+  const resetKey = "withdraw_reset_" + USERID;
+  const lastReset = localStorage.getItem(resetKey);
+
+  if(lastReset === today){
+    alert("You can only reset withdraw password once per day");
+    return;
+  }
+
+  const oldPwd = document.getElementById("oldPwd").value.trim();
+  const verifyWallet = document.getElementById("verifyWallet").value.trim();
+  const newPwd = document.getElementById("newPwd").value.trim();
+
+  if(!newPwd){
+    alert("Enter new withdraw password");
+    return;
+  }
+
+  const storedPwd = localStorage.getItem("withdraw_password");
+  const approvedWallets = JSON.parse(
+  localStorage.getItem("approved_wallets") || "[]"
+);
+
+
+  let passed = false;
+
+  if(oldPwd && oldPwd === storedPwd){
+    passed = true;
+  }
+
+  if(!passed && verifyWallet && approvedWallets.includes(verifyWallet)){
+  passed = true;
+}
+
+
+  if(!passed){
+    alert("Verification failed");
+    return;
+  }
+   localStorage.setItem("withdraw_password", newPwd);
+localStorage.setItem(resetKey, today);
+passwordConfirmed = true;
+  alert("Withdraw password reset successfully");
+  document.getElementById("resetBox").style.display = "none";
+}
+function todayKey(){
+  const d = new Date();
+  return d.getFullYear() + "-" + (d.getMonth()+1) + "-" + d.getDate();
+}
+/* 📜 查看提款历史 */
+function showWithdrawHistory(){
+  const box = document.getElementById("historyBox");
+  const list = JSON.parse(localStorage.getItem("withdraw_history") || "[]");
+
+  if(list.length === 0){
+    box.innerHTML = "No withdrawal history.";
+  }else{
+    box.innerHTML = list.map(o => `
+      <div style="margin-bottom:10px;border-bottom:1px solid rgba(255,255,255,.2);padding-bottom:8px;">
+
+        <!-- Wallet + Status (side by side) -->
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:12px;opacity:.7;max-width:70%;overflow:hidden;text-overflow:ellipsis;">
+            ${o.wallet}
+          </div>
+          <div style="font-size:12px;font-weight:bold;
+            color:${o.status === 'approved' ? '#00ff88' :
+                   o.status === 'rejected' ? '#ff6666' : '#ffaa00'}">
+            ${o.status.toUpperCase()}
+          </div>
+        </div>
+
+        <!-- Detail -->
+        <div style="font-size:13px;margin-top:4px;">
+          ${o.coin} ${o.amount} ≈ ${o.estimate} USDT
+        </div>
+        <div style="font-size:11px;opacity:.6;">
+          ${o.time}
+        </div>
+
+      </div>
+    `).join("");
+  }
+
+  box.style.display = box.style.display === "none" ? "block" : "none";
+}
+function syncWithdrawStatus(orderId, newStatus){
+  let history = JSON.parse(
+    localStorage.getItem("withdraw_history") || "[]"
+  );
+
+  let changed = false;
+
+  history.forEach(o => {
+    if(o.orderId === orderId && o.status !== newStatus){
+      o.status = newStatus;
+      changed = true;
+
+      // 🔐 只有审批成功的钱包才记录为 Used Wallet
+      if(newStatus === "approved"){
+        let okWallets = JSON.parse(
+          localStorage.getItem("approved_wallets") || "[]"
+        );
+
+        if(!okWallets.includes(o.wallet)){
+          okWallets.push(o.wallet);
+          localStorage.setItem(
+            "approved_wallets",
+            JSON.stringify(okWallets)
+          );
+        }
+      }
+    }
+  });
+
+  if(!changed) return;
+
+  localStorage.setItem(
+    "withdraw_history",
+    JSON.stringify(history)
+  );
+
+  // 🔔 自动弹窗提醒
+  if(newStatus === "approved"){
+    alert("✅ Withdrawal Approved!");
+  }else if(newStatus === "rejected"){
+    alert("❌ Withdrawal Rejected!");
+  }
+
+  // 🔄 如果历史框已打开，自动刷新
+  const box = document.getElementById("historyBox");
+  if(box && box.style.display === "block"){
+    showWithdrawHistory();
+  }
+}
+/************************************
+ * 🔔 SSE 监听后台审批结果（关键）
+ ************************************/
+const sse = new EventSource(
+  API + "/wallet/" + USERID + "/sse"
+);
+
+sse.onmessage = function(ev){
+  try{
+    const data = JSON.parse(ev.data);
+
+    // 只处理订单更新
+    if(data.type === "update" && data.order){
+      const o = data.order;
+
+      // 只同步提款订单
+      if(o.type === "withdraw" && o.orderId && o.status){
+        syncWithdrawStatus(o.orderId, o.status);
+      }
+    }
+  }catch(e){
+    console.error("SSE parse error", e);
+  }
+};
+
+sse.onerror = function(){
+  console.warn("⚠️ SSE disconnected");
+};
 </script>
 
 </body>
