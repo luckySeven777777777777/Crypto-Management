@@ -875,12 +875,12 @@ async function addRemark(orderId, type){
     alert('服务器错误');
   }
 }
+// ✅ 只负责【展示】，不允许写状态
 function openRemarkDrawer(data){
   document.getElementById('rd-order').innerText = data.orderId || '--';
   document.getElementById('rd-type').innerText = data.type || '--';
   document.getElementById('rd-time').innerText = data.time || '--';
 
-  // 拒绝原因
   if(data.reject){
     document.getElementById('rd-reject').innerText = data.reject;
     document.getElementById('rd-reject-box').style.display = 'block';
@@ -888,7 +888,6 @@ function openRemarkDrawer(data){
     document.getElementById('rd-reject-box').style.display = 'none';
   }
 
-  // 普通备注
   if(data.note){
     document.getElementById('rd-note').innerText = data.note;
     document.getElementById('rd-note-box').style.display = 'block';
@@ -897,10 +896,6 @@ function openRemarkDrawer(data){
   }
 
   document.getElementById('remarkDrawer').classList.add('open');
-}
-
-function closeRemarkDrawer(){
-  document.getElementById('remarkDrawer').classList.remove('open');
 }
 
 /* ====== 拒绝逻辑（强制填原因）====== */
@@ -963,12 +958,12 @@ function renderBuySellRow(o){
   <td>${(o.tp||'-')}/${(o.sl||'-')}</td>
   <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'buysell', o.processed)}</td>
-<!-- ✅ 备注 / 查看（修复版） -->
+<!-- ✅ 备注（永远可点） -->
 <td>
   <span
     style="color:#1976d2;cursor:pointer"
     onclick="openRemarkDrawer({
-      orderId: '${o.orderId}',
+      orderId: '${o.orderId || ''}',
       type: 'BuySell',
       time: '${o.time_us || o.time || ''}',
       status: '${o.status || 'pending'}',
@@ -979,7 +974,6 @@ function renderBuySellRow(o){
     查看
   </span>
 </td>
-</tr>
 `;
 }function renderRechargeRow(o){
   return `
@@ -1002,12 +996,12 @@ function renderBuySellRow(o){
 
   <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
 
- <!-- ✅ 备注 / 查看（修复版） -->
+<!-- ✅ 备注（永远可点） -->
 <td>
   <span
     style="color:#1976d2;cursor:pointer"
     onclick="openRemarkDrawer({
-      orderId: '${o.orderId}',
+      orderId: '${o.orderId || ''}',
       type: 'BuySell',
       time: '${o.time_us || o.time || ''}',
       status: '${o.status || 'pending'}',
@@ -1018,7 +1012,6 @@ function renderBuySellRow(o){
     查看
   </span>
 </td>
-</tr>
 `;
 }
 function renderWithdrawRow(o){
@@ -1042,12 +1035,12 @@ function renderWithdrawRow(o){
 
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
 
- <!-- ✅ 备注 / 查看（修复版） -->
+<!-- ✅ 备注（永远可点） -->
 <td>
   <span
     style="color:#1976d2;cursor:pointer"
     onclick="openRemarkDrawer({
-      orderId: '${o.orderId}',
+      orderId: '${o.orderId || ''}',
       type: 'BuySell',
       time: '${o.time_us || o.time || ''}',
       status: '${o.status || 'pending'}',
@@ -1058,7 +1051,6 @@ function renderWithdrawRow(o){
     查看
   </span>
 </td>
-</tr>
 `;
 }
 
@@ -1320,6 +1312,5 @@ document.getElementById('logoutBtn')?.addEventListener('click', () => {
     </div>
   </div>
 </div>
-
 </body>
 </html>
