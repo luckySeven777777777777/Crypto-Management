@@ -854,17 +854,18 @@ async function addRemark(orderId, type){
 
   const body = {
     orderId,
-    type: normalizeType(type),
+    type: normalizeType(type),   // ✅ 一定要用 normalize 后的
     note: remark
   };
 
   try{
-    const r = await fetch('/api/transaction/update', {
-      method: 'POST',
+    const r = await fetch(API_UPDATE,{
+      method:'POST',
       headers: authHeaders(),
       body: JSON.stringify(body)
     });
     const j = await r.json();
+
     if(j.ok){
       alert('备注已保存');
     }else{
@@ -967,12 +968,12 @@ function renderBuySellRow(o){
       ${o.note
         ? `<span style="color:#1976d2;cursor:pointer"
 onclick="openRemarkDrawer({
-  orderId:'${o.orderId}',
-  type:'BuySell',
-  time:'${o.time_us}',
-  status:'${o.status}',
-  reject:${JSON.stringify(o.reject || '')},
-  note:${JSON.stringify(o.note || '')}
+  orderId: '${o.orderId}',
+  type: 'BuySell',
+  time: '${o.time_us || o.time || ''}',
+  status: '${o.status || ''}',
+  reject: ${JSON.stringify(o.rejectReason || '')},
+  note: ${JSON.stringify(o.note || '')}
 })">查看</span>`
         : '--'
       }
@@ -1006,12 +1007,12 @@ function renderRechargeRow(o){
     ${o.note
       ? `<span style="color:#1976d2;cursor:pointer"
 onclick="openRemarkDrawer({
-  orderId:'${o.orderId}',
-  type:'充值',
-  time:'${o.time}',
-  status:'${o.status}',
-  reject:${JSON.stringify(o.reject || '')},
-  note:${JSON.stringify(o.note || '')}
+  orderId: '${o.orderId}',
+  type: 'BuySell',
+  time: '${o.time_us || o.time || ''}',
+  status: '${o.status || ''}',
+  reject: ${JSON.stringify(o.rejectReason || '')},
+  note: ${JSON.stringify(o.note || '')}
 })">查看</span>`
       : '--'
     }
@@ -1044,12 +1045,12 @@ function renderWithdrawRow(o){
     ${o.note
       ? `<span style="color:#1976d2;cursor:pointer"
 onclick="openRemarkDrawer({
-  orderId:'${o.orderId}',
-  type:'提款',
-  time:'${o.time}',
-  status:'${o.status}',
-  reject:${JSON.stringify(o.reject || '')},
-  note:${JSON.stringify(o.note || '')}
+  orderId: '${o.orderId}',
+  type: 'BuySell',
+  time: '${o.time_us || o.time || ''}',
+  status: '${o.status || ''}',
+  reject: ${JSON.stringify(o.rejectReason || '')},
+  note: ${JSON.stringify(o.note || '')}
 })">查看</span>`
       : '--'
     }
