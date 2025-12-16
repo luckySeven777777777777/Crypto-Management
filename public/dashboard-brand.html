@@ -894,9 +894,14 @@ function renderRechargeRow(o){
   <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-  <td><span class="badge">${o.status}</span></td>
 
-  <!-- ✅ 备注列 -->
+  <td>
+    <span class="badge">${o.status}</span>
+  </td>
+
+  <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
+
+  <!-- ✅ 备注（和 BuySell 一模一样） -->
   <td>
     ${o.note
       ? `<span style="color:#1976d2;cursor:pointer"
@@ -904,8 +909,6 @@ function renderRechargeRow(o){
       : '--'
     }
   </td>
-
-  <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
 </tr>`;
 }
 function renderWithdrawRow(o){
@@ -924,13 +927,12 @@ function renderWithdrawRow(o){
   <td>${o.ip || '--'}</td>
 
   <td>
-    <span class="badge"
-      ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
-      ${o.status}
-    </span>
+    <span class="badge">${o.status}</span>
   </td>
 
-  <!-- ✅ 备注列 -->
+  <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
+
+  <!-- ✅ 备注（完全对齐 BuySell） -->
   <td>
     ${o.note
       ? `<span style="color:#1976d2;cursor:pointer"
@@ -938,8 +940,6 @@ function renderWithdrawRow(o){
       : '--'
     }
   </td>
-
-  <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
 </tr>`;
 }
 
