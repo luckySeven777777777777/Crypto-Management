@@ -706,10 +706,10 @@ function renderActionButtons(orderId, type, processed){
 /* -----------------------------
    Core: txAction (use authHeaders)
 ------------------------------ */
-async function txAction(btn, orderId, type, action, extraNote){
+async function txAction(btn, orderId, type, action){
   if(!orderId) return alert('缺少订单ID');
 
-  // ✅ 防止重复点击
+  // 防止重复点击
   if(btn){
     if(btn.disabled) return;
     btn.disabled = true;
@@ -725,15 +725,15 @@ async function txAction(btn, orderId, type, action, extraNote){
     }
   }
 
-  // ===== 状态映射（只给非 remark）=====
+  // ===== 状态映射 =====
   let finalStatus = null;
   if(action === 'approve') finalStatus = 'success';
   if(action === 'reject')  finalStatus = 'failed';
   if(action === 'lock')    finalStatus = 'locked';
   if(action === 'unlock')  finalStatus = 'processing';
 
-  // ===== 备注处理 =====
-  let note = extraNote || null;
+  // ===== 备注 =====
+  let note = null;
 
   if(action === 'reject'){
     note = prompt('请输入拒绝原因（必填）');
@@ -751,20 +751,25 @@ async function txAction(btn, orderId, type, action, extraNote){
     }
   }
 
-  // ===== 关键：body 组装 =====
+  // ===== body 组装（关键）=====
   const body = {
     orderId,
     type: normalizeType(type)
   };
 
-  // ❗只有非 remark 才写 status
+  // 只有非 remark 才写 status
   if(action !== 'remark'){
+    if(!finalStatus){
+      alert('非法操作');
+      if(btn) btn.disabled = false;
+      return;
+    }
     body.status = finalStatus;
   }
 
-  // 有备注才写 note（避免 undefined）
-  if(note){
-    body.note = note;
+  // 只有有值才写 note
+  if(typeof note === 'string' && note.trim()){
+    body.note = note.trim();
   }
 
   try{
@@ -814,49 +819,6 @@ async function addRemark(orderId, type){
   }
 }
 
-/* ====== 拒绝逻辑（强制填原因）====== */
-let rejectCtx = null;
-
-function txReject(btn, orderId, type){
-  rejectCtx = { btn, orderId, type };
-  document.getElementById('rejectNote').value = '';
-  document.getElementById('rejectModal').style.display = 'flex';
-}
-
-function closeReject(){
-  document.getElementById('rejectModal').style.display = 'none';
-  rejectCtx = null;
-}
-
-async function submitReject(){
-  const note = document.getElementById('rejectNote').value.trim();
-  if(!note) return alert('必须填写拒绝原因');
-
-  const { btn, orderId, type } = rejectCtx;
-
-  btn.classList.add('btn-disabled');
-  btn.disabled = true;
-
-  const body = {
-    orderId,
-    type: normalizeType(type),
-    status: 'failed',
-    note
-  };
-
-  const r = await fetch(API_UPDATE,{
-    method:'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body)
-  });
-  const j = await r.json();
-
-  if(j.ok){
-    closeReject();
-  }else{
-    alert('拒绝失败');
-  }
-}
 /* -----------------------------
    Render rows for each type
 ------------------------------ */
