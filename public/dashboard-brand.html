@@ -706,10 +706,10 @@ function renderActionButtons(orderId, type, processed){
 /* -----------------------------
    Core: txAction (use authHeaders)
 ------------------------------ */
-async function txAction(btn, orderId, type, action, extraNote = null){
+async function txAction(btn, orderId, type, action, extraNote){
   if(!orderId) return alert('缺少订单ID');
 
-  // 👉 防重复点击
+  // ✅ 防止重复点击
   if(btn){
     if(btn.disabled) return;
     btn.disabled = true;
@@ -725,23 +725,15 @@ async function txAction(btn, orderId, type, action, extraNote = null){
     }
   }
 
-  // 状态映射
-  const finalStatus =
-    action === 'approve' ? 'success' :
-    action === 'reject'  ? 'failed'  :
-    action === 'lock'    ? 'locked'  :
-    action === 'unlock'  ? 'processing' :
-    action === 'remark'  ? null :
-    null;
+  // ===== 状态映射（只给非 remark）=====
+  let finalStatus = null;
+  if(action === 'approve') finalStatus = 'success';
+  if(action === 'reject')  finalStatus = 'failed';
+  if(action === 'lock')    finalStatus = 'locked';
+  if(action === 'unlock')  finalStatus = 'processing';
 
-  if(!finalStatus && action !== 'remark'){
-    alert('非法操作');
-    if(btn) btn.disabled = false;
-    return;
-  }
-
-  // 备注处理（唯一入口）
-  let note = extraNote;
+  // ===== 备注处理 =====
+  let note = extraNote || null;
 
   if(action === 'reject'){
     note = prompt('请输入拒绝原因（必填）');
@@ -759,14 +751,21 @@ async function txAction(btn, orderId, type, action, extraNote = null){
     }
   }
 
-  // 组装 body（⚠️ 绝不允许 undefined）
+  // ===== 关键：body 组装 =====
   const body = {
     orderId,
-    type: normalizeType(type),
+    type: normalizeType(type)
   };
 
-  if(finalStatus) body.status = finalStatus;
-  if(note) body.note = note;
+  // ❗只有非 remark 才写 status
+  if(action !== 'remark'){
+    body.status = finalStatus;
+  }
+
+  // 有备注才写 note（避免 undefined）
+  if(note){
+    body.note = note;
+  }
 
   try{
     const r = await fetch(API_UPDATE,{
@@ -775,22 +774,9 @@ async function txAction(btn, orderId, type, action, extraNote = null){
       body: JSON.stringify(body)
     });
     const j = await r.json();
-
-    if(!j.ok){
-      alert(j.error || '操作失败');
-      if(btn) btn.disabled = false;
-      return;
-    }
-
-    // 成功后刷新当前页
-    const active = document.querySelector('.sidebar .icon.active')?.dataset.page;
-    if(active === 'recharge') r_search();
-    else if(active === 'withdraw') w_search();
-    else if(active === 'buysell') bs_search();
-    else o_search();
-
+    if(!j.ok) throw new Error(j.error || '操作失败');
   }catch(e){
-    alert('服务异常');
+    alert(e.message);
     if(btn) btn.disabled = false;
   }
 }
@@ -1144,7 +1130,13 @@ async function loadMembers(){
 async function loadDashboard(){
   try{ const all = await fetchAll(); $('#todayRecharge').innerText = all.stats?.todayRecharge || 0; $('#todayWithdraw').innerText = all.stats?.todayWithdraw || 0; $('#todayOrders').innerText = all.stats?.todayOrders || 0; $('#alertsCount').innerText = all.stats?.alerts || 0; $('#genTime').innerText = new Date().toLocaleString(); }catch(e){ $('#todayRecharge').innerText="--"; }
 }
-
+function showOrderDetail(o){
+  alert(
+    `订单号：${o.orderId}\n` +
+    `状态：${o.status}\n` +
+    `备注：${o.note || '无'}`
+  );
+}
 /* -----------------------------
    Init
 ------------------------------ */
