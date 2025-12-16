@@ -626,9 +626,6 @@ button {
     <div style="margin-top:8px;font-size:12px;color:#666">提示：管理员可以通过后端 /api/admin/create 创建新账号。</div>
   </div>
 </div>
-function closeRemarkDrawer(){
-  document.getElementById('remarkDrawer')?.classList.remove('open');
-}
 <script>
 /* -----------------------------
    后端 API
@@ -1242,6 +1239,12 @@ document.getElementById('logoutBtn')?.addEventListener('click', () => {
   localStorage.removeItem('admin_user');
   location.href = 'login.html';
 });
+</script>
+<script>
+function closeRemarkDrawer(){
+  const drawer = document.getElementById('remarkDrawer');
+  if(drawer) drawer.classList.remove('open');
+}
 </script>
 <div class="modal" id="rejectModal">
   <div class="box">
