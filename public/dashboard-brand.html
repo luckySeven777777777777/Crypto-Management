@@ -970,9 +970,9 @@ onclick="openRemarkDrawer({
   orderId:'${o.orderId}',
   type:'BuySell',
   time:'${o.time_us}',
-  reject: ['failed','reject','cancel'].includes(o.status) ? o.note : null,
-note:   !['failed','reject','cancel'].includes(o.status) ? o.note : null
-
+  status:'${o.status}',
+  reject:${JSON.stringify(o.reject || '')},
+  note:${JSON.stringify(o.note || '')}
 })">查看</span>`
         : '--'
       }
@@ -1008,9 +1008,10 @@ function renderRechargeRow(o){
 onclick="openRemarkDrawer({
   orderId:'${o.orderId}',
   type:'充值',
-  time:'${o.time_us}',
-  reject: ['failed','reject','cancel'].includes(o.status) ? o.note : null,
-note:   !['failed','reject','cancel'].includes(o.status) ? o.note : null
+  time:'${o.time}',
+  status:'${o.status}',
+  reject:${JSON.stringify(o.reject || '')},
+  note:${JSON.stringify(o.note || '')}
 })">查看</span>`
       : '--'
     }
@@ -1045,10 +1046,10 @@ function renderWithdrawRow(o){
 onclick="openRemarkDrawer({
   orderId:'${o.orderId}',
   type:'提款',
-  time:'${o.time_us}',
-  reject: ['failed','reject','cancel'].includes(o.status) ? o.note : null,
-note:   !['failed','reject','cancel'].includes(o.status) ? o.note : null
-
+  time:'${o.time}',
+  status:'${o.status}',
+  reject:${JSON.stringify(o.reject || '')},
+  note:${JSON.stringify(o.note || '')}
 })">查看</span>`
       : '--'
     }
