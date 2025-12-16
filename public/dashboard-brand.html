@@ -876,75 +876,64 @@ async function addRemark(orderId, type){
 }
 let currentRemarkData = null;
 
-function openRemarkDrawer(data) {
-  if (!data || !data.orderId) return;
+function openRemarkDrawer(data){
+  currentRemarkData = data || {};
 
-  document.getElementById('rd-order').innerText = data.orderId || '';
-  document.getElementById('rd-type').innerText = data.type || '';
-  document.getElementById('rd-time').innerText = data.time || '';
-  document.getElementById('rd-status').innerText = data.status || '';
+  const drawer = document.getElementById('remarkDrawer');
+  if(!drawer) return;
 
-  // 拒绝原因（红色）
+  drawer.classList.add('open');
+
+  // 拒绝原因（红）
+  const rejectBox = document.getElementById('rd-reject-box');
+  const rejectText = document.getElementById('rd-reject');
   if (data.reject) {
-    document.getElementById('rd-reject-box').style.display = 'block';
-    document.getElementById('rd-reject').innerText = data.reject;
+    rejectBox.style.display = 'block';
+    rejectText.innerText = data.reject;
   } else {
-    document.getElementById('rd-reject-box').style.display = 'none';
+    rejectBox.style.display = 'none';
   }
 
-  // 普通备注（蓝色）
+  // 普通备注（蓝）
+  const noteBox = document.getElementById('rd-note-box');
+  const noteText = document.getElementById('rd-note');
   if (data.note) {
-    document.getElementById('rd-note-box').style.display = 'block';
-    document.getElementById('rd-note').innerText = data.note;
+    noteBox.style.display = 'block';
+    noteText.innerText = data.note;
   } else {
-    document.getElementById('rd-note-box').style.display = 'none';
-  }
-
-  document.getElementById('remarkDrawer').classList.add('open');
-}
-/* ====== 拒绝逻辑（强制填原因）====== */
-let rejectCtx = null;
-
-function txReject(btn, orderId, type){
-  rejectCtx = { btn, orderId, type };
-  document.getElementById('rejectNote').value = '';
-  document.getElementById('rejectModal').style.display = 'flex';
-}
-
-function closeReject(){
-  document.getElementById('rejectModal').style.display = 'none';
-  rejectCtx = null;
-}
-
-async function submitReject(){
-  const note = document.getElementById('rejectNote').value.trim();
-  if(!note) return alert('必须填写拒绝原因');
-
-  const { btn, orderId, type } = rejectCtx;
-
-  btn.classList.add('btn-disabled');
-  btn.disabled = true;
-
-  const body = {
-    orderId,
-    type: normalizeType(type),
-    status: 'failed',
-    note
-  };
-
-  const r = await fetch(API_UPDATE,{
-    method:'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body)
-  });
-  const j = await r.json();
-
-  if(j.ok){
-    closeReject();
-  }else{
-    alert('拒绝失败');
+    noteBox.style.display = 'none';
   }
 }
+
+function closeRemarkDrawer(){
+  document.getElementById('remarkDrawer')?.classList.remove('open');
+}
+
+/**
+ * ⚠️ 只有点【保存】才会调用
+ * 「查看」绝对不会调用这个
+ */
+function submitRemark(){
+  if(!currentRemarkData) return;
+
+  fetch('/api/transaction/update', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + localStorage.getItem('nexbit_admin_token')
+    },
+    body: JSON.stringify({
+      orderId: currentRemarkData.orderId,
+      type: currentRemarkData.type,
+      status: currentRemarkData.status || 'pending',
+      note: document.getElementById('rd-note')?.innerText || ''
+    })
+  })
+  .then(r=>r.json())
+  .then(()=> closeRemarkDrawer())
+  .catch(()=> alert('备注失败'));
+}
+
 /* -----------------------------
    Render rows for each type
 ------------------------------ */
@@ -965,17 +954,17 @@ function renderBuySellRow(o){
   </td>
   <td>${renderActionButtons(o.orderId,'buysell', o.processed)}</td>
   <td>
-  <span
-    style="color:#1976d2;cursor:pointer"
-    onclick="openRemarkDrawer({
-      orderId: '${o.orderId}',
-      type: '${o.type || ''}',
-      time: '${o.time_us || o.time || ''}',
-      status: '${o.status || ''}',
-      reject: ${JSON.stringify(o.rejectReason || '')},
-      note: ${JSON.stringify(o.note || '')}
-    })"
-  >查看</span>
+  ${o.note || o.rejectReason
+    ? `<span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId: '${o.orderId}',
+        type: 'buysell',
+        status: '${o.status || ''}',
+        note: ${JSON.stringify(o.note || '')},
+        reject: ${JSON.stringify(o.rejectReason || '')}
+      })">查看</span>`
+    : '--'
+  }
 </td>
 </tr>`;
 }
@@ -994,17 +983,17 @@ function renderRechargeRow(o){
   <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
   <td>
-  <span
-    style="color:#1976d2;cursor:pointer"
-    onclick="openRemarkDrawer({
-      orderId: '${o.orderId}',
-      type: '${o.type || ''}',
-      time: '${o.time_us || o.time || ''}',
-      status: '${o.status || ''}',
-      reject: ${JSON.stringify(o.rejectReason || '')},
-      note: ${JSON.stringify(o.note || '')}
-    })"
-  >查看</span>
+  ${o.note || o.rejectReason
+    ? `<span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId: '${o.orderId}',
+        type: 'recharge',
+        status: '${o.status || ''}',
+        note: ${JSON.stringify(o.note || '')},
+        reject: ${JSON.stringify(o.rejectReason || '')}
+      })">查看</span>`
+    : '--'
+  }
 </td>
 </tr>`;
 }
@@ -1021,18 +1010,18 @@ function renderWithdrawRow(o){
   <td>${o.ip || '--'}</td>
   <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
-  <td>
-  <span
-    style="color:#1976d2;cursor:pointer"
-    onclick="openRemarkDrawer({
-      orderId: '${o.orderId}',
-      type: '${o.type || ''}',
-      time: '${o.time_us || o.time || ''}',
-      status: '${o.status || ''}',
-      reject: ${JSON.stringify(o.rejectReason || '')},
-      note: ${JSON.stringify(o.note || '')}
-    })"
-  >查看</span>
+ <td>
+  ${o.note || o.rejectReason
+    ? `<span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId: '${o.orderId}',
+        type: 'withdraw',
+        status: '${o.status || ''}',
+        note: ${JSON.stringify(o.note || '')},
+        reject: ${JSON.stringify(o.rejectReason || '')}
+      })">查看</span>`
+    : '--'
+  }
 </td>
 </tr>`;
 }
