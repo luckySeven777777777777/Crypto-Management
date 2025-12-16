@@ -626,7 +626,9 @@ button {
     <div style="margin-top:8px;font-size:12px;color:#666">提示：管理员可以通过后端 /api/admin/create 创建新账号。</div>
   </div>
 </div>
-
+function closeRemarkDrawer(){
+  document.getElementById('remarkDrawer')?.classList.remove('open');
+}
 <script>
 /* -----------------------------
    后端 API
@@ -956,32 +958,28 @@ function renderBuySellRow(o){
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td>${(o.tp||'-')}/${(o.sl||'-')}</td>
-  <td><span class="badge" style="background:${ o.status==='success'?'#00c851': o.status==='failed'?'#ff4444': o.status==='locked'?'#ffbb33':'#1976d2' }; color:#fff;">${o.status}</span></td>
+  <td>
+    <span class="badge">${o.status}</span>
+  </td>
   <td>${renderActionButtons(o.orderId,'buysell', o.processed)}</td>
-<!-- ✅ 备注（永远可点） -->
-<td>
-  <span
-    style="color:#1976d2;cursor:pointer"
-    onclick="openRemarkDrawer({
-      orderId: '${o.orderId || ''}',
-      type: 'BuySell',
-      time: '${o.time_us || o.time || ''}',
-      status: '${o.status || 'pending'}',
-      reject: ${JSON.stringify(o.rejectReason || '')},
-      note: ${JSON.stringify(o.note || '')}
-    })"
-  >
-    查看
-  </span>
-</td>
-`;
-}function renderRechargeRow(o){
+  <td>
+    <span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId:'${o.orderId || ''}',
+        type:'BuySell',
+        time:'${o.time_us || ''}',
+        reject:${JSON.stringify(o.rejectReason || '')},
+        note:${JSON.stringify(o.note || '')}
+      })">查看</span>
+  </td>
+</tr>`;
+}
+
+}
+function renderRechargeRow(o){
   return `
 <tr>
-  <td>
-    <div class="order-id">${o.orderId}</div>
-    <div class="small">${o.userId}</div>
-  </td>
+  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
   <td>${o.time_us || '--'}</td>
   <td>充值</td>
   <td>${o.amount}</td>
@@ -989,38 +987,24 @@ function renderBuySellRow(o){
   <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-
-  <td>
-    <span class="badge">${o.status}</span>
-  </td>
-
+  <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
-
-<!-- ✅ 备注（永远可点） -->
-<td>
-  <span
-    style="color:#1976d2;cursor:pointer"
-    onclick="openRemarkDrawer({
-      orderId: '${o.orderId || ''}',
-      type: 'BuySell',
-      time: '${o.time_us || o.time || ''}',
-      status: '${o.status || 'pending'}',
-      reject: ${JSON.stringify(o.rejectReason || '')},
-      note: ${JSON.stringify(o.note || '')}
-    })"
-  >
-    查看
-  </span>
-</td>
-`;
+  <td>
+    <span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId:'${o.orderId || ''}',
+        type:'Recharge',
+        time:'${o.time_us || ''}',
+        reject:${JSON.stringify(o.rejectReason || '')},
+        note:${JSON.stringify(o.note || '')}
+      })">查看</span>
+  </td>
+</tr>`;
 }
 function renderWithdrawRow(o){
   return `
 <tr>
-  <td>
-    <div class="order-id">${o.orderId}</div>
-    <div class="small">${o.userId}</div>
-  </td>
+  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
   <td>${o.time_us || '--'}</td>
   <td>提款</td>
   <td>${o.amount}</td>
@@ -1028,33 +1012,20 @@ function renderWithdrawRow(o){
   <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-
-  <td>
-    <span class="badge">${o.status}</span>
-  </td>
-
+  <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
-
-<!-- ✅ 备注（永远可点） -->
-<td>
-  <span
-    style="color:#1976d2;cursor:pointer"
-    onclick="openRemarkDrawer({
-      orderId: '${o.orderId || ''}',
-      type: 'BuySell',
-      time: '${o.time_us || o.time || ''}',
-      status: '${o.status || 'pending'}',
-      reject: ${JSON.stringify(o.rejectReason || '')},
-      note: ${JSON.stringify(o.note || '')}
-    })"
-  >
-    查看
-  </span>
-</td>
-`;
+  <td>
+    <span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId:'${o.orderId || ''}',
+        type:'Withdraw',
+        time:'${o.time_us || ''}',
+        reject:${JSON.stringify(o.rejectReason || '')},
+        note:${JSON.stringify(o.note || '')}
+      })">查看</span>
+  </td>
+</tr>`;
 }
-
-
 /* -----------------------------
    Fetch single order for modal (server handles fetchOrder)
 ------------------------------ */
