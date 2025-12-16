@@ -389,8 +389,8 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody id="r_table"><tr><td colspan="10" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></tr></thead>
+        <tbody id="r_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -408,8 +408,8 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></thead>
-        <tbody id="w_table"><tr><td colspan="10" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></thead>
+        <tbody id="w_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -883,49 +883,66 @@ function renderBuySellRow(o){
 function renderRechargeRow(o){
   return `
 <tr>
-  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
+  <td>
+    <div class="order-id">${o.orderId}</div>
+    <div class="small">${o.userId}</div>
+  </td>
   <td>${o.time_us || '--'}</td>
   <td>充值</td>
   <td>${o.amount}</td>
   <td>${o.coin || '--'}</td>
-  <!-- ✅ 补回估算 USDT -->
   <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td><span class="badge">${o.status}</span></td>
 
-<td>
-  ${o.note
-    ? `<span style="color:#1976d2;cursor:pointer"
-        onclick="alert(${JSON.stringify(String(o.note))})">查看</span>`
-    : '--'
-  }
-</td>
-  <td>${renderActionButtons(o.orderId,'recharge', o.status)}</td>
+  <!-- ✅ 备注列 -->
+  <td>
+    ${o.note
+      ? `<span style="color:#1976d2;cursor:pointer"
+          onclick="alert(${JSON.stringify(String(o.note))})">查看</span>`
+      : '--'
+    }
+  </td>
+
+  <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
 </tr>`;
 }
 function renderWithdrawRow(o){
   return `
 <tr>
-  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
+  <td>
+    <div class="order-id">${o.orderId}</div>
+    <div class="small">${o.userId}</div>
+  </td>
   <td>${o.time_us || '--'}</td>
   <td>提款</td>
   <td>${o.amount}</td>
   <td>${o.coin || '--'}</td>
-  <!-- ✅ 补回估算 USDT -->
   <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
- <td>
-  <span class="badge"
-    ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
-    ${o.status}
-  </span>
-</td>
+
+  <td>
+    <span class="badge"
+      ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
+      ${o.status}
+    </span>
+  </td>
+
+  <!-- ✅ 备注列 -->
+  <td>
+    ${o.note
+      ? `<span style="color:#1976d2;cursor:pointer"
+          onclick="alert(${JSON.stringify(String(o.note))})">查看</span>`
+      : '--'
+    }
+  </td>
 
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
 </tr>`;
 }
+
 /* -----------------------------
    Fetch single order for modal (server handles fetchOrder)
 ------------------------------ */
