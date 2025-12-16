@@ -698,9 +698,7 @@ function renderActionButtons(orderId, type, processed){
 </button>
 
     <button class="small-btn"
-  onclick="txAction(this,'${orderId}','${type}','remark')">
-  备注✏️
-</button>
+      onclick="addRemark('${orderId}','${type}')">备注📝</button>
   `;
 }
 /* -----------------------------
@@ -709,14 +707,19 @@ function renderActionButtons(orderId, type, processed){
 async function txAction(btn, orderId, type, action){
   if(!orderId) return alert('缺少订单ID');
 
-  // 防止重复点击
+  // ✅ 立即锁按钮（防连点）
   if(btn){
-    if(btn.disabled) return;
     btn.disabled = true;
     btn.classList.add('btn-disabled');
   }
 
-  // 登录校验
+  // 确认框
+  if(!confirm(`确定对订单 ${orderId} 执行：${action} 吗？`)){
+    if(btn) btn.disabled = false;
+    return;
+  }
+
+  // 登录检查
   if(!getAdminToken()){
     await ensureLoggedIn();
     if(!getAdminToken()){
@@ -725,16 +728,15 @@ async function txAction(btn, orderId, type, action){
     }
   }
 
-  // ===== 状态映射 =====
-  let finalStatus = null;
-  if(action === 'approve') finalStatus = 'success';
-  if(action === 'reject')  finalStatus = 'failed';
-  if(action === 'lock')    finalStatus = 'locked';
-  if(action === 'unlock')  finalStatus = 'processing';
+  // 状态映射
+  const finalStatus =
+    action === 'approve' ? 'success' :
+    action === 'reject'  ? 'failed'  :
+    action === 'lock'    ? 'locked'  :
+    'processing';
 
-  // ===== 备注 =====
-  let note = null;
-
+  // ✅ 备注逻辑（关键）
+  let note = action;
   if(action === 'reject'){
     note = prompt('请输入拒绝原因（必填）');
     if(!note){
@@ -743,34 +745,12 @@ async function txAction(btn, orderId, type, action){
     }
   }
 
-  if(action === 'remark'){
-    note = prompt('请输入备注（仅后台可见）');
-    if(!note){
-      if(btn) btn.disabled = false;
-      return;
-    }
-  }
-
-  // ===== body 组装（关键）=====
   const body = {
     orderId,
-    type: normalizeType(type)
+    type: normalizeType(type),
+    status: finalStatus,
+    note
   };
-
-  // 只有非 remark 才写 status
-  if(action !== 'remark'){
-    if(!finalStatus){
-      alert('非法操作');
-      if(btn) btn.disabled = false;
-      return;
-    }
-    body.status = finalStatus;
-  }
-
-  // 只有有值才写 note
-  if(typeof note === 'string' && note.trim()){
-    body.note = note.trim();
-  }
 
   try{
     const r = await fetch(API_UPDATE,{
@@ -779,9 +759,19 @@ async function txAction(btn, orderId, type, action){
       body: JSON.stringify(body)
     });
     const j = await r.json();
-    if(!j.ok) throw new Error(j.error || '操作失败');
+
+    if(j.ok){
+      const active = document.querySelector('.sidebar .icon.active').dataset.page;
+      if(active==='recharge') r_search();
+      else if(active==='withdraw') w_search();
+      else if(active==='buysell') bs_search();
+      else o_search();
+    }else{
+      alert('操作失败');
+      if(btn) btn.disabled = false;
+    }
   }catch(e){
-    alert(e.message);
+    alert('服务器错误');
     if(btn) btn.disabled = false;
   }
 }
@@ -819,6 +809,49 @@ async function addRemark(orderId, type){
   }
 }
 
+/* ====== 拒绝逻辑（强制填原因）====== */
+let rejectCtx = null;
+
+function txReject(btn, orderId, type){
+  rejectCtx = { btn, orderId, type };
+  document.getElementById('rejectNote').value = '';
+  document.getElementById('rejectModal').style.display = 'flex';
+}
+
+function closeReject(){
+  document.getElementById('rejectModal').style.display = 'none';
+  rejectCtx = null;
+}
+
+async function submitReject(){
+  const note = document.getElementById('rejectNote').value.trim();
+  if(!note) return alert('必须填写拒绝原因');
+
+  const { btn, orderId, type } = rejectCtx;
+
+  btn.classList.add('btn-disabled');
+  btn.disabled = true;
+
+  const body = {
+    orderId,
+    type: normalizeType(type),
+    status: 'failed',
+    note
+  };
+
+  const r = await fetch(API_UPDATE,{
+    method:'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body)
+  });
+  const j = await r.json();
+
+  if(j.ok){
+    closeReject();
+  }else{
+    alert('拒绝失败');
+  }
+}
 /* -----------------------------
    Render rows for each type
 ------------------------------ */
@@ -838,15 +871,12 @@ function renderBuySellRow(o){
   <td>${renderActionButtons(o.orderId,'buysell', o.processed)}</td>
 <!-- ✅ 就是这一条：备注 -->
     <td>
-  ${o.note
-    ? `<span class="small"
-        style="color:#1976d2;cursor:pointer"
-        onclick="alert(${JSON.stringify(o.note)})">
-        查看
-      </span>`
-    : '--'
-  }
-</td>
+      ${o.note
+        ? `<span style="color:#1976d2;cursor:pointer"
+            onclick="alert(${JSON.stringify(String(o.note))})">查看</span>`
+        : '--'
+      }
+    </td>
   </tr>
   `;
 }
@@ -866,11 +896,8 @@ function renderRechargeRow(o){
 
 <td>
   ${o.note
-    ? `<span class="small"
-        style="color:#1976d2;cursor:pointer"
-        onclick="alert(${JSON.stringify(o.note)})">
-        查看
-      </span>`
+    ? `<span style="color:#1976d2;cursor:pointer"
+        onclick="alert(${JSON.stringify(String(o.note))})">查看</span>`
     : '--'
   }
 </td>
@@ -895,16 +922,7 @@ function renderWithdrawRow(o){
     ${o.status}
   </span>
 </td>
-<td>
-  ${o.note
-    ? `<span class="small"
-        style="color:#1976d2;cursor:pointer"
-        onclick="alert(${JSON.stringify(o.note)})">
-        查看
-      </span>`
-    : '--'
-  }
-</td>
+
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
 </tr>`;
 }
@@ -1092,13 +1110,7 @@ async function loadMembers(){
 async function loadDashboard(){
   try{ const all = await fetchAll(); $('#todayRecharge').innerText = all.stats?.todayRecharge || 0; $('#todayWithdraw').innerText = all.stats?.todayWithdraw || 0; $('#todayOrders').innerText = all.stats?.todayOrders || 0; $('#alertsCount').innerText = all.stats?.alerts || 0; $('#genTime').innerText = new Date().toLocaleString(); }catch(e){ $('#todayRecharge').innerText="--"; }
 }
-function showOrderDetail(o){
-  alert(
-    `订单号：${o.orderId}\n` +
-    `状态：${o.status}\n` +
-    `备注：${o.note || '无'}`
-  );
-}
+
 /* -----------------------------
    Init
 ------------------------------ */
@@ -1112,6 +1124,17 @@ document.getElementById('logoutBtn')?.addEventListener('click', () => {
   location.href = 'login.html';
 });
 </script>
+<div class="modal" id="rejectModal">
+  <div class="box">
+    <h3>拒绝原因</h3>
+    <textarea id="rejectNote"
+      placeholder="请输入拒绝原因（必填）"
+      style="width:100%;height:80px"></textarea>
+
+    <div style="margin-top:10px;text-align:right">
+      <button onclick="submitReject()">确认拒绝</button>
+      <button onclick="closeReject()">取消</button>
+    </div>
   </div>
 </div>
 
