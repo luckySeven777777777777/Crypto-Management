@@ -63,30 +63,55 @@
   document.getElementById('btnShowLogin').onclick = () => { document.getElementById('loginBox').style.display = 'block'; }
 
   document.getElementById('btnLogin').onclick = async () => {
-    const id = el('adminId').value.trim(); 
-    const pw = el('adminPw').value;
-    if (!id || !pw) return alert('请输入');
-    try {
-      const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, password: pw }) });
-      const j = await r.json();
-      if (j.ok && j.token) {
-        localStorage.setItem('nexbit_admin_token', j.token); 
-        el('loginState').innerText = id; 
-        alert('登录成功'); 
+ async function submitAdminLogin() {
+  const id = document.getElementById('adminName').value.trim();
+  const pw = document.getElementById('adminPassword').value;
+  if (!id || !pw) return alert('请输入管理员ID与密码');
+  
+  try {
+    const r = await fetch('/api/admin/login', { 
+      method:'POST', 
+      headers:{'Content-Type':'application/json'}, 
+      body: JSON.stringify({ id, password: pw }) 
+    });
+    const j = await r.json();
+    if (j.ok && j.token) {
+      localStorage.setItem('nexbit_admin_token', j.token); 
+      document.getElementById('loginState').innerText = id; 
+      alert('登录成功'); 
 
-      // 检查是否启用了 2FA
-      const has2FA = await checkIf2FAEnabled(id);
+      // 调试日志
+      console.log("检查2FA是否启用...");
+      const has2FA = await checkIf2FAEnabled(id);  // 检查是否启用2FA
+      console.log("2FA 是否启用：", has2FA);
+
       if (has2FA) {
-        // 显示 2FA 输入框
-        document.getElementById('adminLoginModal').style.display = 'none'; // 隐藏登录框
-        document.getElementById('gaBox').style.display = 'block'; // 显示 2FA 输入框
-        document.getElementById('gaAdminId').value = id; // 填充管理员 ID
-        return; // 等待用户输入验证码
+        // 如果启用了2FA，隐藏登录框并显示2FA验证码输入框
+        document.getElementById('adminLoginModal').style.display = 'none'; 
+        document.getElementById('gaBox').style.display = 'block'; 
+        document.getElementById('gaAdminId').value = id;  // 填充管理员ID到输入框
+        return;  // 等待用户输入验证码
       }
-        loadAdmins(); 
-      } else alert('登录失败: ' + (j.error || ''));
-    } catch (e) { alert('请求失败'); }
-  };
+
+      loadAdmins();  // 如果没有启用2FA，直接加载管理员列表
+    } else {
+      alert('登录失败: ' + (j.error || '未知'));
+    }
+  } catch (e) { 
+    alert('请求失败'); 
+  }
+}
+async function checkIf2FAEnabled(adminId) {
+  const response = await fetch('/api/admin/verify-2fa', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ adminId, code: '' })  // 发送一个空验证码来验证
+  });
+  const data = await response.json();
+  return data.ok;  // 如果启用2FA，返回true，否则返回false
+}
+
+
 
   document.getElementById('btnCreate').onclick = async () => {
   const btnCreate = document.getElementById('btnCreate'); // 获取按钮元素
