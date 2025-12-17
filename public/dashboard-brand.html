@@ -939,13 +939,35 @@ async function addRemark(orderId, type, currentStatus){
     const j = await r.json();
 
     if(j.ok){
-      alert('备注已保存');
+  alert('备注已保存');
 
-      const active = document.querySelector('.sidebar .icon.active')?.dataset.page;
-      if(active === 'recharge') r_search();
-      else if(active === 'withdraw') w_search();
-      else if(active === 'buysell') bs_search();
-      else o_search();
+  // 🔥 前端立即生效（不用等接口）
+  const row = document.querySelector(
+    `[onclick*="${orderId}"]`
+  )?.closest('tr');
+
+  if(row){
+    const view = row.querySelector('[data-remark]');
+    if(view){
+      const data = JSON.parse(
+        decodeURIComponent(escape(atob(view.dataset.remark)))
+      );
+      data.note = remark;
+
+      view.dataset.remark = btoa(
+        unescape(encodeURIComponent(JSON.stringify(data)))
+      );
+    }
+  }
+
+  // 原有刷新逻辑
+  const active = document.querySelector('.sidebar .icon.active')?.dataset.page;
+  if(active === 'recharge') r_search();
+  else if(active === 'withdraw') w_search();
+  else if(active === 'buysell') bs_search();
+  else o_search();
+}
+
 
     }else{
       alert('备注失败：' + (j.error || '未知错误'));
