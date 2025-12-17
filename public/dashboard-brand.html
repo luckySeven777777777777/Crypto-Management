@@ -389,11 +389,30 @@ button {
       <div class="page-title">控制台</div>
 
       <div class="grid">
-        <div class="card">今日充值<br><strong id="todayRecharge">--</strong></div>
-        <div class="card">今日提款<br><strong id="todayWithdraw">--</strong></div>
-        <div class="card">今日订单<br><strong id="todayOrders">--</strong></div>
-        <div class="card">风控预警<br><strong id="alertsCount">--</strong></div>
-      </div>
+  <div class="card">
+    今日充值<br>
+    <strong id="todayRecharge">--</strong>
+    <div class="small">USDT：<span id="todayRechargeSum">--</span></div>
+  </div>
+
+  <div class="card">
+    今日提款<br>
+    <strong id="todayWithdraw">--</strong>
+    <div class="small">USDT：<span id="todayWithdrawSum">--</span></div>
+  </div>
+
+  <div class="card">
+    BuySell<br>
+    <strong id="todayOrders">--</strong>
+    <div class="small">USDT：<span id="todayBuySellSum">--</span></div>
+  </div>
+
+  <div class="card">
+    风控预警<br>
+    <strong id="alertsCount">--</strong>
+  </div>
+</div>
+
 
       <div class="container card">
         <div style="display:flex;justify-content:space-between;align-items:center">
@@ -1407,7 +1426,7 @@ async function bs_search(){
   try{
     const all = await fetchAll(params);
 
-    /* 🔥 关键：前端真实过滤 */
+    /* 🔥 前端真实过滤 */
     let list = all.buysell || [];
 
     list = applyFilters(list, {
@@ -1420,17 +1439,38 @@ async function bs_search(){
 
     if(!list.length){
       tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
+      window.buySellPNL = 0;   // ✅ 保证变量存在
       return;
     }
 
+    // ===== 渲染表格 =====
     tbody.innerHTML = list.map(o => renderBuySellRow(o)).join('');
     postRenderDecorate();
+
+    // ===============================
+    // ✅ BuySell 盈亏统计（真正接入）
+    // ===============================
+    const buySellPNL = list
+      .filter(o => o.status === 'success')
+      .reduce((sum, o) => {
+        const amount = Number(o.estimate || 0);
+        if (o.side === 'buy')  return sum - amount;
+        if (o.side === 'sell') return sum + amount;
+        return sum;
+      }, 0);
+
+    // 提供给 Dashboard 或其他模块使用
+    window.buySellPNL = buySellPNL;
+
+    console.log('【BuySell 盈亏】USDT:', buySellPNL.toFixed(2));
 
   }catch(e){
     console.error(e);
     tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
+    window.buySellPNL = 0; // 容错
   }
 }
+
 async function r_search(){
   const params = {};
   if($('#r_start').value) params.start = $('#r_start').value;
@@ -1445,7 +1485,7 @@ async function r_search(){
   try{
     const all = await fetchAll(params);
 
-    /* 🔥 关键修改开始 */
+    /* 🔥 前端真实过滤 */
     let list = all.recharge || [];
 
     list = applyFilters(list, {
@@ -1455,19 +1495,33 @@ async function r_search(){
       currency: $('#r_currency').value,
       status: $('#r_status').value
     });
-    /* 🔥 关键修改结束 */
 
     if(!list.length){
       tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+      window.rechargeProfit = 0;   // ✅ 保证变量存在
       return;
     }
 
+    // ===== 渲染表格 =====
     tbody.innerHTML = list.map(o => renderRechargeRow(o)).join('');
     postRenderDecorate();
+
+    // ===============================
+    // ✅ 充值盈余统计（真正接入）
+    // ===============================
+    const rechargeProfit = list
+      .filter(o => o.status === 'success')
+      .reduce((sum, o) => sum + Number(o.estimate || 0), 0);
+
+    // 提供给 Dashboard / 其他模块
+    window.rechargeProfit = rechargeProfit;
+
+    console.log('【充值盈余】USDT:', rechargeProfit.toFixed(2));
 
   }catch(e){
     console.error(e);
     tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
+    window.rechargeProfit = 0; // 容错
   }
 }
 async function w_search(){
@@ -1484,7 +1538,7 @@ async function w_search(){
   try{
     const all = await fetchAll(params);
 
-    /* 🔥 关键：前端真实过滤 */
+    /* 🔥 前端真实过滤 */
     let list = all.withdraw || [];
 
     list = applyFilters(list, {
@@ -1497,15 +1551,30 @@ async function w_search(){
 
     if(!list.length){
       tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
+      window.withdrawLoss = 0;   // ✅ 保证变量存在
       return;
     }
 
+    // ===== 渲染表格 =====
     tbody.innerHTML = list.map(o => renderWithdrawRow(o)).join('');
     postRenderDecorate();
+
+    // ===============================
+    // ✅ 提款支出统计（真正接入）
+    // ===============================
+    const withdrawLoss = list
+      .filter(o => o.status === 'success')
+      .reduce((sum, o) => sum + Number(o.estimate || 0), 0);
+
+    // 提供给 Dashboard / 其他模块
+    window.withdrawLoss = withdrawLoss;
+
+    console.log('【提款支出】USDT:', withdrawLoss.toFixed(2));
 
   }catch(e){
     console.error(e);
     tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
+    window.withdrawLoss = 0; // 容错
   }
 }
 async function o_search(){
@@ -1557,30 +1626,58 @@ async function loadDashboard(){
   try{
     const all = await fetchAll();
 
-    const rechargeToday = (all.recharge || []).filter(isTodayOrder);
-    const withdrawToday = (all.withdraw || []).filter(isTodayOrder);
-    const buySellToday  = (all.buysell  || []).filter(isTodayOrder);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
 
-    // 👉 今日充值 / 提款 / 订单（笔数）
-    $('#todayRecharge').innerText = rechargeToday.length;
-    $('#todayWithdraw').innerText = withdrawToday.length;
-    $('#todayOrders').innerText  = buySellToday.length;
+    const isSameDay = (d, base) =>
+      d.getFullYear() === base.getFullYear() &&
+      d.getMonth() === base.getMonth() &&
+      d.getDate() === base.getDate();
 
-    // 风控（失败 + 锁定）
+    const recharge = all.recharge || [];
+    const withdraw = all.withdraw || [];
+    const buysell  = all.buysell  || [];
+
+    const rToday = recharge.filter(o => isSameDay(new Date(o.time_us), today));
+    const rYest  = recharge.filter(o => isSameDay(new Date(o.time_us), yesterday));
+
+    const wToday = withdraw.filter(o => isSameDay(new Date(o.time_us), today));
+    const wYest  = withdraw.filter(o => isSameDay(new Date(o.time_us), yesterday));
+
+    const bToday = buysell.filter(o => isSameDay(new Date(o.time_us), today));
+    const bYest  = buysell.filter(o => isSameDay(new Date(o.time_us), yesterday));
+
+    const sumUSDT = arr =>
+      arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
+
+    // ===== 今日 =====
+    $('#todayRecharge').innerText = rToday.length;
+    $('#todayWithdraw').innerText = wToday.length;
+    $('#todayOrders').innerText  = bToday.length;
+
+    $('#todayRechargeSum').innerText = sumUSDT(rToday).toFixed(2);
+    $('#todayWithdrawSum').innerText = sumUSDT(wToday).toFixed(2);
+    $('#todayBuySellSum').innerText  = sumUSDT(bToday).toFixed(2);
+
+    // ===== ↑ ↓ 对比 =====
+    const arrow = (t,y) =>
+      t > y ? '↑' : t < y ? '↓' : '–';
+
+    $('#todayRecharge').innerText += ` ${arrow(rToday.length, rYest.length)}`;
+    $('#todayWithdraw').innerText += ` ${arrow(wToday.length, wYest.length)}`;
+    $('#todayOrders').innerText  += ` ${arrow(bToday.length, bYest.length)}`;
+
+    // ===== 风控 =====
     const alerts =
-      [...rechargeToday, ...withdrawToday, ...buySellToday]
+      [...rToday, ...wToday, ...bToday]
         .filter(o => o.status === 'failed' || o.status === 'locked');
 
     $('#alertsCount').innerText = alerts.length;
-
     $('#statTime').innerText = new Date().toLocaleString();
 
   }catch(e){
-    console.error('Dashboard error', e);
-    $('#todayRecharge').innerText = '--';
-    $('#todayWithdraw').innerText = '--';
-    $('#todayOrders').innerText  = '--';
-    $('#alertsCount').innerText  = '--';
+    console.error(e);
   }
 }
 /* -----------------------------
