@@ -840,16 +840,19 @@ function renderActionButtons(orderId, type, processed, status){
 async function txAction(btn, orderId, type, action){
   if(!orderId) return alert('缺少订单ID');
 
+  // ✅ 立即锁按钮（防连点）
   if(btn){
     btn.disabled = true;
     btn.classList.add('btn-disabled');
   }
 
+  // 确认框
   if(!confirm(`确定对订单 ${orderId} 执行：${action} 吗？`)){
     if(btn) btn.disabled = false;
     return;
   }
 
+  // 登录检查
   if(!getAdminToken()){
     await ensureLoggedIn();
     if(!getAdminToken()){
@@ -857,63 +860,32 @@ async function txAction(btn, orderId, type, action){
       return;
     }
   }
-  // 🔥【关键修复】取消提款：必须走专用退款接口
-  if(action === 'cancel'){
-    if(!confirm('确认取消提款并原路退回金额？')){
-      if(btn) btn.disabled = false;
-      return;
-    }
 
-    try{
-      const r = await fetch(API_WITHDRAW_CANCEL, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ orderId })
-      });
-      const j = await r.json();
+ // 状态映射（这段保留）
+const finalStatus =
+  action === 'approve' ? 'success' :
+  action === 'reject'  ? 'failed'  :
+  action === 'lock'    ? 'locked'  :
+  'processing';
 
-      if(j.ok){
-        alert('已取消提款，金额已原路返回');
-        w_search(); // 刷新提款列表
-      }else{
-        alert(j.error || '操作失败');
-      }
-    }catch(e){
-      alert('服务器错误');
-    }
-
+// 备注逻辑
+let note = action;
+if(action === 'reject'){
+  note = prompt('请输入拒绝原因（必填）');
+  if(!note){
     if(btn) btn.disabled = false;
-    return; // ⛔ 非常关键：阻止继续走 API_UPDATE
+    return;
   }
+}
 
-  const finalStatus =
-    action === 'approve' ? 'success' :
-    action === 'reject'  ? 'failed'  :
-    action === 'lock'    ? 'locked'  :
-    'processing';
+// ✅ 真正发送的内容（重点）
+const body = {
+  orderId,
+  type: normalizeType(type),
+  status: finalStatus,   // ✅ 必须用 finalStatus
+  note                  // ✅ 用上面算出来的 note
+};
 
-  const body = {
-    orderId,
-    type: normalizeType(type),
-    status: finalStatus
-  };
-
-  // ✅ 只有拒绝才写 reject
-  if(action === 'reject'){
-    const reason = prompt('请输入拒绝原因（必填）');
-    if(!reason){
-      if(btn) btn.disabled = false;
-      return;
-    }
-    body.reject = reason;   // 🔥 关键
-  }
-  // ✅ approve 时允许填写普通备注（可留空）
-  if(action === 'approve'){
-    const note = prompt('请输入通过备注（可留空）：');
-    if(note){
-      body.note = note;   // 🔥 关键：写入 note
-    }
-  }
 
   try{
     const r = await fetch(API_UPDATE,{
@@ -1088,7 +1060,7 @@ function renderBuySellRow(o){
   <td>${renderActionButtons(o.orderId,'buysell', o.processed, o.status)}</td>
   <td>
 ${
-  (o.note || o.remark || o.reject)
+  o.note
   ? (() => {
       const remarkData = btoa(
         unescape(
@@ -1100,20 +1072,18 @@ ${
               time: o.time_us || '',
 
               // 🔥 订单核心信息
-side: o.side,
-amount: o.amount,
-coin: o.coin,
-estimate: o.estimate,
-tp: o.tp,
-sl: o.sl,
-wallet: o.wallet,
-ip: o.ip,
-status: o.status,
+              side: o.side,
+              amount: o.amount,
+              coin: o.coin,
+              estimate: o.estimate,
+              tp: o.tp,
+              sl: o.sl,
+              wallet: o.wallet,
+              ip: o.ip,
+              status: o.status,
 
-// ===== 备注（统一兜底）=====
-note: o.note || o.remark || '',      // 普通备注
-reject: o.reject || ''               // 拒绝原因
-
+              // 备注
+              note: o.note
             })
           )
         )
@@ -1149,7 +1119,7 @@ function renderRechargeRow(o){
   <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
   <td>
 ${
-  (o.note || o.remark || o.reject)
+  o.note
   ? (() => {
       const remarkData = btoa(
         unescape(
@@ -1161,20 +1131,18 @@ ${
               time: o.time_us || '',
 
               // 🔥 订单核心信息
-side: o.side,
-amount: o.amount,
-coin: o.coin,
-estimate: o.estimate,
-tp: o.tp,
-sl: o.sl,
-wallet: o.wallet,
-ip: o.ip,
-status: o.status,
+              side: o.side,
+              amount: o.amount,
+              coin: o.coin,
+              estimate: o.estimate,
+              tp: o.tp,
+              sl: o.sl,
+              wallet: o.wallet,
+              ip: o.ip,
+              status: o.status,
 
-// ===== 备注（统一兜底）=====
-note: o.note || o.remark || '',      // 普通备注
-reject: o.reject || ''               // 拒绝原因
-
+              // 备注
+              note: o.note
             })
           )
         )
@@ -1209,7 +1177,7 @@ function renderWithdrawRow(o){
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
  <td>
 ${
-  (o.note || o.remark || o.reject)
+  o.note
   ? (() => {
       const remarkData = btoa(
         unescape(
@@ -1221,19 +1189,18 @@ ${
               time: o.time_us || '',
 
               // 🔥 订单核心信息
-side: o.side,
-amount: o.amount,
-coin: o.coin,
-estimate: o.estimate,
-tp: o.tp,
-sl: o.sl,
-wallet: o.wallet,
-ip: o.ip,
-status: o.status,
+              side: o.side,
+              amount: o.amount,
+              coin: o.coin,
+              estimate: o.estimate,
+              tp: o.tp,
+              sl: o.sl,
+              wallet: o.wallet,
+              ip: o.ip,
+              status: o.status,
 
-// ===== 备注（统一兜底）=====
-note: o.note || o.remark || '',      // 普通备注
-reject: o.reject || ''               // 拒绝原因
+              // 备注
+              note: o.note
             })
           )
         )
