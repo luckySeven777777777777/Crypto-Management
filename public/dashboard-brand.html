@@ -1691,11 +1691,16 @@ rows.sort((a, b) => {
 
     if(!rows.length){ tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`; return; }
     tbody.innerHTML = rows.map(o=>{
-      const type = o.side ? 'buy/sell' : o.password ? 'withdraw' : 'recharge';
+      const typeText = {
+  recharge: '充值',
+  withdraw: '提款',
+  buysell: '买卖'
+}[o._type] || o._type;
+
       return `<tr>
         <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
         <td>${o.time_us || '--'}</td>
-        <td>${type}</td>
+        <td>${typeText}</td>
         <td>${o.amount}</td>
         <td>${o.currency || o.coin || '--'}</td>
         <td>${o.wallet || '--'}</td>
