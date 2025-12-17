@@ -701,6 +701,33 @@ const API_UPDATE = '/api/transaction/update';
 /* helpers */
 function $(s){ return document.querySelector(s); }
 function $all(s){ return Array.from(document.querySelectorAll(s)); }
+// ===== Dashboard 今日时间范围 =====
+function getTodayRange(){
+  const now = new Date();
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0, 0, 0
+  );
+  const end = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23, 59, 59
+  );
+  return { start, end };
+}
+// ===== 判断订单是否属于今天 =====
+function isTodayOrder(o){
+  const t = o.time_us || o.time || o.createdAt;
+  if(!t) return false;
+
+  const d = new Date(t);
+  const { start, end } = getTodayRange();
+  return d >= start && d <= end;
+}
+
 /* ===== 前端真实过滤逻辑（新增）===== */
 function applyFilters(list, {
   start, end, q, currency, status, side
@@ -1086,7 +1113,7 @@ function renderBuySellRow(o){
   return `
 <tr>
   <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
-  <td>${o.time_us || '--'}</td>
+  <td>${o.time_us || o.time || o.createdAt || '--'}</td>
   <td>${o.side}</td>
   <td>${o.amount}</td>
   <td>${o.coin}</td>
@@ -1527,7 +1554,34 @@ async function loadMembers(){
   try{ const all = await fetchAll(); const users = all.users || {}; if(!Object.keys(users).length){ tbody.innerHTML = `<tr><td colspan="12">暂无数据</td></tr>`; return; } tbody.innerHTML = Object.keys(users).map(uid=>`<tr><td>${uid}</td><td>${users[uid].wallet||'--'}</td><td>${users[uid].updated||'--'}</td></tr>`).join(''); }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
 }
 async function loadDashboard(){
-  try{ const all = await fetchAll(); $('#todayRecharge').innerText = all.stats?.todayRecharge || 0; $('#todayWithdraw').innerText = all.stats?.todayWithdraw || 0; $('#todayOrders').innerText = all.stats?.todayOrders || 0; $('#alertsCount').innerText = all.stats?.alerts || 0; $('#genTime').innerText = new Date().toLocaleString(); }catch(e){ $('#todayRecharge').innerText="--"; }
+  try{
+    const all = await fetchAll();
+
+    const rechargeToday = (all.recharge || []).filter(isTodayOrder);
+    const withdrawToday = (all.withdraw || []).filter(isTodayOrder);
+    const buySellToday  = (all.buysell  || []).filter(isTodayOrder);
+
+    // 👉 今日充值 / 提款 / 订单（笔数）
+    $('#todayRecharge').innerText = rechargeToday.length;
+    $('#todayWithdraw').innerText = withdrawToday.length;
+    $('#todayOrders').innerText  = buySellToday.length;
+
+    // 风控（失败 + 锁定）
+    const alerts =
+      [...rechargeToday, ...withdrawToday, ...buySellToday]
+        .filter(o => o.status === 'failed' || o.status === 'locked');
+
+    $('#alertsCount').innerText = alerts.length;
+
+    $('#statTime').innerText = new Date().toLocaleString();
+
+  }catch(e){
+    console.error('Dashboard error', e);
+    $('#todayRecharge').innerText = '--';
+    $('#todayWithdraw').innerText = '--';
+    $('#todayOrders').innerText  = '--';
+    $('#alertsCount').innerText  = '--';
+  }
 }
 /* -----------------------------
    Init
