@@ -1060,7 +1060,7 @@ function renderBuySellRow(o){
   <td>${renderActionButtons(o.orderId,'buysell', o.processed, o.status)}</td>
   <td>
 ${
-  o.note
+  (o.note || o.remark || o.reject)
   ? (() => {
       const remarkData = btoa(
         unescape(
@@ -1072,18 +1072,20 @@ ${
               time: o.time_us || '',
 
               // 🔥 订单核心信息
-              side: o.side,
-              amount: o.amount,
-              coin: o.coin,
-              estimate: o.estimate,
-              tp: o.tp,
-              sl: o.sl,
-              wallet: o.wallet,
-              ip: o.ip,
-              status: o.status,
+side: o.side,
+amount: o.amount,
+coin: o.coin,
+estimate: o.estimate,
+tp: o.tp,
+sl: o.sl,
+wallet: o.wallet,
+ip: o.ip,
+status: o.status,
 
-              // 备注
-              note: o.note
+// ===== 备注（统一兜底）=====
+note: o.note || o.remark || '',      // 普通备注
+reject: o.reject || ''               // 拒绝原因
+
             })
           )
         )
@@ -1119,7 +1121,7 @@ function renderRechargeRow(o){
   <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
   <td>
 ${
-  o.note
+  (o.note || o.remark || o.reject)
   ? (() => {
       const remarkData = btoa(
         unescape(
@@ -1131,18 +1133,20 @@ ${
               time: o.time_us || '',
 
               // 🔥 订单核心信息
-              side: o.side,
-              amount: o.amount,
-              coin: o.coin,
-              estimate: o.estimate,
-              tp: o.tp,
-              sl: o.sl,
-              wallet: o.wallet,
-              ip: o.ip,
-              status: o.status,
+side: o.side,
+amount: o.amount,
+coin: o.coin,
+estimate: o.estimate,
+tp: o.tp,
+sl: o.sl,
+wallet: o.wallet,
+ip: o.ip,
+status: o.status,
 
-              // 备注
-              note: o.note
+// ===== 备注（统一兜底）=====
+note: o.note || o.remark || '',      // 普通备注
+reject: o.reject || ''               // 拒绝原因
+
             })
           )
         )
@@ -1177,7 +1181,7 @@ function renderWithdrawRow(o){
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
  <td>
 ${
-  o.note
+  (o.note || o.remark || o.reject)
   ? (() => {
       const remarkData = btoa(
         unescape(
@@ -1189,18 +1193,19 @@ ${
               time: o.time_us || '',
 
               // 🔥 订单核心信息
-              side: o.side,
-              amount: o.amount,
-              coin: o.coin,
-              estimate: o.estimate,
-              tp: o.tp,
-              sl: o.sl,
-              wallet: o.wallet,
-              ip: o.ip,
-              status: o.status,
+side: o.side,
+amount: o.amount,
+coin: o.coin,
+estimate: o.estimate,
+tp: o.tp,
+sl: o.sl,
+wallet: o.wallet,
+ip: o.ip,
+status: o.status,
 
-              // 备注
-              note: o.note
+// ===== 备注（统一兜底）=====
+note: o.note || o.remark || '',      // 普通备注
+reject: o.reject || ''               // 拒绝原因
             })
           )
         )
