@@ -352,6 +352,46 @@ button {
   font-weight: 700;
   margin-bottom: 6px;
 }
+/* ===== 盈亏高亮 ===== */
+.pnl-card{
+  position: relative;
+  border-radius: 10px;
+  padding: 14px;
+  color: #fff;
+  font-weight: 700;
+  overflow: hidden;
+}
+
+.pnl-positive{
+  background: linear-gradient(135deg,#00c851,#00e676);
+  box-shadow: 0 0 18px rgba(0,200,81,.45);
+}
+
+.pnl-negative{
+  background: linear-gradient(135deg,#ff4444,#ff6b6b);
+  box-shadow: 0 0 18px rgba(255,68,68,.45);
+}
+
+.pnl-value{
+  font-size: 22px;
+  margin-top: 6px;
+  letter-spacing: .5px;
+}
+
+.pnl-sub{
+  font-size: 12px;
+  opacity: .9;
+}
+
+.pnl-flash{
+  animation: pnlPulse 1.6s infinite;
+}
+
+@keyframes pnlPulse{
+  0%{box-shadow:0 0 10px rgba(255,255,255,.15)}
+  50%{box-shadow:0 0 24px rgba(255,255,255,.55)}
+  100%{box-shadow:0 0 10px rgba(255,255,255,.15)}
+}
 
 </style>
 </head>
@@ -406,6 +446,11 @@ button {
     <strong id="todayOrders">--</strong>
     <div class="small">USDT：<span id="todayBuySellSum">--</span></div>
   </div>
+<div class="card pnl-card" id="pnlCard">
+  总盈亏
+  <div class="pnl-value" id="pnlValue">--</div>
+  <div class="pnl-sub">USDT（实时）</div>
+</div>
 
   <div class="card">
     风控预警<br>
@@ -948,41 +993,30 @@ async function txAction(btn, orderId, type, action){
   }
 
  // 状态映射（这段保留）
-// 状态映射
 const finalStatus =
   action === 'approve' ? 'success' :
   action === 'reject'  ? 'failed'  :
   action === 'lock'    ? 'locked'  :
   'processing';
 
-// ===== 新备注逻辑（从这里开始）=====
-const adminName =
-  document.getElementById('adminUser')?.innerText || 'admin';
-
-const nowTime = new Date().toLocaleString();
-
-let note = {
-  text: action,
-  admin: adminName,
-  time: nowTime
-};
-
+// 备注逻辑
+let note = action;
 if(action === 'reject'){
-  const reason = prompt('请输入拒绝原因（必填）');
-  if(!reason){
+  note = prompt('请输入拒绝原因（必填）');
+  if(!note){
     if(btn) btn.disabled = false;
     return;
   }
-  note.text = reason;
 }
 
-// ===== 真正发送 =====
+// ✅ 真正发送的内容（重点）
 const body = {
   orderId,
   type: normalizeType(type),
-  status: finalStatus,
-  note
+  status: finalStatus,   // ✅ 必须用 finalStatus
+  note                  // ✅ 用上面算出来的 note
 };
+
 
   try{
     const r = await fetch(API_UPDATE,{
@@ -1122,22 +1156,11 @@ function openRemarkDrawer(data){
   // ===== 普通备注 =====
   const noteBox = document.getElementById('rd-note-box');
   const noteText = document.getElementById('rd-note');
-// ===== 普通备注（支持 admin + time）=====
-if (data.note) {
-  noteBox.style.display = 'block';
 
-  if (typeof data.note === 'object') {
-    noteText.innerHTML = `
-      <div>${data.note.text || ''}</div>
-      <div class="small" style="margin-top:6px">
-        🕒 ${data.note.time || '--'} ｜ 👤 ${data.note.admin || '--'}
-      </div>
-    `;
-  } else {
+  if (data.note) {
+    noteBox.style.display = 'block';
     noteText.innerText = data.note;
-  }
-}
-else {
+  } else {
     noteBox.style.display = 'none';
     noteText.innerText = '';
   }
@@ -1702,6 +1725,30 @@ async function loadDashboard(){
     console.error(e);
   }
 }
+// ===============================
+// 🔥 总盈亏高亮显示
+// ===============================
+const pnl =
+  (window.rechargeProfit || 0)
+  - (window.withdrawLoss || 0)
+  + (window.buySellPNL || 0);
+
+const pnlCard  = document.getElementById('pnlCard');
+const pnlValue = document.getElementById('pnlValue');
+
+if(pnlCard && pnlValue){
+  pnlValue.innerText =
+    (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+
+  pnlCard.classList.remove('pnl-positive','pnl-negative','pnl-flash');
+
+  if(pnl >= 0){
+    pnlCard.classList.add('pnl-positive','pnl-flash');
+  }else{
+    pnlCard.classList.add('pnl-negative','pnl-flash');
+  }
+}
+
 /* -----------------------------
    Init
 ------------------------------ */
