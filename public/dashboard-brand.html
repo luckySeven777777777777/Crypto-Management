@@ -655,7 +655,8 @@ button {
 <!-- JavaScript -->
 <script>
   // 处理管理员创建
-  async function createAdmin() {
+ // 处理管理员创建
+async function createAdmin() {
   const adminId = document.getElementById('newAdminId').value;
   const password = document.getElementById('newAdminPassword').value;
   const permissions = [];
@@ -668,6 +669,12 @@ button {
   // 获取存储在 localStorage 中的管理员 token
   const adminToken = getAdminToken();
 
+  // 检查是否获取到 token
+  if (!adminToken) {
+    alert("管理员未登录或无效的管理员 Token，请先登录！");
+    return;
+  }
+
   // 向后端发起创建管理员请求
   const response = await fetch('/api/admin/create', {
     method: 'POST',
@@ -679,6 +686,7 @@ button {
       id: adminId,
       password,
       createToken: adminToken,  // 使用获取的 adminToken 作为 createToken
+      permissions,  // 传递权限数据
     }),
   });
 
@@ -691,16 +699,6 @@ button {
     alert('创建失败: ' + (data.error || '未知错误'));
   }
 }
-
-    const data = await response.json();
-
-    if (data.ok) {
-      alert('管理员创建成功');
-      loadAdmins(); // 刷新管理员列表
-    } else {
-      alert('创建失败: ' + (data.error || '未知错误'));
-    }
-  }
 
   // 加载管理员列表
   async function loadAdmins() {
