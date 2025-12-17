@@ -790,51 +790,35 @@ app.post('/api/transaction/update', async (req, res) => {
   try {
     if (!db) return res.json({ ok:false, error:'no-db' });
 
-    // ===== 1️⃣ 统一解析 token（只做一次）=====
     const auth = req.headers.authorization || '';
     if (!auth.startsWith('Bearer '))
       return res.status(403).json({ ok:false });
 
     const token = auth.slice(7);
-
-    // ===== 2️⃣ 校验 token 有效性 =====
     if (!await isValidAdminToken(token))
       return res.status(403).json({ ok:false });
 
-    // ===== 3️⃣ 取管理员 + 状态 =====
     const admin = await getAdminByToken(token);
     if (!admin)
       return res.status(403).json({ ok:false });
-    return res.json({
-  ok: true,
-  recharge: admin.permissions.recharge
-    ? sortByTimeDesc(Object.values(rechargeSnap.val() || {}))
-    : [],
-  withdraw: admin.permissions.withdraw
-    ? sortByTimeDesc(Object.values(withdrawSnap.val() || {}))
-    : [],
-  buysell: admin.permissions.buysell
-    ? sortByTimeDesc(Object.values(buysellSnap.val() || {}))
-    : [],
-  users: usersSnap.val() || {}
-});
 
-    // ===== 4️⃣ 按 transaction type 校验权限 =====
-    const { type } = req.body;
+    // ✅ 只剩这一处解构
+    const { type, orderId, status, note } = req.body;
 
+    // 权限校验
     if (type === 'recharge' && !admin.permissions.recharge)
-      return res.status(403).json({ ok:false, error:'NO_RECHARGE_PERMISSION' });
+      return res.status(403).json({ ok:false });
 
     if (type === 'withdraw' && !admin.permissions.withdraw)
-      return res.status(403).json({ ok:false, error:'NO_WITHDRAW_PERMISSION' });
+      return res.status(403).json({ ok:false });
 
     if (type === 'buysell' && !admin.permissions.buysell)
-      return res.status(403).json({ ok:false, error:'NO_BUYSELL_PERMISSION' });
+      return res.status(403).json({ ok:false });
 
     const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
     const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
 
-    const { type, orderId, status, note } = req.body;
+  
     if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
 
     const ref = db.ref(`orders/${type}/${orderId}`);
