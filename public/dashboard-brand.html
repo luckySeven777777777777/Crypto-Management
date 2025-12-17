@@ -833,6 +833,41 @@ if (end && t && new Date(t) > new Date(end + ' 23:59:59')) return false;
   });
 }
 /* ===============================
+   ✅ 通用前端分页工具
+=============================== */
+const PAGE_SIZE = 20;
+const pageState = {
+  bs: 1,
+  r: 1,
+  w: 1,
+  o: 1
+};
+
+function paginate(list, page){
+  const start = (page - 1) * PAGE_SIZE;
+  return list.slice(start, start + PAGE_SIZE);
+}
+
+function renderPager(total, page, key, onChange){
+  const pages = Math.ceil(total / PAGE_SIZE);
+  if(pages <= 1) return '';
+
+  return `
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <button ${page<=1?'disabled':''}
+        onclick="pageState.${key}--; ${onChange}()">
+        上一页
+      </button>
+      <span class="small">第 ${page} / ${pages} 页</span>
+      <button ${page>=pages?'disabled':''}
+        onclick="pageState.${key}++; ${onChange}()">
+        下一页
+      </button>
+    </div>
+  `;
+}
+
+/* ===============================
    ✅ type 统一映射（新增）
 =============================== */
 function normalizeType(t){
@@ -1489,6 +1524,9 @@ connectOrderSSE();
    Each will call postRenderDecorate() after rendering
 ------------------------------ */
 async function bs_search(){
+  // ✅ 确保每次搜索时，页码从 1 开始
+  pageState.bs = pageState.bs || 1;
+
   const params = {};
   if($('#bs_start').value) params.start = $('#bs_start').value;
   if($('#bs_end').value) params.end = $('#bs_end').value;
@@ -1519,8 +1557,14 @@ async function bs_search(){
       return;
     }
 
-    // ===== 渲染表格 =====
-    tbody.innerHTML = list.map(o => renderBuySellRow(o)).join('');
+    // ✅ 分页
+    const pageList = paginate(list, pageState.bs);
+
+    // ===== 渲染表格（分页后的数据）=====
+    tbody.innerHTML =
+      pageList.map(o => renderBuySellRow(o)).join('') +
+      renderPager(list.length, pageState.bs, 'bs', 'bs_search');  // 渲染分页
+
     postRenderDecorate();
 
     // ===============================
@@ -1625,15 +1669,21 @@ async function w_search(){
       status: $('#w_status').value
     });
 
-    if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
-      window.withdrawLoss = 0;   // ✅ 保证变量存在
-      return;
-    }
+ if(!list.length){
+  tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+  return;
+}
 
-    // ===== 渲染表格 =====
-    tbody.innerHTML = list.map(o => renderWithdrawRow(o)).join('');
-    postRenderDecorate();
+/* ✅ 分页 */
+pageState.w = pageState.w || 1;
+const pageList = paginate(list, pageState.w);
+
+// ===== 渲染表格（分页后）=====
+tbody.innerHTML =
+  pageList.map(o => renderWithdrawRow(o)).join('') +
+  renderPager(list.length, pageState.w, 'w', 'w_search');
+
+postRenderDecorate();
 
     // ===============================
     // ✅ 提款支出统计（真正接入）
@@ -1681,44 +1731,55 @@ if (type) {
   rows = rows.filter(o => o._type === type);
 }
 
-// ✅ 最新在最上面
+// ✅ 排序：最新在最上面
 rows.sort((a, b) => {
   const ta = new Date(a.time_us || a.time || a.createdAt || 0).getTime();
   const tb = new Date(b.time_us || b.time || b.createdAt || 0).getTime();
   return tb - ta;
 });
 
+if (!rows.length) {
+  tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
+  return;
+}
 
-    if(!rows.length){ tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`; return; }
-    tbody.innerHTML = rows.map(o=>{
-      const typeText = {
-  recharge: '充值',
-  withdraw: '提款',
-  buysell: '买卖'
-}[o._type] || o._type;
+// ✅ 分页（每页 20 条）
+pageState.o = pageState.o || 1;  // 确保页码从 1 开始
+const pageList = paginate(rows, pageState.o);
 
-      return `<tr>
-        <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
-        <td>${o.time_us || '--'}</td>
-        <td>${typeText}</td>
-        <td>${o.amount}</td>
-        <td>${o.currency || o.coin || '--'}</td>
-        <td>${o.wallet || '--'}</td>
-        <td>${o.ip || '--'}</td>
-        <td>
-  <span class="badge" style="background:
-    ${ o.status==='success' ? '#00c851' :
-       o.status==='failed'  ? '#ff4444' :
-       o.status==='locked'  ? '#ffbb33' :
-       '#1976d2' };
-    color:#fff;"
-    ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
-    ${o.status}
-  </span>
-</td>
-      </tr>`;
-    }).join('');
-    postRenderDecorate();
+// ✅ 渲染表格（分页后的数据）
+tbody.innerHTML =
+  pageList.map(o => {
+    const typeText = {
+      recharge: '充值',
+      withdraw: '提款',
+      buysell: '买卖'
+    }[o._type] || o._type;
+
+    return `<tr>
+      <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
+      <td>${o.time_us || '--'}</td>
+      <td>${typeText}</td>
+      <td>${o.amount}</td>
+      <td>${o.currency || o.coin || '--'}</td>
+      <td>${o.wallet || '--'}</td>
+      <td>${o.ip || '--'}</td>
+      <td>
+        <span class="badge" style="background:
+          ${ o.status==='success' ? '#00c851' :
+            o.status==='failed'  ? '#ff4444' :
+            o.status==='locked'  ? '#ffbb33' :
+            '#1976d2' };
+          color:#fff;"
+          ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
+          ${o.status}
+        </span>
+      </td>
+    </tr>`;
+  }).join('') +
+  renderPager(rows.length, pageState.o, 'o', 'o_search');  // 渲染分页
+
+postRenderDecorate(); 
   }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
 }
 
