@@ -115,7 +115,8 @@ app.post('/api/admin/verify-2fa', async (req, res) => {
     });
 
     if (verified) {
-      return res.json({ ok: true, message: '2FA 验证成功' });
+      const token = generateAdminToken(adminId); // 生成新的登录token
+      return res.json({ ok: true, token });
     } else {
       return res.status(400).json({ ok: false, message: '验证码错误' });
     }
