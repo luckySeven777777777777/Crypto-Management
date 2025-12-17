@@ -857,6 +857,34 @@ async function txAction(btn, orderId, type, action){
       return;
     }
   }
+  // 🔥【关键修复】取消提款：必须走专用退款接口
+  if(action === 'cancel'){
+    if(!confirm('确认取消提款并原路退回金额？')){
+      if(btn) btn.disabled = false;
+      return;
+    }
+
+    try{
+      const r = await fetch(API_WITHDRAW_CANCEL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ orderId })
+      });
+      const j = await r.json();
+
+      if(j.ok){
+        alert('已取消提款，金额已原路返回');
+        w_search(); // 刷新提款列表
+      }else{
+        alert(j.error || '操作失败');
+      }
+    }catch(e){
+      alert('服务器错误');
+    }
+
+    if(btn) btn.disabled = false;
+    return; // ⛔ 非常关键：阻止继续走 API_UPDATE
+  }
 
   const finalStatus =
     action === 'approve' ? 'success' :
