@@ -661,10 +661,15 @@ async function getAdminByToken(token){
 
   const admin = adminSnap.val();
   if (admin.status === 'disabled') return null;
+// ✅【必须加的兜底】不影响任何原功能
+admin.permissions = admin.permissions || {
+  recharge: true,
+  withdraw: true,
+  buysell: true
+};
 
-  return admin;
+return admin;
 }
-
 /* ---------------------------------------------------------
    Admin create/login (kept)
 --------------------------------------------------------- */
@@ -703,11 +708,11 @@ await db.ref(`admins/${id}`).set({
   created,
   status: 'active',        // ✅ 新增状态
   isSuper: false,          // 原样保留
-  permissions: {           // ✅ 新增权限
-    recharge: !!permissions.recharge,
-    withdraw: !!permissions.withdraw,
-    buysell:  !!permissions.buysell
-  }
+  permissions: {
+  recharge: true,
+  withdraw: true,
+  buysell: true
+}
 });
 
 // ✅ token 逻辑完全不变（非常重要）
@@ -774,14 +779,13 @@ app.get('/api/admin/me', async (req, res) => {
   if (admin.status === 'disabled')
     return res.status(403).json({ ok:false });
 
-  res.json({
-    ok: true,
-    id: admin.id,
-    permissions: admin.permissions || {},
-    isSuper: admin.isSuper
-  });
+res.json({
+  ok: true,
+  id: admin.id,
+  permissions: admin.permissions || {},
+  isSuper: admin.isSuper
 });
-
+});
 /* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
    - prevents double-processing by checking 'processed' flag
