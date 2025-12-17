@@ -73,6 +73,16 @@
         localStorage.setItem('nexbit_admin_token', j.token); 
         el('loginState').innerText = id; 
         alert('登录成功'); 
+
+      // 检查是否启用了 2FA
+      const has2FA = await checkIf2FAEnabled(id);
+      if (has2FA) {
+        // 显示 2FA 输入框
+        document.getElementById('adminLoginModal').style.display = 'none'; // 隐藏登录框
+        document.getElementById('gaBox').style.display = 'block'; // 显示 2FA 输入框
+        document.getElementById('gaAdminId').value = id; // 填充管理员 ID
+        return; // 等待用户输入验证码
+      }
         loadAdmins(); 
       } else alert('登录失败: ' + (j.error || ''));
     } catch (e) { alert('请求失败'); }
