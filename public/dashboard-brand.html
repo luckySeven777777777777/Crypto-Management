@@ -32,7 +32,55 @@ body{
   .admin-login-modal[style*="display: flex"] {
     pointer-events: auto !important;
   }
+:root{
+  --top-blue:#1976d2;
+  --deep-blue:#0f2655;
+  --bg:#f4f7fb;
+  --card:#fff;
+  --red:#ff4444;
+  --black:#000;
+  --green:#00c851;
+  --yellow:#ffbb33;
+  --purple:#9933ff;
+}
 
+/* 其他样式... */
+.pnl-positive {
+  background: linear-gradient(135deg, #00c851, #00e676); /* 绿色渐变 */
+  box-shadow: 0 0 18px rgba(0, 200, 81, .45); /* 绿色阴影 */
+}
+
+.pnl-negative {
+  background: linear-gradient(135deg, #ff4444, #ff6b6b); /* 红色渐变 */
+  box-shadow: 0 0 18px rgba(255, 68, 68, .45); /* 红色阴影 */
+}
+
+.pnl-value {
+  font-size: 22px;
+  margin-top: 6px;
+  letter-spacing: .5px;
+}
+
+.pnl-sub {
+  font-size: 12px;
+  opacity: .9;
+}
+
+.pnl-flash {
+  animation: pnlPulse 1.6s infinite; /* 闪烁动画 */
+}
+
+@keyframes pnlPulse {
+  0% {
+    box-shadow: 0 0 10px rgba(255, 255, 255, .15);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(255, 255, 255, .55);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(255, 255, 255, .15);
+  }
+}
 /* ========= HEADER ========= */
 .top-header{
   position: fixed;
@@ -98,6 +146,7 @@ body{
   flex:1;
   padding:22px 26px;
 }
+
 /* ====== FIX CLICK ISSUE ====== */
 
 /* header 不挡点击，只给内部按钮 */
@@ -607,34 +656,33 @@ button {
       </tbody>
     </table>
   </div>
+<!-- Google 二级验证码 -->
+<div class="card" style="margin-top:16px">
+  <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
 
-  <!-- Google 二级验证码 -->
-  <div class="card" style="margin-top:16px">
-    <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
-
-    <div class="filters">
-      <input id="gaAdminId" placeholder="管理员账号">
-      <button class="primary" onclick="generateGoogle2FA()">生成绑定</button>
-    </div>
-
-    <div id="gaBox" style="display:none;margin-top:12px">
-      <div class="small">请使用 Google Authenticator 扫码：</div>
-      <img id="gaQr" style="margin:8px 0">
-      <input id="gaCode" placeholder="输入 6 位验证码">
-      <button class="primary" onclick="verifyGoogle2FA()">确认绑定</button>
-    </div>
+  <div class="filters">
+    <input id="gaAdminId" placeholder="管理员账号">
+    <button class="primary" onclick="generateGoogle2FA()">生成绑定</button>
   </div>
 
-  <!-- 管理员密码重置 -->
-  <div class="card" style="margin-bottom:16px">
-    <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
-
-    <div class="filters">
-      <input id="resetAdminId" placeholder="管理员账号">
-      <input id="resetAdminPassword" placeholder="新登录密码">
-      <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
-    </div>
+  <div id="gaBox" style="display:none;margin-top:12px">
+    <div class="small">请使用 Google Authenticator 扫码：</div>
+    <img id="gaQr" style="margin:8px 0">
+    <input id="gaCode" placeholder="输入 6 位验证码">
+    <button class="primary" onclick="verifyGoogle2FA()">确认绑定</button>
   </div>
+</div>
+
+<!-- 管理员密码重置 -->
+<div class="card" style="margin-bottom:16px">
+  <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
+
+  <div class="filters">
+    <input id="resetAdminId" placeholder="管理员账号">
+    <input id="resetAdminPassword" placeholder="新登录密码">
+    <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
+  </div>
+</div>
 
   <!-- 用户提款密码重置 -->
   <div class="card">
@@ -642,122 +690,21 @@ button {
 
     <div class="filters">
       <input id="searchWithdrawWallet" placeholder="已提款的钱包地址">
-      <input id="searchWithdrawOrder" placeholder="订单号（可选）">
-      <input id="newWithdrawPassword" placeholder="新提款密码">
-      <button class="primary" onclick="resetWithdrawPassword()">重置</button>
+<input id="searchWithdrawOrder" placeholder="订单号（可选）">
+<input id="newWithdrawPassword" placeholder="新提款密码">
+<button class="primary" onclick="resetWithdrawPassword()">重置</button>
+
     </div>
   </div>
 
 </div>
 
-<div class="footer-note">系统生成：<span id="genTime"></span></div>
-
-<!-- JavaScript -->
-<script>
-  // 处理管理员创建
- // 处理管理员创建
-async function createAdmin() {
-  const adminId = document.getElementById('newAdminId').value;
-  const password = document.getElementById('newAdminPassword').value;
-  const permissions = [];
-
-  // 获取权限
-  if (document.querySelector('input[value="recharge"]').checked) permissions.push('recharge');
-  if (document.querySelector('input[value="withdraw"]').checked) permissions.push('withdraw');
-  if (document.querySelector('input[value="buysell"]').checked) permissions.push('buysell');
-
-  // 获取存储在 localStorage 中的管理员 token
-  const adminToken = getAdminToken();
-
-  // 检查是否获取到 token
-  if (!adminToken) {
-    alert("管理员未登录或无效的管理员 Token，请先登录！");
-    return;
-  }
-
-  // 向后端发起创建管理员请求
-  const response = await fetch('/api/admin/create', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${adminToken}`,  // 将 token 作为 Authorization 请求头
-    },
-    body: JSON.stringify({
-      id: adminId,
-      password,
-      createToken: adminToken,  // 使用获取的 adminToken 作为 createToken
-      permissions,  // 传递权限数据
-    }),
-  });
-
-  const data = await response.json();
-
-  if (data.ok) {
-    alert('管理员创建成功');
-    loadAdmins(); // 刷新管理员列表
-  } else {
-    alert('创建失败: ' + (data.error || '未知错误'));
-  }
-}
-
-  // 加载管理员列表
-  async function loadAdmins() {
-    const tbody = document.getElementById('adminTable');
-    tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
-
-    try {
-      const response = await fetch('/api/admin/list');
-      const data = await response.json();
-
-      if (data.ok && data.admins) {
-        tbody.innerHTML = data.admins.map(admin => `
-          <tr>
-            <td>${admin.id}</td>
-            <td>${admin.permissions.join(', ')}</td>
-            <td>${admin.status}</td>
-            <td><button onclick="deleteAdmin('${admin.id}')">删除</button></td>
-          </tr>
-        `).join('');
-      } else {
-        tbody.innerHTML = '<tr><td colspan="4">没有管理员数据</td></tr>';
-      }
-    } catch (error) {
-      tbody.innerHTML = '<tr><td colspan="4">加载失败</td></tr>';
-    }
-  }
-
-  // 管理员删除功能（可选）
-  async function deleteAdmin(adminId) {
-    const confirmDelete = confirm('确定要删除此管理员吗？');
-    if (!confirmDelete) return;
-
-    const response = await fetch(`/api/admin/delete/${adminId}`, {
-      method: 'DELETE',
-    });
-
-    const data = await response.json();
-    if (data.ok) {
-      alert('管理员已删除');
-      loadAdmins(); // 刷新管理员列表
-    } else {
-      alert('删除失败: ' + (data.error || '未知错误'));
-    }
-  }
-
-  // 页面加载时加载管理员列表
-  window.onload = function() {
-    loadAdmins();
-  };
-</script>
-
-<!-- Wallet modal -->
-<div class="modal" id="walletModal" onclick="closeWallet()">
-  <div class="box" onclick="event.stopPropagation()">
-    <div style="font-weight:700;margin-bottom:8px">钱包地址</div>
-    <div id="walletAddr" style="font-size:14px;word-break:break-all"></div>
-    <button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button>
+    <div class="footer-note">系统生成：<span id="genTime"></span></div>
   </div>
 </div>
+
+<!-- Wallet modal -->
+<div class="modal" id="walletModal" onclick="closeWallet()"><div class="box" onclick="event.stopPropagation()"><div style="font-weight:700;margin-bottom:8px">钱包地址</div><div id="walletAddr" style="font-size:14px;word-break:break-all"></div><button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button></div></div>
 
 <!-- Order Detail Modal -->
 <div id="orderDetailModal" class="order-detail-modal" onclick="closeOrderDetail()">
@@ -777,123 +724,6 @@ async function createAdmin() {
   </div>
 </div>
 
-<div class="footer-note">系统生成：<span id="genTime"></span></div>
-
-<!-- JavaScript -->
-
-<script>
-  // 处理管理员创建
-async function createAdmin() {
-  const adminId = document.getElementById('newAdminId').value;
-  const password = document.getElementById('newAdminPassword').value;
-
-  // 获取存储在 localStorage 中的 admin token
-  const adminToken = getAdminToken();  // 获取存储的 adminToken
-
-  // 如果没有获取到 adminToken，提示用户登录
-  if (!adminToken) {
-    alert("管理员未登录或无效的管理员 Token，请先登录！");
-    return;
-  }
-
-  // 发送请求到后端创建管理员
-  const response = await fetch('/api/admin/create', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      id: adminId,
-      password,
-      createToken: adminToken,  // 使用获取的 adminToken 作为 createToken
-    }),
-  });
-
-  const data = await response.json();
-
-  if (data.ok) {
-    alert('管理员创建成功');
-    loadAdmins();  // 刷新管理员列表
-  } else {
-    alert('创建失败: ' + (data.error || '未知错误'));
-  }
-}
-  // 加载管理员列表
-  async function loadAdmins() {
-    const tbody = document.getElementById('adminTable');
-    tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
-
-    try {
-      const response = await fetch('/api/admin/list');
-      const data = await response.json();
-
-      if (data.ok && data.admins) {
-        tbody.innerHTML = data.admins.map(admin => `
-          <tr>
-            <td>${admin.id}</td>
-            <td>${admin.permissions.join(', ')}</td>
-            <td>${admin.status}</td>
-            <td><button onclick="deleteAdmin('${admin.id}')">删除</button></td>
-          </tr>
-        `).join('');
-      } else {
-        tbody.innerHTML = '<tr><td colspan="4">没有管理员数据</td></tr>';
-      }
-    } catch (error) {
-      tbody.innerHTML = '<tr><td colspan="4">加载失败</td></tr>';
-    }
-  }
-
-  // 管理员删除功能（可选）
-  async function deleteAdmin(adminId) {
-    const confirmDelete = confirm('确定要删除此管理员吗？');
-    if (!confirmDelete) return;
-
-    const response = await fetch(`/api/admin/delete/${adminId}`, {
-      method: 'DELETE',
-    });
-
-    const data = await response.json();
-    if (data.ok) {
-      alert('管理员已删除');
-      loadAdmins(); // 刷新管理员列表
-    } else {
-      alert('删除失败: ' + (data.error || '未知错误'));
-    }
-  }
-
-  // 页面加载时加载管理员列表
-  window.onload = function() {
-    loadAdmins();
-  };
-</script>
-
-<!-- Wallet modal -->
-<div class="modal" id="walletModal" onclick="closeWallet()">
-  <div class="box" onclick="event.stopPropagation()">
-    <div style="font-weight:700;margin-bottom:8px">钱包地址</div>
-    <div id="walletAddr" style="font-size:14px;word-break:break-all"></div>
-    <button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button>
-  </div>
-</div>
-
-<!-- Order Detail Modal -->
-<div id="orderDetailModal" class="order-detail-modal" onclick="closeOrderDetail()">
-  <div class="box" onclick="event.stopPropagation()">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div style="font-weight:700">订单详情 <span id="orderDetailId"></span></div>
-      <div><button onclick="closeOrderDetail()" style="padding:6px 10px">关闭</button></div>
-    </div>
-    <div style="margin-top:10px">
-      <div style="font-weight:600">原始数据</div>
-      <pre id="orderRawJson">{}</pre>
-    </div>
-    <div style="margin-top:8px">
-      <div style="font-weight:600">操作记录</div>
-      <pre id="orderActions">无操作记录</pre>
-    </div>
-  </div>
-</div>
 <!-- Admin Login Modal -->
 <div id="adminLoginModal" class="admin-login-modal" onclick="closeAdminLogin()">
   <div class="box" onclick="event.stopPropagation()">
