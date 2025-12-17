@@ -701,6 +701,46 @@ const API_UPDATE = '/api/transaction/update';
 /* helpers */
 function $(s){ return document.querySelector(s); }
 function $all(s){ return Array.from(document.querySelectorAll(s)); }
+/* ===== 前端真实过滤逻辑（新增）===== */
+function applyFilters(list, {
+  start, end, q, currency, status, side
+}) {
+  return list.filter(o => {
+
+   
+    // 1️⃣ 时间过滤（兼容所有时间字段）
+const t = o.time_us || o.time || o.createdAt;
+
+if (start && t && new Date(t) < new Date(start)) return false;
+if (end && t && new Date(t) > new Date(end + ' 23:59:59')) return false;
+
+
+    // 2️⃣ 关键字搜索（订单 / 会员 / 钱包）
+    if (q) {
+      const key = q.toLowerCase();
+      const hay = `
+        ${o.orderId || ''}
+        ${o.userId || ''}
+        ${o.wallet || ''}
+      `.toLowerCase();
+      if (!hay.includes(key)) return false;
+    }
+
+    // 3️⃣ 币种过滤
+   if (currency) {
+  const coin = (o.coin || o.currency || '').toUpperCase();
+  if (coin !== currency.toUpperCase()) return false;
+}
+
+    // 4️⃣ 状态过滤
+    if (status && o.status !== status) return false;
+
+    // 5️⃣ 买卖方向（BuySell 专用）
+    if (side && o.side !== side) return false;
+
+    return true;
+  });
+}
 /* ===============================
    ✅ type 统一映射（新增）
 =============================== */
@@ -1333,8 +1373,36 @@ async function bs_search(){
   if($('#bs_wallet').value) params.q = $('#bs_wallet').value;
   if($('#bs_currency').value) params.currency = $('#bs_currency').value;
   if($('#bs_side').value) params.side = $('#bs_side').value;
-  const tbody = $('#bs_table'); tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
-  try{ const all = await fetchAll(params); const list = all.buysell || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderBuySellRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
+
+  const tbody = $('#bs_table');
+  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
+
+  try{
+    const all = await fetchAll(params);
+
+    /* 🔥 关键：前端真实过滤 */
+    let list = all.buysell || [];
+
+    list = applyFilters(list, {
+      start: $('#bs_start').value,
+      end: $('#bs_end').value,
+      q: $('#bs_wallet').value,
+      currency: $('#bs_currency').value,
+      side: $('#bs_side').value
+    });
+
+    if(!list.length){
+      tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map(o => renderBuySellRow(o)).join('');
+    postRenderDecorate();
+
+  }catch(e){
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
+  }
 }
 async function r_search(){
   const params = {};
@@ -1343,8 +1411,37 @@ async function r_search(){
   if($('#r_wallet').value) params.q = $('#r_wallet').value;
   if($('#r_currency').value) params.currency = $('#r_currency').value;
   if($('#r_status').value) params.status = $('#r_status').value;
-  const tbody = $('#r_table'); tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
-  try{ const all = await fetchAll(params); const list = all.recharge || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderRechargeRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
+
+  const tbody = $('#r_table');
+  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
+
+  try{
+    const all = await fetchAll(params);
+
+    /* 🔥 关键修改开始 */
+    let list = all.recharge || [];
+
+    list = applyFilters(list, {
+      start: $('#r_start').value,
+      end: $('#r_end').value,
+      q: $('#r_wallet').value,
+      currency: $('#r_currency').value,
+      status: $('#r_status').value
+    });
+    /* 🔥 关键修改结束 */
+
+    if(!list.length){
+      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map(o => renderRechargeRow(o)).join('');
+    postRenderDecorate();
+
+  }catch(e){
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
+  }
 }
 async function w_search(){
   const params = {};
@@ -1353,8 +1450,36 @@ async function w_search(){
   if($('#w_wallet').value) params.q = $('#w_wallet').value;
   if($('#w_currency').value) params.currency = $('#w_currency').value;
   if($('#w_status').value) params.status = $('#w_status').value;
-  const tbody = $('#w_table'); tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
-  try{ const all = await fetchAll(params); const list = all.withdraw || []; if(!list.length){ tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`; return; } tbody.innerHTML = list.map(o=>renderWithdrawRow(o)).join(''); postRenderDecorate(); }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
+
+  const tbody = $('#w_table');
+  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
+
+  try{
+    const all = await fetchAll(params);
+
+    /* 🔥 关键：前端真实过滤 */
+    let list = all.withdraw || [];
+
+    list = applyFilters(list, {
+      start: $('#w_start').value,
+      end: $('#w_end').value,
+      q: $('#w_wallet').value,
+      currency: $('#w_currency').value,
+      status: $('#w_status').value
+    });
+
+    if(!list.length){
+      tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map(o => renderWithdrawRow(o)).join('');
+    postRenderDecorate();
+
+  }catch(e){
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
+  }
 }
 async function o_search(){
   const params = {};
