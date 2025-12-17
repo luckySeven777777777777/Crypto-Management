@@ -1420,14 +1420,18 @@ function postRenderDecorate(){
    SSE realtime orders
 ------------------------------ */
 let orderEventSource = null;
+
 function connectOrderSSE(){
   try{
     if(orderEventSource) orderEventSource.close();
+
     orderEventSource = new EventSource('/api/orders/stream');
+
     orderEventSource.onmessage = function(ev){
       try{
         const d = JSON.parse(ev.data);
         if(d && d.order){
+
           // flash alert if locked/failed
           if(d.order.status === 'locked' || d.order.status === 'failed'){
             let badge = document.getElementById('globalAlertBadge');
@@ -1436,23 +1440,50 @@ function connectOrderSSE(){
               badge.id = 'globalAlertBadge';
               badge.className = 'badge-alert flash';
               badge.innerText = '异常订单';
-              document.querySelector('.top-header .user').appendChild(badge);
+              document
+                .querySelector('.top-header .user')
+                .appendChild(badge);
             }
           }
-          // refresh active page
-          const active = document.querySelector('.sidebar .icon.active').getAttribute('data-page');
-          if(active==='recharge') r_search();
-          else if(active==='withdraw') w_search();
-          else if(active==='buysell') bs_search();
-          else o_search();
-        }
-      }catch(e){}
-    };
-    orderEventSource.onerror = function(){ setTimeout(connectOrderSSE,3000); };
-  }catch(e){ console.warn('SSE not available', e); }
-}
-connectOrderSSE();
 
+          // refresh active page
+          const active = document
+            .querySelector('.sidebar .icon.active')
+            ?.getAttribute('data-page');
+
+          if(active === 'recharge'){
+            r_search();
+          }
+          else if(active === 'withdraw'){
+            w_search();
+          }
+          else if(active === 'buysell'){
+            bs_search();
+          }
+          else if(active === 'dashboard'){
+            // 🔥 核心修复：Dashboard 盈亏立刻刷新
+            loadDashboard();
+          }
+          else{
+            o_search();
+          }
+        }
+      }catch(e){
+        console.error(e);
+      }
+    };
+
+    orderEventSource.onerror = function(){
+      try{ orderEventSource.close(); }catch(e){}
+      setTimeout(connectOrderSSE, 3000);
+    };
+
+  }catch(e){
+    console.warn('SSE not available', e);
+  }
+}
+
+connectOrderSSE();
 /* -----------------------------
    Search functions (bs_search / r_search / w_search / o_search)
    Each will call postRenderDecorate() after rendering
@@ -1721,31 +1752,45 @@ async function loadDashboard(){
     $('#alertsCount').innerText = alerts.length;
     $('#statTime').innerText = new Date().toLocaleString();
 
+    // ==================================================
+    // 🔥 总盈亏高亮显示（保留你原来的模式）
+    // ==================================================
+    const pnl =
+      sumUSDT(rToday)        // 今日充值
+      - sumUSDT(wToday)      // 今日提款
+      + (() => {
+          return bToday
+            .filter(o => o.status === 'success')
+            .reduce((sum, o) => {
+              const v = Number(o.estimate || 0);
+              if (o.side === 'buy')  return sum - v;
+              if (o.side === 'sell') return sum + v;
+              return sum;
+            }, 0);
+        })();
+
+    const pnlCard  = document.getElementById('pnlCard');
+    const pnlValue = document.getElementById('pnlValue');
+
+    if(pnlCard && pnlValue){
+      pnlValue.innerText =
+        (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+
+      pnlCard.classList.remove(
+        'pnl-positive',
+        'pnl-negative',
+        'pnl-flash'
+      );
+
+      if(pnl >= 0){
+        pnlCard.classList.add('pnl-positive','pnl-flash');
+      }else{
+        pnlCard.classList.add('pnl-negative','pnl-flash');
+      }
+    }
+
   }catch(e){
     console.error(e);
-  }
-}
-// ===============================
-// 🔥 总盈亏高亮显示
-// ===============================
-const pnl =
-  (window.rechargeProfit || 0)
-  - (window.withdrawLoss || 0)
-  + (window.buySellPNL || 0);
-
-const pnlCard  = document.getElementById('pnlCard');
-const pnlValue = document.getElementById('pnlValue');
-
-if(pnlCard && pnlValue){
-  pnlValue.innerText =
-    (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
-
-  pnlCard.classList.remove('pnl-positive','pnl-negative','pnl-flash');
-
-  if(pnl >= 0){
-    pnlCard.classList.add('pnl-positive','pnl-flash');
-  }else{
-    pnlCard.classList.add('pnl-negative','pnl-flash');
   }
 }
 
