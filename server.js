@@ -73,6 +73,24 @@ function isSafeUid(uid){
   if(uid.length < 2 || uid.length > 512) return false;
   return true;
 }
+async function ensureUserExists(uid){
+  if(!db) return;
+  if(!isSafeUid(uid)) return;
+
+  const ref = db.ref(`users/${uid}`);
+  const snap = await ref.once('value');
+
+  if(snap.exists()) return;
+
+  const ts = now();
+  await ref.set({
+    userid: uid,
+    created: ts,
+    updated: ts,
+    balance: 0
+  });
+}
+
 // ================================
 // USDT 价格缓存（CoinGecko）
 // ================================
@@ -471,6 +489,7 @@ async function handleBuySellRequest(req, res){
     } = req.body;
 
     const uid = userId || user;
+    await ensureUserExists(uid);
     const realSide = side || tradeType;   // ✅ 关键修复
     const amt = Number(amount || 0);
 
@@ -530,6 +549,7 @@ app.post('/api/order/recharge', async (req, res) => {
     if(!db) return res.json({ ok:false, error:'no-db' });
     const payload = req.body || {};
     const userId = payload.userId || payload.user;
+    await ensureUserExists(userId);
     if(!userId) return res.status(400).json({ ok:false, error:'missing userId' });
     if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
     const id = await saveOrder('recharge', payload);
@@ -546,6 +566,7 @@ app.post('/api/order/withdraw', async (req, res) => {
 
     const payload = req.body || {};
     const userId = payload.userId || payload.user;
+   await ensureUserExists(userId);
     const amount = Number(payload.amount || 0);
 
     if(!userId || amount === undefined || amount === null) return res.status(400).json({ ok:false, error:'missing userId/amount' });
@@ -905,6 +926,7 @@ app.get('/api/orders/stream', async (req, res) => {
 
 app.get('/wallet/:uid/sse', async (req, res) => {
   const uid = String(req.params.uid || '').trim();
+  await ensureUserExists(uid);
   res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
   res.flushHeaders();
   const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
