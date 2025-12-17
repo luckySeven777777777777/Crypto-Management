@@ -1663,6 +1663,13 @@ async function o_search(){
   try{
     const all = await fetchAll(params);
     const rows = [ ...(all.recharge || []), ...(all.withdraw || []), ...(all.buysell || []) ];
+// ✅ 按时间倒序（最新在上）
+rows.sort((a, b) => {
+  const ta = new Date(a.time_us || a.time || a.createdAt || 0).getTime();
+  const tb = new Date(b.time_us || b.time || b.createdAt || 0).getTime();
+  return tb - ta;
+});
+
     if(!rows.length){ tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`; return; }
     tbody.innerHTML = rows.map(o=>{
       const type = o.side ? 'buy/sell' : o.password ? 'withdraw' : 'recharge';
