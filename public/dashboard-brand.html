@@ -607,33 +607,34 @@ button {
       </tbody>
     </table>
   </div>
-<!-- Google 二级验证码 -->
-<div class="card" style="margin-top:16px">
-  <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
 
-  <div class="filters">
-    <input id="gaAdminId" placeholder="管理员账号">
-    <button class="primary" onclick="generateGoogle2FA()">生成绑定</button>
+  <!-- Google 二级验证码 -->
+  <div class="card" style="margin-top:16px">
+    <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
+
+    <div class="filters">
+      <input id="gaAdminId" placeholder="管理员账号">
+      <button class="primary" onclick="generateGoogle2FA()">生成绑定</button>
+    </div>
+
+    <div id="gaBox" style="display:none;margin-top:12px">
+      <div class="small">请使用 Google Authenticator 扫码：</div>
+      <img id="gaQr" style="margin:8px 0">
+      <input id="gaCode" placeholder="输入 6 位验证码">
+      <button class="primary" onclick="verifyGoogle2FA()">确认绑定</button>
+    </div>
   </div>
 
-  <div id="gaBox" style="display:none;margin-top:12px">
-    <div class="small">请使用 Google Authenticator 扫码：</div>
-    <img id="gaQr" style="margin:8px 0">
-    <input id="gaCode" placeholder="输入 6 位验证码">
-    <button class="primary" onclick="verifyGoogle2FA()">确认绑定</button>
-  </div>
-</div>
+  <!-- 管理员密码重置 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
 
-<!-- 管理员密码重置 -->
-<div class="card" style="margin-bottom:16px">
-  <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
-
-  <div class="filters">
-    <input id="resetAdminId" placeholder="管理员账号">
-    <input id="resetAdminPassword" placeholder="新登录密码">
-    <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
+    <div class="filters">
+      <input id="resetAdminId" placeholder="管理员账号">
+      <input id="resetAdminPassword" placeholder="新登录密码">
+      <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
+    </div>
   </div>
-</div>
 
   <!-- 用户提款密码重置 -->
   <div class="card">
@@ -641,21 +642,110 @@ button {
 
     <div class="filters">
       <input id="searchWithdrawWallet" placeholder="已提款的钱包地址">
-<input id="searchWithdrawOrder" placeholder="订单号（可选）">
-<input id="newWithdrawPassword" placeholder="新提款密码">
-<button class="primary" onclick="resetWithdrawPassword()">重置</button>
-
+      <input id="searchWithdrawOrder" placeholder="订单号（可选）">
+      <input id="newWithdrawPassword" placeholder="新提款密码">
+      <button class="primary" onclick="resetWithdrawPassword()">重置</button>
     </div>
   </div>
 
 </div>
 
-    <div class="footer-note">系统生成：<span id="genTime"></span></div>
-  </div>
-</div>
+<div class="footer-note">系统生成：<span id="genTime"></span></div>
+
+<!-- JavaScript -->
+<script>
+  // 处理管理员创建
+  async function createAdmin() {
+    const adminId = document.getElementById('newAdminId').value;
+    const password = document.getElementById('newAdminPassword').value;
+    const permissions = [];
+
+    // 获取权限
+    if (document.querySelector('input[value="recharge"]').checked) permissions.push('recharge');
+    if (document.querySelector('input[value="withdraw"]').checked) permissions.push('withdraw');
+    if (document.querySelector('input[value="buysell"]').checked) permissions.push('buysell');
+
+    // 向后端发起创建管理员请求
+    const response = await fetch('/api/admin/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: adminId,
+        password,
+        createToken: 'YOUR_CREATE_TOKEN'  // 传递一个有效的 createToken
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.ok) {
+      alert('管理员创建成功');
+      loadAdmins(); // 刷新管理员列表
+    } else {
+      alert('创建失败: ' + (data.error || '未知错误'));
+    }
+  }
+
+  // 加载管理员列表
+  async function loadAdmins() {
+    const tbody = document.getElementById('adminTable');
+    tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
+
+    try {
+      const response = await fetch('/api/admin/list');
+      const data = await response.json();
+
+      if (data.ok && data.admins) {
+        tbody.innerHTML = data.admins.map(admin => `
+          <tr>
+            <td>${admin.id}</td>
+            <td>${admin.permissions.join(', ')}</td>
+            <td>${admin.status}</td>
+            <td><button onclick="deleteAdmin('${admin.id}')">删除</button></td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="4">没有管理员数据</td></tr>';
+      }
+    } catch (error) {
+      tbody.innerHTML = '<tr><td colspan="4">加载失败</td></tr>';
+    }
+  }
+
+  // 管理员删除功能（可选）
+  async function deleteAdmin(adminId) {
+    const confirmDelete = confirm('确定要删除此管理员吗？');
+    if (!confirmDelete) return;
+
+    const response = await fetch(`/api/admin/delete/${adminId}`, {
+      method: 'DELETE',
+    });
+
+    const data = await response.json();
+    if (data.ok) {
+      alert('管理员已删除');
+      loadAdmins(); // 刷新管理员列表
+    } else {
+      alert('删除失败: ' + (data.error || '未知错误'));
+    }
+  }
+
+  // 页面加载时加载管理员列表
+  window.onload = function() {
+    loadAdmins();
+  };
+</script>
 
 <!-- Wallet modal -->
-<div class="modal" id="walletModal" onclick="closeWallet()"><div class="box" onclick="event.stopPropagation()"><div style="font-weight:700;margin-bottom:8px">钱包地址</div><div id="walletAddr" style="font-size:14px;word-break:break-all"></div><button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button></div></div>
+<div class="modal" id="walletModal" onclick="closeWallet()">
+  <div class="box" onclick="event.stopPropagation()">
+    <div style="font-weight:700;margin-bottom:8px">钱包地址</div>
+    <div id="walletAddr" style="font-size:14px;word-break:break-all"></div>
+    <button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button>
+  </div>
+</div>
 
 <!-- Order Detail Modal -->
 <div id="orderDetailModal" class="order-detail-modal" onclick="closeOrderDetail()">
@@ -675,6 +765,121 @@ button {
   </div>
 </div>
 
+<div class="footer-note">系统生成：<span id="genTime"></span></div>
+
+<!-- JavaScript -->
+
+<script>
+  // 处理管理员创建
+  async function createAdmin() {
+    const adminId = document.getElementById('newAdminId').value;
+    const password = document.getElementById('newAdminPassword').value;
+    const permissions = [];
+
+    // 获取权限
+    if (document.querySelector('input[value="recharge"]').checked) permissions.push('recharge');
+    if (document.querySelector('input[value="withdraw"]').checked) permissions.push('withdraw');
+    if (document.querySelector('input[value="buysell"]').checked) permissions.push('buysell');
+
+    // 向后端发起创建管理员请求
+    const response = await fetch('/api/admin/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: adminId,
+        password,
+        createToken: 'YOUR_CREATE_TOKEN'  // 传递一个有效的 createToken
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.ok) {
+      alert('管理员创建成功');
+      loadAdmins(); // 刷新管理员列表
+    } else {
+      alert('创建失败: ' + (data.error || '未知错误'));
+    }
+  }
+
+  // 加载管理员列表
+  async function loadAdmins() {
+    const tbody = document.getElementById('adminTable');
+    tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
+
+    try {
+      const response = await fetch('/api/admin/list');
+      const data = await response.json();
+
+      if (data.ok && data.admins) {
+        tbody.innerHTML = data.admins.map(admin => `
+          <tr>
+            <td>${admin.id}</td>
+            <td>${admin.permissions.join(', ')}</td>
+            <td>${admin.status}</td>
+            <td><button onclick="deleteAdmin('${admin.id}')">删除</button></td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="4">没有管理员数据</td></tr>';
+      }
+    } catch (error) {
+      tbody.innerHTML = '<tr><td colspan="4">加载失败</td></tr>';
+    }
+  }
+
+  // 管理员删除功能（可选）
+  async function deleteAdmin(adminId) {
+    const confirmDelete = confirm('确定要删除此管理员吗？');
+    if (!confirmDelete) return;
+
+    const response = await fetch(`/api/admin/delete/${adminId}`, {
+      method: 'DELETE',
+    });
+
+    const data = await response.json();
+    if (data.ok) {
+      alert('管理员已删除');
+      loadAdmins(); // 刷新管理员列表
+    } else {
+      alert('删除失败: ' + (data.error || '未知错误'));
+    }
+  }
+
+  // 页面加载时加载管理员列表
+  window.onload = function() {
+    loadAdmins();
+  };
+</script>
+
+<!-- Wallet modal -->
+<div class="modal" id="walletModal" onclick="closeWallet()">
+  <div class="box" onclick="event.stopPropagation()">
+    <div style="font-weight:700;margin-bottom:8px">钱包地址</div>
+    <div id="walletAddr" style="font-size:14px;word-break:break-all"></div>
+    <button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button>
+  </div>
+</div>
+
+<!-- Order Detail Modal -->
+<div id="orderDetailModal" class="order-detail-modal" onclick="closeOrderDetail()">
+  <div class="box" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:700">订单详情 <span id="orderDetailId"></span></div>
+      <div><button onclick="closeOrderDetail()" style="padding:6px 10px">关闭</button></div>
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-weight:600">原始数据</div>
+      <pre id="orderRawJson">{}</pre>
+    </div>
+    <div style="margin-top:8px">
+      <div style="font-weight:600">操作记录</div>
+      <pre id="orderActions">无操作记录</pre>
+    </div>
+  </div>
+</div>
 <!-- Admin Login Modal -->
 <div id="adminLoginModal" class="admin-login-modal" onclick="closeAdminLogin()">
   <div class="box" onclick="event.stopPropagation()">
