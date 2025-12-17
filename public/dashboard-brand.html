@@ -639,6 +639,45 @@ button {
       <div>类型：<span id="rd-type"></span></div>
       <div>时间：<span id="rd-time"></span></div>
     </div>
+<!-- ===== 订单详情 ===== -->
+<div class="rd-block rd-detail">
+
+  <div class="rd-row">
+    <span class="rd-label">方向</span>
+    <span id="rd-side" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">金额</span>
+    <span id="rd-amount" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">估算 USDT</span>
+    <span id="rd-estimate" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">TP / SL</span>
+    <span id="rd-tpsl" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">状态</span>
+    <span id="rd-status" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">Wallet</span>
+    <span id="rd-wallet" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">IP</span>
+    <span id="rd-ip" class="rd-value">--</span>
+  </div>
+
+</div>
 
     <div id="rd-reject-box" class="remark-box reject" style="display:none">
       <div class="remark-title">拒绝原因</div>
@@ -934,7 +973,7 @@ function openRemarkFromRow(el){
 }
 let currentRemarkData = null;
 function openRemarkDrawer(data){
-console.log('openRemarkDrawer', data);
+  console.log('openRemarkDrawer', data);
   if(!data) return;
 
   const drawer = document.getElementById('remarkDrawer');
@@ -946,6 +985,30 @@ console.log('openRemarkDrawer', data);
   document.getElementById('rd-order').innerText = data.orderId || '--';
   document.getElementById('rd-type').innerText  = data.type || '--';
   document.getElementById('rd-time').innerText  = data.time || '--';
+
+  // ===== 订单核心信息（新增）=====
+  document.getElementById('rd-side').innerText =
+    data.side ? data.side.toUpperCase() : '--';
+
+  document.getElementById('rd-amount').innerText =
+    (data.amount && data.coin)
+      ? `${data.amount} ${data.coin}`
+      : '--';
+
+  document.getElementById('rd-estimate').innerText =
+    data.estimate ? `${data.estimate} USDT` : '--';
+
+  document.getElementById('rd-tpsl').innerText =
+    (data.tp || '-') + ' / ' + (data.sl || '-');
+
+  document.getElementById('rd-status').innerText =
+    data.status || '--';
+
+  document.getElementById('rd-wallet').innerText =
+    data.wallet || '--';
+
+  document.getElementById('rd-ip').innerText =
+    data.ip || '--';
 
   // ===== 拒绝原因 =====
   const rejectBox = document.getElementById('rd-reject-box');
@@ -971,7 +1034,6 @@ console.log('openRemarkDrawer', data);
     noteText.innerText = '';
   }
 }
-
 // ✅ 只保留这一个
 function closeRemarkDrawer(){
   document.getElementById('remarkDrawer')?.classList.remove('open');
@@ -998,15 +1060,29 @@ function renderBuySellRow(o){
   <td>${renderActionButtons(o.orderId,'buysell', o.processed, o.status)}</td>
   <td>
 ${
-  (o.note !== null && o.note !== undefined && o.note !== '')
+  o.note
   ? (() => {
       const remarkData = btoa(
         unescape(
           encodeURIComponent(
             JSON.stringify({
+              // 基本
               orderId: o.orderId,
               type: 'buysell',
               time: o.time_us || '',
+
+              // 🔥 订单核心信息
+              side: o.side,
+              amount: o.amount,
+              coin: o.coin,
+              estimate: o.estimate,
+              tp: o.tp,
+              sl: o.sl,
+              wallet: o.wallet,
+              ip: o.ip,
+              status: o.status,
+
+              // 备注
               note: o.note
             })
           )
@@ -1043,15 +1119,29 @@ function renderRechargeRow(o){
   <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
   <td>
 ${
-  (o.note !== null && o.note !== undefined && o.note !== '')
+  o.note
   ? (() => {
       const remarkData = btoa(
         unescape(
           encodeURIComponent(
             JSON.stringify({
+              // 基本
               orderId: o.orderId,
               type: 'recharge',
               time: o.time_us || '',
+
+              // 🔥 订单核心信息
+              side: o.side,
+              amount: o.amount,
+              coin: o.coin,
+              estimate: o.estimate,
+              tp: o.tp,
+              sl: o.sl,
+              wallet: o.wallet,
+              ip: o.ip,
+              status: o.status,
+
+              // 备注
               note: o.note
             })
           )
@@ -1087,15 +1177,29 @@ function renderWithdrawRow(o){
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
  <td>
 ${
-  (o.note !== null && o.note !== undefined && o.note !== '')
+  o.note
   ? (() => {
       const remarkData = btoa(
         unescape(
           encodeURIComponent(
             JSON.stringify({
+              // 基本
               orderId: o.orderId,
               type: 'withdraw',
               time: o.time_us || '',
+
+              // 🔥 订单核心信息
+              side: o.side,
+              amount: o.amount,
+              coin: o.coin,
+              estimate: o.estimate,
+              tp: o.tp,
+              sl: o.sl,
+              wallet: o.wallet,
+              ip: o.ip,
+              status: o.status,
+
+              // 备注
               note: o.note
             })
           )
