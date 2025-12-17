@@ -862,6 +862,43 @@ const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
 function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
 function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
+// ===== 备注结构生成工具（新增）=====
+function getAdminName(){
+  return localStorage.getItem('admin_user')
+    || document.getElementById('adminUser')?.innerText
+    || 'unknown';
+}
+
+function nowTime(){
+  return new Date().toLocaleString();
+}
+
+function buildRemark(content, action){
+  return {
+    admin: getAdminName(),
+    time: nowTime(),
+    action,
+    content
+  };
+}
+/* ⬇⬇⬇ 就是这里！就在 ensureLoggedIn 之前 ⬇⬇⬇ */
+
+// ===== 备注合并工具（必须新增）=====
+function mergeRemark(oldNote, newRemark){
+  let arr = [];
+
+  if(oldNote){
+    try{
+      arr = JSON.parse(oldNote);
+      if(!Array.isArray(arr)) arr = [];
+    }catch(e){
+      arr = [];
+    }
+  }
+
+  arr.push(newRemark);
+  return JSON.stringify(arr);
+}
 
 async function ensureLoggedIn(){
   if(getAdminToken()) return true;
@@ -955,24 +992,29 @@ const finalStatus =
   'processing';
 
 // 备注逻辑
-let note = action;
+let noteText = action;
+
 if(action === 'reject'){
-  note = prompt('请输入拒绝原因（必填）');
-  if(!note){
+  noteText = prompt('请输入拒绝原因（必填）');
+  if(!noteText){
     if(btn) btn.disabled = false;
     return;
   }
 }
 
-// ✅ 真正发送的内容（重点）
+// 🔥 在这里生成你问的那段结构
+// 🔥 生成备注结构
+const remarkObj = buildRemark(noteText, action);
+
+// 🔥 txAction 永远是「覆盖式写入」
+const finalNote = JSON.stringify([remarkObj]);
+
 const body = {
   orderId,
   type: normalizeType(type),
-  status: finalStatus,   // ✅ 必须用 finalStatus
-  note                  // ✅ 用上面算出来的 note
+  status: finalStatus,
+  note: finalNote
 };
-
-
   try{
     const r = await fetch(API_UPDATE,{
       method:'POST',
@@ -1004,17 +1046,37 @@ async function addRemark(orderId, type, currentStatus){
     if(!getAdminToken()) return;
   }
 
-  const remark = prompt('请输入备注内容（仅后台可见）：');
-  if(!remark) return;
+  const mode = confirm(
+  '【确定】= 追加备注\n【取消】= 覆盖原备注'
+) ? 'append' : 'replace';
+
+const remarkText = prompt(
+  mode === 'append'
+    ? '请输入要追加的备注'
+    : '请输入新的备注（将覆盖原备注）'
+);
+
+if(!remarkText) return;
+
+// 🔥 生成你问的那段结构
+const newRemark = buildRemark(remarkText, 'note');
+
+// 🔥 处理追加 / 覆盖
+let finalNote;
+
+// ⚠️ 前端无法拿到旧 note，这里统一由后端决定如何处理
+// append = 后端追加，replace = 覆盖
+finalNote = JSON.stringify([newRemark]);
+
 
   const statusSafe = currentStatus || 'processing';
 
   const body = {
-    orderId,
-    type: normalizeType(type),
-    status: statusSafe,
-    note: remark
-  };
+  orderId,
+  type: normalizeType(type),
+  status: statusSafe,
+  note: finalNote
+};
 
   try{
     const r = await fetch(API_UPDATE,{
@@ -1112,10 +1174,28 @@ function openRemarkDrawer(data){
   const noteBox = document.getElementById('rd-note-box');
   const noteText = document.getElementById('rd-note');
 
-  if (data.note) {
-    noteBox.style.display = 'block';
-    noteText.innerText = data.note;
-  } else {
+ if (data.note) {
+  noteBox.style.display = 'block';
+
+  let arr = [];
+  try{
+    arr = JSON.parse(data.note);
+  }catch(e){
+    arr = [{ content: data.note }];
+  }
+
+  noteText.innerHTML = arr.map(r => `
+    <div style="margin-bottom:10px">
+      <div class="small">
+        👤 ${r.admin || '--'}
+        ｜ ⏰ ${r.time || '--'}
+        ｜ ${r.action || ''}
+      </div>
+      <div>${r.content}</div>
+    </div>
+  `).join('');
+}
+ else {
     noteBox.style.display = 'none';
     noteText.innerText = '';
   }
