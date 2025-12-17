@@ -879,6 +879,13 @@ async function txAction(btn, orderId, type, action){
     }
     body.reject = reason;   // 🔥 关键
   }
+  // ✅ approve 时允许填写普通备注（可留空）
+  if(action === 'approve'){
+    const note = prompt('请输入通过备注（可留空）：');
+    if(note){
+      body.note = note;   // 🔥 关键：写入 note
+    }
+  }
 
   try{
     const r = await fetch(API_UPDATE,{
