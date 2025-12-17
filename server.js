@@ -6,6 +6,8 @@ const { v4: uuidv4 } = require('uuid');
 const admin = require('firebase-admin');
 const path = require('path');
 const axios = require('axios'); 
+const speakeasy = require('speakeasy');
+const qrcode = require('qrcode');
 
 const app = express();
 app.disable('etag');
@@ -22,7 +24,60 @@ process.on('unhandledRejection', (reason, p) => {
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION', err);
 });
+// 生成 2FA 密钥和二维码
+app.post('/api/admin/generate-2fa', async (req, res) => {
+  const { adminId } = req.body;  // 获取管理员ID
 
+  if (!adminId) {
+    return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
+  }
+
+  // 生成 2FA 密钥
+  const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
+
+  // 使用二维码生成库生成二维码 URL
+  qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
+    if (err) {
+      return res.status(500).json({ ok: false, message: '二维码生成失败' });
+    }
+
+    // 将密钥存储到数据库，方便后续验证
+    // 示例：await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
+
+    // 返回生成的二维码和密钥
+    res.json({
+      ok: true,
+      qr_code: qr_code,  // 二维码链接
+      secret: secret.base32 // 2FA 密钥
+    });
+  });
+});
+
+// 验证 2FA 验证码
+app.post('/api/admin/verify-2fa', async (req, res) => {
+  const { adminId, code } = req.body;
+
+  if (!adminId || !code) {
+    return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
+  }
+
+  // 从数据库获取管理员的 2FA 密钥（此处为假设，实际使用时需从数据库读取）
+  // 例如：const secret = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
+  const secret = '你的2FA密钥';  // 这里需要替换为从数据库中获取的密钥
+
+  // 使用 speakeasy 库验证验证码
+  const verified = speakeasy.totp.verify({
+    secret: secret,
+    encoding: 'base32',
+    token: code
+  });
+
+  if (verified) {
+    return res.json({ ok: true, message: '2FA 验证成功' });
+  } else {
+    return res.status(400).json({ ok: false, message: '验证码错误' });
+  }
+});
 /* ---------------------------------------------------------
    Middleware
 --------------------------------------------------------- */
