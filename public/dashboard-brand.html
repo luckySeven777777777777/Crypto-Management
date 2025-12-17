@@ -1662,13 +1662,32 @@ async function o_search(){
   const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
   try{
     const all = await fetchAll(params);
-    const rows = [ ...(all.recharge || []), ...(all.withdraw || []), ...(all.buysell || []) ];
-// ✅ 按时间倒序（最新在上）
+    let rows = [
+  ...(all.recharge || []).map(o => ({ ...o, _type: 'recharge' })),
+  ...(all.withdraw || []).map(o => ({ ...o, _type: 'withdraw' })),
+  ...(all.buysell || []).map(o => ({ ...o, _type: 'buysell' }))
+];
+
+// ✅ 前端真实过滤（和充值 / 提款一致）
+rows = applyFilters(rows, {
+  start: $('#o_start').value,
+  end: $('#o_end').value,
+  q: $('#o_q').value
+});
+
+// ✅ 类型过滤（订单记录专用）
+const type = $('#o_type').value;
+if (type) {
+  rows = rows.filter(o => o._type === type);
+}
+
+// ✅ 最新在最上面
 rows.sort((a, b) => {
   const ta = new Date(a.time_us || a.time || a.createdAt || 0).getTime();
   const tb = new Date(b.time_us || b.time || b.createdAt || 0).getTime();
   return tb - ta;
 });
+
 
     if(!rows.length){ tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`; return; }
     tbody.innerHTML = rows.map(o=>{
