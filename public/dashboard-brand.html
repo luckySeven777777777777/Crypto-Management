@@ -882,15 +882,14 @@ async function addRemark(orderId, type, currentStatus){
   const remark = prompt('请输入备注内容（仅后台可见）：');
   if(!remark) return;
 
-  // ✅ status 必须有，且必须是当前状态
   const statusSafe = currentStatus || 'processing';
 
   const body = {
-  orderId,
-  type: normalizeType(type),
-  status: statusSafe,
-  note: remark
-};
+    orderId,
+    type: normalizeType(type),
+    status: statusSafe,
+    note: remark
+  };
 
   try{
     const r = await fetch(API_UPDATE,{
@@ -901,27 +900,38 @@ async function addRemark(orderId, type, currentStatus){
     const j = await r.json();
 
     if(j.ok){
-  alert('备注已保存');
+      alert('备注已保存');
 
-  const active = document.querySelector('.sidebar .icon.active')?.dataset.page;
-  if(active === 'recharge') r_search();
-  else if(active === 'withdraw') w_search();
-  else if(active === 'buysell') bs_search();
-  else o_search();
+      const active = document.querySelector('.sidebar .icon.active')?.dataset.page;
+      if(active === 'recharge') r_search();
+      else if(active === 'withdraw') w_search();
+      else if(active === 'buysell') bs_search();
+      else o_search();
 
-}else{
-  alert('备注失败：' + (j.error || '未知错误'));
+    }else{
+      alert('备注失败：' + (j.error || '未知错误'));
+    }
+
+  }catch(e){
+    console.error(e);
+    alert('备注请求异常');
+  }
 }
 function openRemarkFromRow(el){
   try{
-    const data = JSON.parse(el.dataset.remark);
+    const data = JSON.parse(
+      decodeURIComponent(
+        escape(
+          atob(el.dataset.remark)
+        )
+      )
+    );
     openRemarkDrawer(data);
   }catch(e){
     console.error('remark parse error', e);
     alert('备注数据解析失败');
   }
 }
-
 let currentRemarkData = null;
 function openRemarkDrawer(data){
 console.log('openRemarkDrawer', data);
@@ -987,21 +997,34 @@ function renderBuySellRow(o){
   </td>
   <td>${renderActionButtons(o.orderId,'buysell', o.processed, o.status)}</td>
   <td>
- (o.note !== null && o.note !== undefined && o.note !== '')
-? `<span
-     style="color:#1976d2;cursor:pointer"
-     data-remark='${JSON.stringify({
-       orderId: o.orderId,
-       type: 'buysell',
-       time: o.time_us || '',
-       note: o.note
-     })}'
-     onclick="openRemarkFromRow(this)"
-   >查看</span>`
-: '--'
+${
+  (o.note !== null && o.note !== undefined && o.note !== '')
+  ? (() => {
+      const remarkData = btoa(
+        unescape(
+          encodeURIComponent(
+            JSON.stringify({
+              orderId: o.orderId,
+              type: 'buysell',
+              time: o.time_us || '',
+              note: o.note
+            })
+          )
+        )
+      );
 
+      return `
+        <span
+          style="color:#1976d2;cursor:pointer"
+          data-remark="${remarkData}"
+          onclick="openRemarkFromRow(this)"
+        >查看</span>
+      `;
+    })()
+  : '--'
 }
 </td>
+
 </tr>`;
 }
 
@@ -1019,22 +1042,34 @@ function renderRechargeRow(o){
   <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
   <td>
- (o.note !== null && o.note !== undefined && o.note !== '')
-? `<span
-     style="color:#1976d2;cursor:pointer"
-     data-remark='${JSON.stringify({
-       orderId: o.orderId,
-       type: 'recharge',
-       time: o.time_us || '',
-       note: o.note
-     })}'
-     onclick="openRemarkFromRow(this)"
-   >查看</span>`
-: '--'
+${
+  (o.note !== null && o.note !== undefined && o.note !== '')
+  ? (() => {
+      const remarkData = btoa(
+        unescape(
+          encodeURIComponent(
+            JSON.stringify({
+              orderId: o.orderId,
+              type: 'recharge',
+              time: o.time_us || '',
+              note: o.note
+            })
+          )
+        )
+      );
+
+      return `
+        <span
+          style="color:#1976d2;cursor:pointer"
+          data-remark="${remarkData}"
+          onclick="openRemarkFromRow(this)"
+        >查看</span>
+      `;
+    })()
+  : '--'
 }
-
-
 </td>
+
 </tr>`;
 }
 function renderWithdrawRow(o){
@@ -1051,21 +1086,34 @@ function renderWithdrawRow(o){
   <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
  <td>
+${
   (o.note !== null && o.note !== undefined && o.note !== '')
-? `<span
-     style="color:#1976d2;cursor:pointer"
-     data-remark='${JSON.stringify({
-       orderId: o.orderId,
-       type: 'withdraw',
-       time: o.time_us || '',
-       note: o.note
-     })}'
-     onclick="openRemarkFromRow(this)"
-   >查看</span>`
-: '--'
-}
+  ? (() => {
+      const remarkData = btoa(
+        unescape(
+          encodeURIComponent(
+            JSON.stringify({
+              orderId: o.orderId,
+              type: 'withdraw',
+              time: o.time_us || '',
+              note: o.note
+            })
+          )
+        )
+      );
 
+      return `
+        <span
+          style="color:#1976d2;cursor:pointer"
+          data-remark="${remarkData}"
+          onclick="openRemarkFromRow(this)"
+        >查看</span>
+      `;
+    })()
+  : '--'
+}
 </td>
+
 </tr>`;
 }
 /* -----------------------------
