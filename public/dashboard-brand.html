@@ -840,19 +840,16 @@ function renderActionButtons(orderId, type, processed, status){
 async function txAction(btn, orderId, type, action){
   if(!orderId) return alert('缺少订单ID');
 
-  // ✅ 立即锁按钮（防连点）
   if(btn){
     btn.disabled = true;
     btn.classList.add('btn-disabled');
   }
 
-  // 确认框
   if(!confirm(`确定对订单 ${orderId} 执行：${action} 吗？`)){
     if(btn) btn.disabled = false;
     return;
   }
 
-  // 登录检查
   if(!getAdminToken()){
     await ensureLoggedIn();
     if(!getAdminToken()){
@@ -861,31 +858,27 @@ async function txAction(btn, orderId, type, action){
     }
   }
 
- // 状态映射（这段保留）
-const finalStatus =
-  action === 'approve' ? 'success' :
-  action === 'reject'  ? 'failed'  :
-  action === 'lock'    ? 'locked'  :
-  'processing';
+  const finalStatus =
+    action === 'approve' ? 'success' :
+    action === 'reject'  ? 'failed'  :
+    action === 'lock'    ? 'locked'  :
+    'processing';
 
-// 备注逻辑
-let note = action;
-if(action === 'reject'){
-  note = prompt('请输入拒绝原因（必填）');
-  if(!note){
-    if(btn) btn.disabled = false;
-    return;
+  const body = {
+    orderId,
+    type: normalizeType(type),
+    status: finalStatus
+  };
+
+  // ✅ 只有拒绝才写 reject
+  if(action === 'reject'){
+    const reason = prompt('请输入拒绝原因（必填）');
+    if(!reason){
+      if(btn) btn.disabled = false;
+      return;
+    }
+    body.reject = reason;   // 🔥 关键
   }
-}
-
-// ✅ 真正发送的内容（重点）
-const body = {
-  orderId,
-  type: normalizeType(type),
-  status: finalStatus,   // ✅ 必须用 finalStatus
-  note                  // ✅ 用上面算出来的 note
-};
-
 
   try{
     const r = await fetch(API_UPDATE,{
