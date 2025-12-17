@@ -656,27 +656,41 @@ button {
 <script>
   // 处理管理员创建
   async function createAdmin() {
-    const adminId = document.getElementById('newAdminId').value;
-    const password = document.getElementById('newAdminPassword').value;
-    const permissions = [];
+  const adminId = document.getElementById('newAdminId').value;
+  const password = document.getElementById('newAdminPassword').value;
+  const permissions = [];
 
-    // 获取权限
-    if (document.querySelector('input[value="recharge"]').checked) permissions.push('recharge');
-    if (document.querySelector('input[value="withdraw"]').checked) permissions.push('withdraw');
-    if (document.querySelector('input[value="buysell"]').checked) permissions.push('buysell');
+  // 获取权限
+  if (document.querySelector('input[value="recharge"]').checked) permissions.push('recharge');
+  if (document.querySelector('input[value="withdraw"]').checked) permissions.push('withdraw');
+  if (document.querySelector('input[value="buysell"]').checked) permissions.push('buysell');
 
-    // 向后端发起创建管理员请求
-    const response = await fetch('/api/admin/create', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        id: adminId,
-        password,
-        createToken: 'YOUR_CREATE_TOKEN'  // 传递一个有效的 createToken
-      }),
-    });
+  // 获取存储在 localStorage 中的管理员 token
+  const adminToken = getAdminToken();
+
+  // 向后端发起创建管理员请求
+  const response = await fetch('/api/admin/create', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,  // 将 token 作为 Authorization 请求头
+    },
+    body: JSON.stringify({
+      id: adminId,
+      password,
+      createToken: adminToken,  // 使用获取的 adminToken 作为 createToken
+    }),
+  });
+
+  const data = await response.json();
+
+  if (data.ok) {
+    alert('管理员创建成功');
+    loadAdmins(); // 刷新管理员列表
+  } else {
+    alert('创建失败: ' + (data.error || '未知错误'));
+  }
+}
 
     const data = await response.json();
 
@@ -771,39 +785,41 @@ button {
 
 <script>
   // 处理管理员创建
-  async function createAdmin() {
-    const adminId = document.getElementById('newAdminId').value;
-    const password = document.getElementById('newAdminPassword').value;
-    const permissions = [];
+async function createAdmin() {
+  const adminId = document.getElementById('newAdminId').value;
+  const password = document.getElementById('newAdminPassword').value;
 
-    // 获取权限
-    if (document.querySelector('input[value="recharge"]').checked) permissions.push('recharge');
-    if (document.querySelector('input[value="withdraw"]').checked) permissions.push('withdraw');
-    if (document.querySelector('input[value="buysell"]').checked) permissions.push('buysell');
+  // 获取存储在 localStorage 中的 admin token
+  const adminToken = getAdminToken();  // 获取存储的 adminToken
 
-    // 向后端发起创建管理员请求
-    const response = await fetch('/api/admin/create', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        id: adminId,
-        password,
-        createToken: 'YOUR_CREATE_TOKEN'  // 传递一个有效的 createToken
-      }),
-    });
-
-    const data = await response.json();
-
-    if (data.ok) {
-      alert('管理员创建成功');
-      loadAdmins(); // 刷新管理员列表
-    } else {
-      alert('创建失败: ' + (data.error || '未知错误'));
-    }
+  // 如果没有获取到 adminToken，提示用户登录
+  if (!adminToken) {
+    alert("管理员未登录或无效的管理员 Token，请先登录！");
+    return;
   }
 
+  // 发送请求到后端创建管理员
+  const response = await fetch('/api/admin/create', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      id: adminId,
+      password,
+      createToken: adminToken,  // 使用获取的 adminToken 作为 createToken
+    }),
+  });
+
+  const data = await response.json();
+
+  if (data.ok) {
+    alert('管理员创建成功');
+    loadAdmins();  // 刷新管理员列表
+  } else {
+    alert('创建失败: ' + (data.error || '未知错误'));
+  }
+}
   // 加载管理员列表
   async function loadAdmins() {
     const tbody = document.getElementById('adminTable');
