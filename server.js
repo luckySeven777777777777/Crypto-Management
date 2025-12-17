@@ -90,11 +90,6 @@ app.post('/api/admin/generate-2fa', async (req, res) => {
   }
 });
 
-// 4. 2FA 路由：生成 2FA 密钥和二维码
-const speakeasy = require('speakeasy');
-const qrcode = require('qrcode');
-
-// 验证 2FA 验证码
 // 验证 2FA 验证码
 app.post('/api/admin/verify-2fa', async (req, res) => {
   const { adminId, code } = req.body;
