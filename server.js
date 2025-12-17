@@ -294,6 +294,7 @@ app.get('/api/balance/:uid', async (req, res) => {
     const uid = String(req.params.uid || '').trim();
     if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
     if (!db) return res.json({ ok:true, balance: 0 });
+    await ensureUserExists(uid);
     const snap = await db.ref(`users/${uid}/balance`).once('value');
     return res.json({ ok:true, balance: Number(snap.val() || 0) });
   } catch (e){
