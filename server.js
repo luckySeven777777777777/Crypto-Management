@@ -625,15 +625,45 @@ async function isValidAdminToken(token){
   try{
     const snap = await db.ref(`admins_by_token/${token}`).once('value');
     if(!snap.exists()) return false;
+
     const rec = snap.val();
+
+    // ✅ 原有：token 过期判断（必须保留）
     const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30);
     const ageMs = now() - (rec.created || 0);
-    if(ageMs > ttlDays * 24*60*60*1000){ try{ await db.ref(`admins_by_token/${token}`).remove(); }catch(e){}; return false; }
+    if(ageMs > ttlDays * 24*60*60*1000){
+      try{ await db.ref(`admins_by_token/${token}`).remove(); }catch(e){}
+      return false;
+    }
+
+    // ✅ 新增：管理员状态校验（只多这几行）
+    const adminSnap = await db.ref(`admins/${rec.id}`).once('value');
+    if (!adminSnap.exists()) return false;
+
+    const admin = adminSnap.val();
+    if (admin.status === 'disabled') return false; // 🔒 禁用立即生效
+
     return true;
-  } catch(e){ return false; }
+  } catch(e){
+    return false;
+  }
 }
+// ===== 管理员工具函数（权限用）=====
+async function getAdminByToken(token){
+  if(!token) return null;
 
+  const snap = await db.ref(`admins_by_token/${token}`).once('value');
+  if (!snap.exists()) return null;
 
+  const adminId = snap.val().id;
+  const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+  if (!adminSnap.exists()) return null;
+
+  const admin = adminSnap.val();
+  if (admin.status === 'disabled') return null;
+
+  return admin;
+}
 
 /* ---------------------------------------------------------
    Admin create/login (kept)
@@ -660,21 +690,32 @@ app.post('/api/admin/create', async (req, res) => {
   // ✅ 不要求 2FA
 }
 
-    const hashed = await bcrypt.hash(password, 10);
+   const hashed = await bcrypt.hash(password, 10);
 const token = uuidv4();
 const created = now();
+
+// ✅ 新增：权限结构（来自前端）
+const permissions = req.body.permissions || {};
 
 await db.ref(`admins/${id}`).set({
   id,
   hashed,
   created,
-  isSuper: false   // 或 true
+  status: 'active',        // ✅ 新增状态
+  isSuper: false,          // 原样保留
+  permissions: {           // ✅ 新增权限
+    recharge: !!permissions.recharge,
+    withdraw: !!permissions.withdraw,
+    buysell:  !!permissions.buysell
+  }
 });
 
+// ✅ token 逻辑完全不变（非常重要）
 await db.ref(`admins_by_token/${token}`).set({
   id,
   created
 });
+
 
     return res.json({ ok:true, id, token });
 
@@ -716,6 +757,30 @@ app.post('/api/admin/login', async (req, res) => {
     res.status(500).json({ ok:false });
   }
 });
+app.get('/api/admin/me', async (req, res) => {
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer '))
+    return res.status(403).json({ ok:false });
+
+  const token = auth.slice(7);
+  const snap = await db.ref(`admins_by_token/${token}`).once('value');
+  if (!snap.exists()) return res.status(403).json({ ok:false });
+
+  const adminId = snap.val().id;
+  const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+  if (!adminSnap.exists()) return res.status(403).json({ ok:false });
+
+  const admin = adminSnap.val();
+  if (admin.status === 'disabled')
+    return res.status(403).json({ ok:false });
+
+  res.json({
+    ok: true,
+    id: admin.id,
+    permissions: admin.permissions || {},
+    isSuper: admin.isSuper
+  });
+});
 
 /* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
@@ -725,14 +790,46 @@ app.post('/api/transaction/update', async (req, res) => {
   try {
     if (!db) return res.json({ ok:false, error:'no-db' });
 
-const auth = req.headers.authorization || '';
-if (!auth.startsWith('Bearer '))
-  return res.status(403).json({ ok:false });
+    // ===== 1️⃣ 统一解析 token（只做一次）=====
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok:false });
 
-const token = auth.slice(7);
-if (!await isValidAdminToken(token))
-  return res.status(403).json({ ok:false });
+    const token = auth.slice(7);
 
+    // ===== 2️⃣ 校验 token 有效性 =====
+    if (!await isValidAdminToken(token))
+      return res.status(403).json({ ok:false });
+
+    // ===== 3️⃣ 取管理员 + 状态 =====
+    const admin = await getAdminByToken(token);
+    if (!admin)
+      return res.status(403).json({ ok:false });
+    return res.json({
+  ok: true,
+  recharge: admin.permissions.recharge
+    ? sortByTimeDesc(Object.values(rechargeSnap.val() || {}))
+    : [],
+  withdraw: admin.permissions.withdraw
+    ? sortByTimeDesc(Object.values(withdrawSnap.val() || {}))
+    : [],
+  buysell: admin.permissions.buysell
+    ? sortByTimeDesc(Object.values(buysellSnap.val() || {}))
+    : [],
+  users: usersSnap.val() || {}
+});
+
+    // ===== 4️⃣ 按 transaction type 校验权限 =====
+    const { type } = req.body;
+
+    if (type === 'recharge' && !admin.permissions.recharge)
+      return res.status(403).json({ ok:false, error:'NO_RECHARGE_PERMISSION' });
+
+    if (type === 'withdraw' && !admin.permissions.withdraw)
+      return res.status(403).json({ ok:false, error:'NO_WITHDRAW_PERMISSION' });
+
+    if (type === 'buysell' && !admin.permissions.buysell)
+      return res.status(403).json({ ok:false, error:'NO_BUYSELL_PERMISSION' });
 
     const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
     const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
@@ -981,6 +1078,20 @@ async function ensureDefaultAdmin() {
 }
 ensureDefaultAdmin();
 
+app.get('/api/admin/list', async (req, res) => {
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer '))
+    return res.status(403).json({ ok:false });
+
+  const token = auth.slice(7);
+  if (!await isValidAdminToken(token))
+    return res.status(403).json({ ok:false });
+
+  const snap = await db.ref('admins').once('value');
+  const admins = Object.values(snap.val() || {});
+
+  res.json({ ok:true, list: admins });
+});
 
 /* ---------------------------------------------------------
    Start server
