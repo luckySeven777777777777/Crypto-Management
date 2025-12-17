@@ -948,30 +948,41 @@ async function txAction(btn, orderId, type, action){
   }
 
  // 状态映射（这段保留）
+// 状态映射
 const finalStatus =
   action === 'approve' ? 'success' :
   action === 'reject'  ? 'failed'  :
   action === 'lock'    ? 'locked'  :
   'processing';
 
-// 备注逻辑
-let note = action;
+// ===== 新备注逻辑（从这里开始）=====
+const adminName =
+  document.getElementById('adminUser')?.innerText || 'admin';
+
+const nowTime = new Date().toLocaleString();
+
+let note = {
+  text: action,
+  admin: adminName,
+  time: nowTime
+};
+
 if(action === 'reject'){
-  note = prompt('请输入拒绝原因（必填）');
-  if(!note){
+  const reason = prompt('请输入拒绝原因（必填）');
+  if(!reason){
     if(btn) btn.disabled = false;
     return;
   }
+  note.text = reason;
 }
 
-// ✅ 真正发送的内容（重点）
+// ===== 真正发送 =====
 const body = {
   orderId,
   type: normalizeType(type),
-  status: finalStatus,   // ✅ 必须用 finalStatus
-  note                  // ✅ 用上面算出来的 note
+  status: finalStatus,
+  note
 };
-
 
   try{
     const r = await fetch(API_UPDATE,{
@@ -1111,11 +1122,25 @@ function openRemarkDrawer(data){
   // ===== 普通备注 =====
   const noteBox = document.getElementById('rd-note-box');
   const noteText = document.getElementById('rd-note');
+// ===== 普通备注（支持 admin + time）=====
+if (data.note) {
+  noteBox.style.display = 'block';
 
-  if (data.note) {
-    noteBox.style.display = 'block';
-    noteText.innerText = data.note;
+  if (typeof data.note === 'object') {
+    noteText.innerHTML = `
+      <div>${data.note.text || ''}</div>
+      <div class="small" style="margin-top:6px">
+        🕒 ${data.note.time || '--'} ｜ 👤 ${data.note.admin || '--'}
+      </div>
+    `;
   } else {
+    noteText.innerText = data.note;
+  }
+} else {
+  noteBox.style.display = 'none';
+  noteText.innerText = '';
+}
+else {
     noteBox.style.display = 'none';
     noteText.innerText = '';
   }
