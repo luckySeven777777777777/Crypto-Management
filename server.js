@@ -677,81 +677,80 @@ app.post('/api/admin/create', async (req, res) => {
   try {
     const { id, password, createToken } = req.body;
     if (!id || !password) {
-      return res.status(400).json({ ok:false, error:'missing id/password' });
+      return res.status(400).json({ ok: false, error: 'missing id/password' });
     }
 
     // 允许 bootstrap token 或 已登录 admin 创建
-    if (process.env.ADMIN_BOOTSTRAP_TOKEN &&
-        createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
+    if (process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
       // pass
     } else {
-  const auth = req.headers.authorization || '';
-  if (!auth.startsWith('Bearer '))
-    return res.status(403).json({ ok:false, error:'forbidden' });
+      const auth = req.headers.authorization || '';
+      if (!auth.startsWith('Bearer '))
+        return res.status(403).json({ ok: false, error: 'forbidden' });
 
-  const adminToken = auth.slice(7);
-  if (!await isValidAdminToken(adminToken))
-    return res.status(403).json({ ok:false, error:'forbidden' });
-  // ✅ 不要求 2FA
-}
+      const adminToken = auth.slice(7);
+      if (!await isValidAdminToken(adminToken))
+        return res.status(403).json({ ok: false, error: 'forbidden' });
+      // ✅ 不要求 2FA
+    }
 
-    const hashed = await bcrypt.hash(password, 10);
-const token = uuidv4();
-const created = now();
+    const hashed = await bcrypt.hash(password, 10);  // 哈希化密码
+    const token = uuidv4();  // 生成管理员 token
+    const created = now();   // 获取当前时间戳
 
-await db.ref(`admins/${id}`).set({
-  id,
-  hashed,
-  created,
-  isSuper: false   // 或 true
-});
+    // 保存管理员信息到 Firebase 数据库
+    await db.ref(`admins/${id}`).set({
+      id,
+      hashed,
+      created,
+      isSuper: false   // 设置为普通管理员，修改为 true 则为超级管理员
+    });
 
-await db.ref(`admins_by_token/${token}`).set({
-  id,
-  created
-});
+    // 生成管理员 token
+    await db.ref(`admins_by_token/${token}`).set({
+      id,
+      created
+    });
 
-    return res.json({ ok:true, id, token });
+    return res.json({ ok: true, id, token });  // 返回管理员信息和 token
 
   } catch (e) {
     console.error('admin create error', e);
-    return res.status(500).json({ ok:false });
+    return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
-
 
 /* --------------------------------------------------
    Utils
 -------------------------------------------------- */
-
 app.post('/api/admin/login', async (req, res) => {
   try {
     const { id, password } = req.body;
     if (!id || !password)
-      return res.status(400).json({ ok:false });
+      return res.status(400).json({ ok: false, error: 'missing id/password' });
 
     const snap = await db.ref(`admins/${id}`).once('value');
     if (!snap.exists())
-      return res.status(404).json({ ok:false });
+      return res.status(404).json({ ok: false, error: 'admin not found' });
 
     const admin = snap.val();
-    const passOk = await bcrypt.compare(password, admin.hashed);
+    const passOk = await bcrypt.compare(password, admin.hashed);  // 比较密码
     if (!passOk)
-      return res.status(401).json({ ok:false });
+      return res.status(401).json({ ok: false, error: 'incorrect password' });
 
-    const token = uuidv4();
+    const token = uuidv4();  // 生成新 token
     await db.ref(`admins_by_token/${token}`).set({
       id,
-      created: now()
+      created: now()  // 保存 token 和创建时间
     });
 
-    return res.json({ ok:true, token });
+    return res.json({ ok: true, token });  // 返回登录成功的 token
+
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok:false });
+    return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
-
 /* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
    - prevents double-processing by checking 'processed' flag
