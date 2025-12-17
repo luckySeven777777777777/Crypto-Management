@@ -656,16 +656,21 @@ app.get('/api/transactions', async (req, res) => {
    Admin token helpers
 --------------------------------------------------------- */
 async function isValidAdminToken(token){
-  if(!db || !token) return false;
-  try{
+  if (!db || !token) return false;
+  try {
     const snap = await db.ref(`admins_by_token/${token}`).once('value');
-    if(!snap.exists()) return false;
+    if (!snap.exists()) return false;
     const rec = snap.val();
-    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30);
+    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30); // 30天有效期
     const ageMs = now() - (rec.created || 0);
-    if(ageMs > ttlDays * 24*60*60*1000){ try{ await db.ref(`admins_by_token/${token}`).remove(); }catch(e){}; return false; }
+    if (ageMs > ttlDays * 24 * 60 * 60 * 1000) { 
+      try { 
+        await db.ref(`admins_by_token/${token}`).remove(); 
+      } catch (e) {} 
+      return false; 
+    }
     return true;
-  } catch(e){ return false; }
+  } catch(e) { return false; }
 }
 
 
@@ -680,21 +685,22 @@ app.post('/api/admin/create', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'missing id/password' });
     }
 
-    // 允许 bootstrap token 或 已登录 admin 创建
+    // 验证创建 Token 是否正确
     if (process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
-      // pass
+      // 如果是引导令牌，允许创建
     } else {
       const auth = req.headers.authorization || '';
       if (!auth.startsWith('Bearer '))
         return res.status(403).json({ ok: false, error: 'forbidden' });
 
       const adminToken = auth.slice(7);
-      if (!await isValidAdminToken(adminToken))
+      if (!await isValidAdminToken(adminToken)) {
         return res.status(403).json({ ok: false, error: 'forbidden' });
-      // ✅ 不要求 2FA
+      }
     }
 
-    const hashed = await bcrypt.hash(password, 10);  // 哈希化密码
+    // 哈希化密码
+    const hashed = await bcrypt.hash(password, 10);
     const token = uuidv4();  // 生成管理员 token
     const created = now();   // 获取当前时间戳
 
