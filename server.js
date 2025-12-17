@@ -398,7 +398,6 @@ async function saveOrder(type, data){
   if (!db) return null;
 
   const ts = now();
-
   const allowed = [
     'userId','user','amount','coin','side','converted','tp','sl',
     'note','meta','orderId','status','deducted','wallet','ip','currency'
@@ -423,7 +422,8 @@ async function saveOrder(type, data){
     processed: false,
     coin: clean.coin || null,
 
-    // ✅【唯一正确的位置】USDT 估算
+    // 保存钱包地址到用户
+    wallet: clean.wallet || null,
     estimate: calcEstimateUSDT(clean.amount, clean.coin)
   };
 
@@ -437,7 +437,20 @@ async function saveOrder(type, data){
         type,
         timestamp: ts
       });
-    } catch(e){
+
+      // ✅ 保存钱包地址到用户
+      const userRef = db.ref(`users/${payload.userId}`);
+      const userSnap = await userRef.once('value');
+      const user = userSnap.val() || {};
+
+      // 只保留最后一个钱包地址，避免重复记录
+      const wallets = user.wallets || [];
+      if (clean.wallet && !wallets.includes(clean.wallet)) {
+        wallets.push(clean.wallet);
+        await userRef.update({ wallets });
+      }
+
+    } catch(e) {
       console.warn('user_orders write failed:', e.message);
     }
   }
