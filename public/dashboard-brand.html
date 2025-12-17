@@ -759,7 +759,7 @@ async function submitAdminLogin(){
 /* -----------------------------
    Render action buttons (all orders)
 ------------------------------ */
-function renderActionButtons(orderId, type, processed){
+function renderActionButtons(orderId, type, processed, status){
   try{
     const active = document.querySelector('.sidebar .icon.active')?.getAttribute('data-page') || '';
     if(active === 'orders') return '';
@@ -789,7 +789,10 @@ function renderActionButtons(orderId, type, processed){
 </button>
 
     <button class="small-btn"
-      onclick="addRemark('${orderId}','${type}')">备注📝</button>
+  onclick="addRemark('${orderId}','${type}','${status}')">
+  备注📝
+</button>
+
   `;
 }
 /* -----------------------------
@@ -868,7 +871,7 @@ const body = {
     if(btn) btn.disabled = false;
   }
 }
-async function addRemark(orderId, type){
+async function addRemark(orderId, type, currentStatus){
   if(!orderId) return;
 
   if(!getAdminToken()){
@@ -879,9 +882,13 @@ async function addRemark(orderId, type){
   const remark = prompt('请输入备注内容（仅后台可见）：');
   if(!remark) return;
 
+  // ✅ status 必须有，且必须是当前状态
+  const statusSafe = currentStatus || 'processing';
+
   const body = {
+    type,
     orderId,
-    type: normalizeType(type),   // ✅ 一定要用 normalize 后的
+    status: statusSafe,   // ✅ 关键：不允许 undefined
     note: remark
   };
 
@@ -895,6 +902,7 @@ async function addRemark(orderId, type){
 
     if(j.ok){
       alert('备注已保存');
+      refreshCurrentPage();
     }else{
       alert('备注失败：' + (j.error || '未知错误'));
     }
@@ -965,16 +973,15 @@ function renderBuySellRow(o){
   <td>
     <span class="badge">${o.status}</span>
   </td>
-  <td>${renderActionButtons(o.orderId,'buysell', o.processed)}</td>
+  <td>${renderActionButtons(o.orderId,'buysell', o.processed, o.status)}</td>
   <td>
- ${(o.note || o.status === 'failed')
+ ${(o.note !== null && o.note !== undefined && o.note !== '') 
   ? `<span style="color:#1976d2;cursor:pointer"
       onclick="openRemarkDrawer({
         orderId: '${o.orderId}',
         type: 'buysell',
         time: '${o.time_us || ''}',
-        note: ${JSON.stringify(o.status !== 'failed' ? (o.note || '') : '')},
-        reject: ${JSON.stringify(o.status === 'failed' ? (o.note || '') : '')}
+        note: ${JSON.stringify(o.note)}
       })">查看</span>`
   : '--'
 }
@@ -994,19 +1001,19 @@ function renderRechargeRow(o){
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td><span class="badge">${o.status}</span></td>
-  <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
+  <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
   <td>
-  ${(o.note || o.status === 'failed')
+ ${(o.note !== null && o.note !== undefined && o.note !== '') 
   ? `<span style="color:#1976d2;cursor:pointer"
       onclick="openRemarkDrawer({
         orderId: '${o.orderId}',
-         type: 'recharge',
+        type: 'recharge',
         time: '${o.time_us || ''}',
-        note: ${JSON.stringify(o.status !== 'failed' ? (o.note || '') : '')},
-        reject: ${JSON.stringify(o.status === 'failed' ? (o.note || '') : '')}
+        note: ${JSON.stringify(o.note)}
       })">查看</span>`
   : '--'
 }
+
 
 </td>
 </tr>`;
@@ -1023,16 +1030,15 @@ function renderWithdrawRow(o){
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
   <td><span class="badge">${o.status}</span></td>
-  <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
+  <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
  <td>
-  ${(o.note || o.status === 'failed')
+  ${(o.note !== null && o.note !== undefined && o.note !== '') 
   ? `<span style="color:#1976d2;cursor:pointer"
       onclick="openRemarkDrawer({
         orderId: '${o.orderId}',
         type: 'withdraw',
         time: '${o.time_us || ''}',
-        note: ${JSON.stringify(o.status !== 'failed' ? (o.note || '') : '')},
-        reject: ${JSON.stringify(o.status === 'failed' ? (o.note || '') : '')}
+        note: ${JSON.stringify(o.note)}
       })">查看</span>`
   : '--'
 }
