@@ -782,27 +782,31 @@ button {
     }
 
     // 验证2FA验证码
-    async function verifyGoogle2FA() {
-      const code = document.getElementById('gaCode').value.trim();
-      const adminId = document.getElementById('gaAdminId').value.trim();
-      if (!code) {
-        alert('请输入验证码');
-        return;
-      }
+   async function verifyGoogle2FA() {
+  const code = document.getElementById('gaCode').value.trim();
+  const adminId = document.getElementById('gaAdminId').value.trim();
+  if (!code) {
+    alert('请输入验证码');
+    return;
+  }
 
-      const response = await fetch('/api/admin/verify-2fa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId, code })
-      });
+  const response = await fetch('/api/admin/verify-2fa', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ adminId, code })
+  });
 
-      const data = await response.json();
-      if (data.ok) {
-        alert('2FA绑定成功');
-      } else {
-        alert('验证码错误');
-      }
-    }
+  const data = await response.json();
+  if (data.ok) {
+    alert('2FA验证成功');
+    setAdminToken(data.token); // 保存token
+    closeAdminLogin();
+    loadDashboard(); // 登录后跳转到后台主页
+  } else {
+    alert('验证码错误');
+  }
+}
+
 /* -----------------------------
    后端 API
 ------------------------------ */
@@ -1001,11 +1005,34 @@ async function submitAdminLogin(){
   const pw = document.getElementById('adminPassword').value;
   if(!id || !pw) return alert('请输入管理员ID与密码');
   try{
-    const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, password: pw }) });
+    const r = await fetch('/api/admin/login', { 
+      method:'POST', 
+      headers:{'Content-Type':'application/json'}, 
+      body: JSON.stringify({ id, password: pw }) 
+    });
     const j = await r.json();
-    if(j.ok && j.token){ setAdminToken(j.token); closeAdminLogin(); alert('登录成功'); loadDashboard(); }
-    else alert('登录失败: ' + (j.error || '未知'));
-  }catch(e){ alert('登录请求失败'); }
+    if(j.ok && j.token){
+      // 判断是否启用了2FA
+      const has2FA = await checkIf2FAEnabled(id);
+      if (has2FA) {
+        // 显示2FA验证码输入框
+        document.getElementById('adminLoginModal').style.display = 'none'; // 隐藏登录框
+        document.getElementById('gaBox').style.display = 'block'; // 显示2FA输入框
+        document.getElementById('gaAdminId').value = id; // 填充管理员ID
+        return; // 等待用户输入验证码
+      }
+
+      // 如果没有启用2FA，直接登录
+      setAdminToken(j.token);
+      closeAdminLogin();
+      alert('登录成功');
+      loadDashboard();
+    } else {
+      alert('登录失败: ' + (j.error || '未知'));
+    }
+  } catch(e){
+    alert('登录请求失败');
+  }
 }
 
 /* -----------------------------
