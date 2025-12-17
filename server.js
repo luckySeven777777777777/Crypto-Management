@@ -73,24 +73,6 @@ function isSafeUid(uid){
   if(uid.length < 2 || uid.length > 512) return false;
   return true;
 }
-async function ensureUserExists(uid){
-  if(!db) return;
-  if(!isSafeUid(uid)) return;
-
-  const ref = db.ref(`users/${uid}`);
-  const snap = await ref.once('value');
-
-  if(snap.exists()) return;
-
-  const ts = now();
-  await ref.set({
-    userid: uid,
-    created: ts,
-    updated: ts,
-    balance: 0
-  });
-}
-
 // ================================
 // USDT 价格缓存（CoinGecko）
 // ================================
@@ -294,7 +276,6 @@ app.get('/api/balance/:uid', async (req, res) => {
     const uid = String(req.params.uid || '').trim();
     if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
     if (!db) return res.json({ ok:true, balance: 0 });
-    await ensureUserExists(uid);
     const snap = await db.ref(`users/${uid}/balance`).once('value');
     return res.json({ ok:true, balance: Number(snap.val() || 0) });
   } catch (e){
@@ -398,6 +379,7 @@ async function saveOrder(type, data){
   if (!db) return null;
 
   const ts = now();
+
   const allowed = [
     'userId','user','amount','coin','side','converted','tp','sl',
     'note','meta','orderId','status','deducted','wallet','ip','currency'
@@ -422,8 +404,7 @@ async function saveOrder(type, data){
     processed: false,
     coin: clean.coin || null,
 
-    // 保存钱包地址到用户
-    wallet: clean.wallet || null,
+    // ✅【唯一正确的位置】USDT 估算
     estimate: calcEstimateUSDT(clean.amount, clean.coin)
   };
 
@@ -437,20 +418,7 @@ async function saveOrder(type, data){
         type,
         timestamp: ts
       });
-
-      // ✅ 保存钱包地址到用户
-      const userRef = db.ref(`users/${payload.userId}`);
-      const userSnap = await userRef.once('value');
-      const user = userSnap.val() || {};
-
-      // 只保留最后一个钱包地址，避免重复记录
-      const wallets = user.wallets || [];
-      if (clean.wallet && !wallets.includes(clean.wallet)) {
-        wallets.push(clean.wallet);
-        await userRef.update({ wallets });
-      }
-
-    } catch(e) {
+    } catch(e){
       console.warn('user_orders write failed:', e.message);
     }
   }
@@ -503,7 +471,6 @@ async function handleBuySellRequest(req, res){
     } = req.body;
 
     const uid = userId || user;
-    await ensureUserExists(uid);
     const realSide = side || tradeType;   // ✅ 关键修复
     const amt = Number(amount || 0);
 
@@ -563,7 +530,6 @@ app.post('/api/order/recharge', async (req, res) => {
     if(!db) return res.json({ ok:false, error:'no-db' });
     const payload = req.body || {};
     const userId = payload.userId || payload.user;
-    await ensureUserExists(userId);
     if(!userId) return res.status(400).json({ ok:false, error:'missing userId' });
     if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
     const id = await saveOrder('recharge', payload);
@@ -580,7 +546,6 @@ app.post('/api/order/withdraw', async (req, res) => {
 
     const payload = req.body || {};
     const userId = payload.userId || payload.user;
-   await ensureUserExists(userId);
     const amount = Number(payload.amount || 0);
 
     if(!userId || amount === undefined || amount === null) return res.status(400).json({ ok:false, error:'missing userId/amount' });
@@ -656,21 +621,16 @@ app.get('/api/transactions', async (req, res) => {
    Admin token helpers
 --------------------------------------------------------- */
 async function isValidAdminToken(token){
-  if (!db || !token) return false;
-  try {
+  if(!db || !token) return false;
+  try{
     const snap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (!snap.exists()) return false;
+    if(!snap.exists()) return false;
     const rec = snap.val();
-    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30); // 30天有效期
+    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30);
     const ageMs = now() - (rec.created || 0);
-    if (ageMs > ttlDays * 24 * 60 * 60 * 1000) { 
-      try { 
-        await db.ref(`admins_by_token/${token}`).remove(); 
-      } catch (e) {} 
-      return false; 
-    }
+    if(ageMs > ttlDays * 24*60*60*1000){ try{ await db.ref(`admins_by_token/${token}`).remove(); }catch(e){}; return false; }
     return true;
-  } catch(e) { return false; }
+  } catch(e){ return false; }
 }
 
 
@@ -682,81 +642,81 @@ app.post('/api/admin/create', async (req, res) => {
   try {
     const { id, password, createToken } = req.body;
     if (!id || !password) {
-      return res.status(400).json({ ok: false, error: 'missing id/password' });
+      return res.status(400).json({ ok:false, error:'missing id/password' });
     }
 
-    // 验证创建 Token 是否正确
-    if (process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
-      // 如果是引导令牌，允许创建
+    // 允许 bootstrap token 或 已登录 admin 创建
+    if (process.env.ADMIN_BOOTSTRAP_TOKEN &&
+        createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
+      // pass
     } else {
-      const auth = req.headers.authorization || '';
-      if (!auth.startsWith('Bearer '))
-        return res.status(403).json({ ok: false, error: 'forbidden' });
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer '))
+    return res.status(403).json({ ok:false, error:'forbidden' });
 
-      const adminToken = auth.slice(7);
-      if (!await isValidAdminToken(adminToken)) {
-        return res.status(403).json({ ok: false, error: 'forbidden' });
-      }
-    }
+  const adminToken = auth.slice(7);
+  if (!await isValidAdminToken(adminToken))
+    return res.status(403).json({ ok:false, error:'forbidden' });
+  // ✅ 不要求 2FA
+}
 
-    // 哈希化密码
     const hashed = await bcrypt.hash(password, 10);
-    const token = uuidv4();  // 生成管理员 token
-    const created = now();   // 获取当前时间戳
+const token = uuidv4();
+const created = now();
 
-    // 保存管理员信息到 Firebase 数据库
-    await db.ref(`admins/${id}`).set({
-      id,
-      hashed,
-      created,
-      isSuper: false   // 设置为普通管理员，修改为 true 则为超级管理员
-    });
+await db.ref(`admins/${id}`).set({
+  id,
+  hashed,
+  created,
+  isSuper: false   // 或 true
+});
 
-    // 生成管理员 token
-    await db.ref(`admins_by_token/${token}`).set({
-      id,
-      created
-    });
+await db.ref(`admins_by_token/${token}`).set({
+  id,
+  created
+});
 
-    return res.json({ ok: true, id, token });  // 返回管理员信息和 token
+    return res.json({ ok:true, id, token });
 
   } catch (e) {
     console.error('admin create error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    return res.status(500).json({ ok:false });
   }
 });
+
 
 /* --------------------------------------------------
    Utils
 -------------------------------------------------- */
+
 app.post('/api/admin/login', async (req, res) => {
   try {
     const { id, password } = req.body;
     if (!id || !password)
-      return res.status(400).json({ ok: false, error: 'missing id/password' });
+      return res.status(400).json({ ok:false });
 
     const snap = await db.ref(`admins/${id}`).once('value');
     if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
+      return res.status(404).json({ ok:false });
 
     const admin = snap.val();
-    const passOk = await bcrypt.compare(password, admin.hashed);  // 比较密码
+    const passOk = await bcrypt.compare(password, admin.hashed);
     if (!passOk)
-      return res.status(401).json({ ok: false, error: 'incorrect password' });
+      return res.status(401).json({ ok:false });
 
-    const token = uuidv4();  // 生成新 token
+    const token = uuidv4();
     await db.ref(`admins_by_token/${token}`).set({
       id,
-      created: now()  // 保存 token 和创建时间
+      created: now()
     });
 
-    return res.json({ ok: true, token });  // 返回登录成功的 token
-
+    return res.json({ ok:true, token });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    res.status(500).json({ ok:false });
   }
 });
+
 /* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
    - prevents double-processing by checking 'processed' flag
@@ -945,7 +905,6 @@ app.get('/api/orders/stream', async (req, res) => {
 
 app.get('/wallet/:uid/sse', async (req, res) => {
   const uid = String(req.params.uid || '').trim();
-  await ensureUserExists(uid);
   res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
   res.flushHeaders();
   const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
