@@ -79,27 +79,48 @@
   };
 
   document.getElementById('btnCreate').onclick = async () => {
-    const id = el('newId').value.trim(); 
-    const pw = el('newPw').value;
-    const perms = { 
-      recharge: el('permRecharge').checked, 
-      withdraw: el('permWithdraw').checked, 
-      buySell: el('permBuySell').checked 
-    };
-    if (!id || !pw) return alert('请输入id与密码');
-    try {
-      const r = await fetch('/api/admin/create', { 
-        method: 'POST', 
-        headers: authHeaders(), 
-        body: JSON.stringify({ id, password: pw, permissions: perms }) 
-      });
-      const j = await r.json();
-      if (j.ok) { 
-        alert('创建成功'); 
-        loadAdmins(); 
-      } else alert('创建失败: ' + (j.error || ''));
-    } catch (e) { alert('请求失败'); }
+  const btnCreate = document.getElementById('btnCreate'); // 获取按钮元素
+  btnCreate.disabled = true;  // 禁用按钮，防止重复点击
+
+  const id = el('newId').value.trim(); 
+  const pw = el('newPw').value;
+  const perms = { 
+    recharge: el('permRecharge').checked, 
+    withdraw: el('permWithdraw').checked, 
+    buySell: el('permBuySell').checked 
   };
 
-  loadAdmins();
+  // 确保id和密码输入
+  if (!id || !pw) {
+    btnCreate.disabled = false; // 恢复按钮
+    return alert('请输入id与密码');
+  }
+
+  try {
+    // 发送创建管理员请求
+    const r = await fetch('/api/admin/create', { 
+      method: 'POST', 
+      headers: authHeaders(), 
+      body: JSON.stringify({ id, password: pw, permissions: perms }) 
+    });
+
+    // 解析响应
+    const j = await r.json();
+
+    if (j.ok) { 
+      alert('创建成功'); 
+      loadAdmins();  // 加载管理员列表
+    } else {
+      alert('创建失败: ' + (j.error || '未知错误'));
+    }
+  } catch (e) { 
+    alert('请求失败'); 
+  } finally {
+    btnCreate.disabled = false; // 恢复按钮
+  }
+};
+
+// 页面加载时，加载管理员列表
+loadAdmins();
 })();
+
