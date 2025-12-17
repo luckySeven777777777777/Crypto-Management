@@ -904,6 +904,7 @@ async function addRemark(orderId, type){
 }
 let currentRemarkData = null;
 function openRemarkDrawer(data){
+console.log('openRemarkDrawer', data);
   if(!data) return;
 
   const drawer = document.getElementById('remarkDrawer');
@@ -946,28 +947,6 @@ function closeRemarkDrawer(){
   document.getElementById('remarkDrawer')?.classList.remove('open');
 }
 
-// ✅ 保留
-function submitRemark(){
-  if(!currentRemarkData) return;
-
-  fetch('/api/transaction/update', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + localStorage.getItem('nexbit_admin_token')
-    },
-    body: JSON.stringify({
-      orderId: currentRemarkData.orderId,
-      type: currentRemarkData.type,
-      status: currentRemarkData.status || 'pending',
-      note: document.getElementById('rd-note')?.innerText || ''
-    })
-  })
-  .then(r=>r.json())
-  .then(()=> closeRemarkDrawer())
-  .catch(()=> alert('备注失败'));
-}
-
 /* -----------------------------
    Render rows for each type
 ------------------------------ */
@@ -988,19 +967,17 @@ function renderBuySellRow(o){
   </td>
   <td>${renderActionButtons(o.orderId,'buysell', o.processed)}</td>
   <td>
-  ${o.note
-    ? `<span style="color:#1976d2;cursor:pointer"
-        onclick="openRemarkDrawer({
-          orderId: '${o.orderId}',
-          type: 'buysell',
-          time: '${o.time_us || ''}',
-          note: ${JSON.stringify(o.note || '')},
-          reject: ${JSON.stringify(
-            o.status === 'failed' ? (o.note || '') : ''
-          )}
-        })">查看</span>`
-    : '--'
-  }
+ ${(o.note || o.status === 'failed')
+  ? `<span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId: '${o.orderId}',
+        type: 'buysell',
+        time: '${o.time_us || ''}',
+        note: ${JSON.stringify(o.status !== 'failed' ? (o.note || '') : '')},
+        reject: ${JSON.stringify(o.status === 'failed' ? (o.note || '') : '')}
+      })">查看</span>`
+  : '--'
+}
 </td>
 </tr>`;
 }
@@ -1019,19 +996,18 @@ function renderRechargeRow(o){
   <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'recharge', o.processed)}</td>
   <td>
-  ${o.note
-    ? `<span style="color:#1976d2;cursor:pointer"
-        onclick="openRemarkDrawer({
-          orderId: '${o.orderId}',
-          type: 'recharge',
-          time: '${o.time_us || ''}',
-          note: ${JSON.stringify(o.note || '')},
-          reject: ${JSON.stringify(
-            o.status === 'failed' ? (o.note || '') : ''
-          )}
-        })">查看</span>`
-    : '--'
-  }
+  ${(o.note || o.status === 'failed')
+  ? `<span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId: '${o.orderId}',
+         type: 'recharge',
+        time: '${o.time_us || ''}',
+        note: ${JSON.stringify(o.status !== 'failed' ? (o.note || '') : '')},
+        reject: ${JSON.stringify(o.status === 'failed' ? (o.note || '') : '')}
+      })">查看</span>`
+  : '--'
+}
+
 </td>
 </tr>`;
 }
@@ -1049,19 +1025,18 @@ function renderWithdrawRow(o){
   <td><span class="badge">${o.status}</span></td>
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed)}</td>
  <td>
-  ${o.note
-    ? `<span style="color:#1976d2;cursor:pointer"
-        onclick="openRemarkDrawer({
-          orderId: '${o.orderId}',
-          type: 'withdraw',
-          time: '${o.time_us || ''}',
-          note: ${JSON.stringify(o.note || '')},
-          reject: ${JSON.stringify(
-            o.status === 'failed' ? (o.note || '') : ''
-          )}
-        })">查看</span>`
-    : '--'
-  }
+  ${(o.note || o.status === 'failed')
+  ? `<span style="color:#1976d2;cursor:pointer"
+      onclick="openRemarkDrawer({
+        orderId: '${o.orderId}',
+        type: 'withdraw',
+        time: '${o.time_us || ''}',
+        note: ${JSON.stringify(o.status !== 'failed' ? (o.note || '') : '')},
+        reject: ${JSON.stringify(o.status === 'failed' ? (o.note || '') : '')}
+      })">查看</span>`
+  : '--'
+}
+
 </td>
 </tr>`;
 }
