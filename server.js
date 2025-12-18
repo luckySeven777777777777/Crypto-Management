@@ -24,60 +24,7 @@ process.on('unhandledRejection', (reason, p) => {
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION', err);
 });
-// 生成 2FA 密钥和二维码
-app.post('/api/admin/generate-2fa', async (req, res) => {
-  const { adminId } = req.body;  // 获取管理员ID
 
-  if (!adminId) {
-    return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
-  }
-
-  // 生成 2FA 密钥
-  const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
-
-  // 使用二维码生成库生成二维码 URL
-  qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
-    if (err) {
-      return res.status(500).json({ ok: false, message: '二维码生成失败' });
-    }
-
-    // 将密钥存储到数据库，方便后续验证
-    // 示例：await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
-
-    // 返回生成的二维码和密钥
-    res.json({
-      ok: true,
-      qr_code: qr_code,  // 二维码链接
-      secret: secret.base32 // 2FA 密钥
-    });
-  });
-});
-
-// 验证 2FA 验证码
-app.post('/api/admin/verify-2fa', async (req, res) => {
-  const { adminId, code } = req.body;
-
-  if (!adminId || !code) {
-    return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
-  }
-
-  // 从数据库获取管理员的 2FA 密钥（此处为假设，实际使用时需从数据库读取）
-  // 例如：const secret = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
-  const secret = '你的2FA密钥';  // 这里需要替换为从数据库中获取的密钥
-
-  // 使用 speakeasy 库验证验证码
-  const verified = speakeasy.totp.verify({
-    secret: secret,
-    encoding: 'base32',
-    token: code
-  });
-
-  if (verified) {
-    return res.json({ ok: true, message: '2FA 验证成功' });
-  } else {
-    return res.status(400).json({ ok: false, message: '验证码错误' });
-  }
-});
 /* ---------------------------------------------------------
    Middleware
 --------------------------------------------------------- */
@@ -110,6 +57,74 @@ try {
 } catch (e) {
   console.warn('❌ Firebase init failed:', e.message);
 }
+// Generate 2FA key and QR code
+app.post('/api/admin/generate-2fa', async (req, res) => {
+  const { adminId } = req.body;  // 获取管理员ID
+  if (!adminId) {
+    return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
+  }
+
+  try {
+    // Generate 2FA secret key
+    const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
+
+    // Generate QR code
+    qrcode.toDataURL(secret.otpauth_url, async function (err, qr_code) {
+      if (err) {
+        return res.status(500).json({ ok: false, message: '二维码生成失败' });
+      }
+
+      // Store the secret key to the database
+      await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);  // Store secret
+
+      // Return the QR code and the secret key
+      res.json({
+        ok: true,
+        qr_code: qr_code,  // QR code link
+        secret: secret.base32 // 2FA secret key
+      });
+    });
+  } catch (error) {
+    console.error('生成 2FA 错误:', error);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
+// 验证 2FA 验证码
+app.post('/api/admin/verify-2fa', async (req, res) => {
+  const { adminId, code } = req.body;
+
+  if (!adminId || !code) {
+    return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
+  }
+
+  try {
+    // 从数据库中获取管理员的 2FA 密钥
+    const secretSnapshot = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
+    const secret = secretSnapshot.val();
+
+    if (!secret) {
+      return res.status(404).json({ ok: false, message: '未找到管理员的 2FA 密钥' });
+    }
+
+    // 使用 speakeasy 库验证验证码
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: 'base32',
+      token: code
+    });
+
+    if (verified) {
+      const token = generateAdminToken(adminId); // 生成新的登录token
+      return res.json({ ok: true, token });
+    } else {
+      return res.status(400).json({ ok: false, message: '验证码错误' });
+    }
+  } catch (error) {
+    console.error('验证 2FA 错误:', error);
+    return res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
 
 /* ---------------------------------------------------------
    Helpers
@@ -142,7 +157,8 @@ async function ensureUserExists(uid){
     userid: uid,
     created: ts,
     updated: ts,
-    balance: 0
+    balance: 0,
+     coins: {}   // ⭐ 新增
   });
 }
 
@@ -584,7 +600,27 @@ async function handleBuySellRequest(req, res){
       await userRef.update({ balance: newBal, lastUpdate: now() });
       broadcastSSE({ type:'balance', userId: uid, balance: newBal });
     }
+// ⭐ 新增：记录币种数量（不影响原逻辑）
+if (sideLower === 'buy') {
+  const coinKey = String(coin).toUpperCase();
+  const qty = Number(converted || 0);
+  if (qty > 0) {
+    const snap = await userRef.child(`coins/${coinKey}`).once('value');
+    const cur = Number(snap.val() || 0);
+    const newQty = cur + qty;
 
+    await userRef.update({
+      [`coins/${coinKey}`]: newQty
+    });
+
+    broadcastSSE({
+      type: 'coin',
+      userId: uid,
+      coin: coinKey,
+      amount: newQty
+    });
+  }
+}
     // SELL：不动余额，等后台审批
     const id = await saveOrder('buysell', {
       userId: uid,
@@ -934,12 +970,35 @@ if (
   });
 }
 
-// buysell sell 通过 → 加钱（✅ 必须加 isApproved）
 else if (
   type === 'buysell' &&
   isApproved &&
   String(order.side || '').toLowerCase() === 'sell'
 ) {
+  const coinKey = String(order.coin || '').toUpperCase();
+  const sellQty = Number(order.converted || 0);
+
+  // ① 校验币是否足够（不够直接拒绝）
+  if (coinKey && sellQty > 0) {
+    const snap = await userRef.child(`coins/${coinKey}`).once('value');
+    const curCoin = Number(snap.val() || 0);
+
+    if (curCoin < sellQty) {
+      await ref.update({
+        status: 'rejected',
+        note: '🤖 Please make sure you have sufficient coin balance',
+        processed: true,
+        updated: now()
+      });
+
+      return res.json({
+        ok: false,
+        error: '🤖 Please make sure you have sufficient coin balance'
+      });
+    }
+  }
+
+  // ② 加 USDT
   curBal += amt;
   await userRef.update({
     balance: curBal,
@@ -952,8 +1011,27 @@ else if (
     userId,
     balance: curBal
   });
+
+  // ③ 扣币（唯一正确方式）
+  if (coinKey && sellQty > 0) {
+    await userRef.child(`coins/${coinKey}`).transaction(cur => {
+      if (cur === null) return 0;
+      return cur - sellQty;
+    });
+
+    // ④ 再读最终值 → SSE
+    const finalSnap = await userRef.child(`coins/${coinKey}`).once('value');
+    const finalAmt = Number(finalSnap.val() || 0);
+
+    broadcastSSE({
+      type: 'coin',
+      userId,
+      coin: coinKey,
+      amount: finalAmt
+    });
+  }
 }
-// ===== ✅【最终正确】统一写回最终状态 + processed =====
+// ===== ✅ 统一写回最终状态 + processed =====
 let finalStatus = null;
 
 if (isApproved) finalStatus = "approved";
