@@ -1106,38 +1106,64 @@ app.get('/api/orders/stream', async (req, res) => {
 app.get('/wallet/:uid/sse', async (req, res) => {
   const uid = String(req.params.uid || '').trim();
   await ensureUserExists(uid);
-  res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
+
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
   res.flushHeaders();
-  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
+
+  const ka = setInterval(() => {
+    try { res.write(':\n\n'); } catch (e) {}
+  }, 15000);
+
   global.__sseClients.push({ res, uid, ka });
+
   try {
-    if (!db) sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: 0 }), 'balance');
-    else {
+    // ① 推 USDT 余额
+    if (!db) {
+      sendSSE(
+        res,
+        JSON.stringify({ type: 'balance', userId: uid, balance: 0 }),
+        'balance'
+      );
+    } else {
       const snap = await db.ref(`users/${uid}/balance`).once('value');
-      const bal = safeNumber(snap.exists() ? snap.val() : 0, 0);
-      sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: bal }), 'balance');
+      const bal = Number(snap.exists() ? snap.val() : 0);
+      sendSSE(
+        res,
+        JSON.stringify({ type: 'balance', userId: uid, balance: bal }),
+        'balance'
+      );
     }
-  } catch(e){}
-  req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
+
+    // ⭐⭐⭐② 补推 coins 快照（关键修复，必须在 async 里）⭐⭐⭐
+    const coinsSnap = await db.ref(`users/${uid}/coins`).once('value');
+    const coins = coinsSnap.val() || {};
+
+    Object.entries(coins).forEach(([coin, amount]) => {
+      sendSSE(
+        res,
+        JSON.stringify({
+          type: 'coin',
+          userId: uid,
+          coin,
+          amount: Number(amount || 0)
+        }),
+        'coin'
+      );
+    });
+
+  } catch (e) {
+    console.error('SSE init error:', e);
+  }
+
+  req.on('close', () => {
+    clearInterval(ka);
+    global.__sseClients = global.__sseClients.filter(c => c.res !== res);
+  });
 });
-// ⭐⭐⭐【补推 coins 快照（关键修复）】⭐⭐⭐
-const coinsSnap = await db.ref(`users/${uid}/coins`).once('value');
-const coins = coinsSnap.val() || {};
-
-Object.entries(coins).forEach(([coin, amount]) => {
-  sendSSE(
-    res,
-    JSON.stringify({
-      type: 'coin',
-      userId: uid,
-      coin,
-      amount: Number(amount || 0)
-    }),
-    'coin'
-  );
-});
-
-
 /* ---------------------------------------------------------
    Firebase watchers
 --------------------------------------------------------- */
