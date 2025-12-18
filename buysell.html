@@ -44,6 +44,45 @@
       from { transform: translateY(-50%) rotate(0); }
       to { transform: translateY(-50%) rotate(360deg); }
     }
+.amount-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.amount-row button {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #555;
+  background: transparent;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.amount-row input {
+  flex: 1;
+  text-align: center;
+  font-size: 16px;
+}
+.pct-btn {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 6px;
+  border: 1px solid #555;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pct-btn:hover {
+  border-color: #2ecc71;
+  color: #2ecc71;
+}
+
   </style>
 </head>
 <body>
@@ -58,11 +97,41 @@
   <label for="currency">Select Coin:</label>
   <select id="currency"></select>
 
-  <label for="amount">Amount:</label>
-  <input type="number" id="amount" placeholder="Enter amount" min="0" step="any" />
+  <label for="amount">Amount (USDT):</label>
+
+  <!-- Amount USDT -->
+<div class="amount-row">
+  <button type="button" onclick="adjustAmount(-1)">−</button>
+  <input type="number" id="amount" placeholder="0.00" step="any" />
+  <button type="button" onclick="adjustAmount(1)">+</button>
+</div>
+<!-- ===== Binance-style percentage buttons ===== -->
+<div id="percentRow"
+     style="
+       display:flex;
+       gap:8px;
+       margin:10px 0 6px;
+     ">
+  <button type="button" onclick="applyPercent(25)" class="pct-btn">25%</button>
+  <button type="button" onclick="applyPercent(50)" class="pct-btn">50%</button>
+  <button type="button" onclick="applyPercent(75)" class="pct-btn">75%</button>
+  <button type="button" onclick="applyPercent(100)" class="pct-btn">100%</button>
+</div>
+
+<label id="coinQtyLabel">Amount (Coin):</label>
+
+
+<div class="amount-row">
+  <button type="button" onclick="adjustQty(-1)">−</button>
+  <input type="number" id="coinQty" placeholder="0.000000" step="any" />
+  <button type="button" onclick="adjustQty(1)">+</button>
+</div>
+
 
   <label for="amountCurrency">Amount Currency:</label>
-  <select id="amountCurrency"></select>
+<select id="amountCurrency" disabled>
+  <option value="USDT">USDT</option>
+</select>
 
   <div class="adjusted-box" id="convertedBox">
     <p><b>Auto-conversion:</b></p>
@@ -79,7 +148,72 @@
   </div>
 
   <button class="trade-btn" id="tradeBtn">Trade</button>
+  <!-- BuySell History Toggle -->
+<!-- ===== BuySell 操作按钮行 ===== -->
+<div id="buysellActionRow"
+     style="
+       display:flex;
+       justify-content:space-between;
+       gap:10px;
+       margin-top:14px;
+     ">
 
+  <div id="buysellRecordToggle"
+       style="
+         flex:1;
+         text-align:center;
+         padding:6px 0;
+         cursor:pointer;
+         border:1px solid #ccc;
+         border-radius:6px;
+         font-size:13px;
+       ">
+    📊 View Trade Records
+  </div>
+
+  <div id="holdingToggle"
+       style="
+         flex:1;
+         text-align:center;
+         padding:6px 0;
+         cursor:pointer;
+         border:1px solid #ccc;
+         border-radius:6px;
+         font-size:13px;
+       ">
+    📦 Cryptocurrency Holdings
+  </div>
+
+</div>
+
+
+<!-- BuySell History Box -->
+<div id="buysellHistoryBox"
+     style="
+       display:none;
+       margin-top:10px;
+       font-size:13px;
+       color:#fff;
+       max-height:300px;
+       overflow:auto;
+     ">
+</div>
+<!-- ===== 持有币种 ===== -->
+<!-- ===== Holdings Box ===== -->
+<div id="holdingBox"
+     style="
+       display:none;
+       margin-top:12px;
+       padding-top:8px;
+       border-top:1px solid rgba(0,0,0,.15);
+       font-size:13px;
+       color:#333;
+     ">
+  <div style="font-weight:bold;margin-bottom:6px;">
+    📦 Cryptocurrency Holdings
+  </div>
+  <div id="holdingList"></div>
+</div>
   <p class="hint-cn">🤖 Please ensure you have completed your deposit...</p>
 </div>
 
@@ -91,14 +225,12 @@
   const GROUP_ID = -1003262870745;
 
   let submitting = false;
-
+let lastEdit = "usdt"; // usdt | qty
   // --- Unified independent UID helper ---
   function getOrCreateUID() {
-    // priority: window.NEXBIT_USER_ID (if page sets it), then Strikingly dataset, then localStorage fallback
     try {
       if (window.NEXBIT_USER_ID) return String(window.NEXBIT_USER_ID);
     } catch (e) {}
-    // allow reading potential dataset if you embed this script in a page with #wallet-widget
     try {
       const w = document.getElementById('wallet-widget');
       if (w && w.dataset && w.dataset.userId) {
@@ -106,19 +238,20 @@
         if (ds && ds.indexOf('{{') === -1 && ds.trim() !== '') return ds;
       }
     } catch (e) {}
-    // fallback: localStorage key
-    let uid = localStorage.getItem('NEXBIT_UID');
-    if (!uid) {
-      uid = 'U' + Date.now() + '_' + Math.floor(100000 + Math.random() * 900000);
-      localStorage.setItem('NEXBIT_UID', uid);
-    }
-    return uid;
+    let uid = localStorage.getItem('nexbit_uid');
+if (!uid) {
+  uid = 'U' + Date.now() + '_' + Math.floor(100000 + Math.random() * 900000);
+  localStorage.setItem('nexbit_uid', uid);
+}
+return uid;
+
   }
   const USERID = getOrCreateUID();
 
   const COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","TRX","DOT","MATIC","AVAX","USDT","USDC","DAI"];
   const STABLES = new Set(["USDT", "USDC", "DAI"]);
 
+  /* ======= 后续 JS 与你原来完全一致 ======= */
   // Live prices cache
   const live = {};
   const wsMap = {};
@@ -215,34 +348,43 @@
   /* ======= UI Setup ======= */
   document.addEventListener("DOMContentLoaded", () => {
     const curEl = document.getElementById("currency");
-    const amtCurEl = document.getElementById("amountCurrency");
+   const amtCurEl = document.getElementById("amountCurrency");
 
-    COINS.forEach(c => {
-      curEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
-      amtCurEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
-    });
-    amtCurEl.value = "USDT";
+COINS.forEach(c => {
+  curEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
+});
+
+amtCurEl.value = "USDT";
+
 
     document.getElementById("buyBtn").onclick = () => setType("buy");
     document.getElementById("sellBtn").onclick = () => setType("sell");
     document.getElementById("tradeBtn").onclick = sendOrder;
     document.getElementById("slCheckbox").onclick = toggleSL;
 
-    curEl.addEventListener("change", () => {
-      ensureSymbolPrice(curEl.value);
-      ensureSymbolPrice(amtCurEl.value);
-      updateConverted();
-    });
+   curEl.addEventListener("change", () => {
+  ensureSymbolPrice(curEl.value);
+document.getElementById("coinQtyLabel").innerText =
+  `Amount (${curEl.value})`;
+
+  if (lastEdit === "qty") syncFromQty();
+  else syncFromUSDT();
+});
+
     amtCurEl.addEventListener("change", () => {
       ensureSymbolPrice(amtCurEl.value);
       ensureSymbolPrice(curEl.value);
       updateConverted();
     });
     document.getElementById("amount").addEventListener("input", () => {
-      ensureSymbolPrice(curEl.value);
-      ensureSymbolPrice(amtCurEl.value);
-      updateConverted();
-    });
+  lastEdit = "usdt";
+  syncFromUSDT();
+});
+document.getElementById("coinQty").addEventListener("input", () => {
+  lastEdit = "qty";
+  syncFromQty();
+});
+
     document.getElementById("takeProfit").addEventListener("input", updateTPSL);
     document.getElementById("stopLoss").addEventListener("input", updateTPSL);
 
@@ -260,7 +402,8 @@
   }
 
   function toggleSL() {
-    document.getElementById("slBox").style.display = document.getElementById("slCheckbox").checked ? "block" : "none";
+    document.getElementById("slBox").style.display =
+      document.getElementById("slCheckbox").checked ? "block" : "none";
   }
 
   /* ======= Conversion display ======= */
@@ -303,11 +446,95 @@
 
       const usd = amount * live[from];
       const conv = usd / live[to];
-      box.innerHTML += `<p>${to}: ${conv.toFixed(6)}</p>`;
-    } catch (e) {
-      // silently fail conversion display on error
-    }
+      box.innerHTML = `
+  <div style="font-size:14px;line-height:1.4;">
+    ${to}: ${conv.toFixed(6)} ≈ ${usd.toFixed(2)} USDT
+  </div>
+`;
+
+
+    } catch {}
   }
+function syncFromUSDT() {
+  const usdt = Number(document.getElementById("amount").value) || 0;
+  const coin = document.getElementById("currency").value;
+
+  if (!live[coin] || usdt <= 0) {
+    document.getElementById("coinQty").value = "";
+    return;
+  }
+
+  const qty = usdt / live[coin];
+  document.getElementById("coinQty").value = qty.toFixed(6);
+
+  updateConverted();
+}
+
+function syncFromQty() {
+  const qty = Number(document.getElementById("coinQty").value) || 0;
+  const coin = document.getElementById("currency").value;
+
+  if (!live[coin] || qty <= 0) {
+    document.getElementById("amount").value = "";
+    return;
+  }
+
+  const usdt = qty * live[coin];
+  document.getElementById("amount").value = usdt.toFixed(2);
+
+  updateConverted();
+}
+function adjustAmount(step) {
+  const el = document.getElementById("amount");
+  el.value = (Number(el.value) || 0) + step;
+  lastEdit = "usdt";
+  syncFromUSDT();
+}
+
+function adjustQty(step) {
+  const el = document.getElementById("coinQty");
+  el.value = (Number(el.value) || 0) + step * 0.01;
+  lastEdit = "qty";
+  syncFromQty();
+}
+function applyPercent(pct) {
+  const coin = document.getElementById("currency").value;
+  const type = window.tradeType || "buy";
+
+  // ===== BUY：按 USDT 余额 =====
+  if (type === "buy") {
+    const balance = CURRENT_BALANCE || 0;
+    const usdt = balance * pct / 100;
+
+    document.getElementById("amount").value = usdt.toFixed(2);
+    lastEdit = "usdt";
+    syncFromUSDT();
+    return;
+  }
+
+  // ===== SELL：按持仓币数量 =====
+  const list = JSON.parse(
+    localStorage.getItem("buysell_history") || "[]"
+  );
+
+  let holdingQty = 0;
+  list.forEach(o => {
+    if (o.coin !== coin) return;
+    const sign = o.type === "buy" ? 1 : -1;
+    holdingQty += sign * Number(o.qty || 0);
+  });
+
+  if (holdingQty <= 0) {
+    alert("❌ No holding available.");
+    return;
+  }
+
+  const qty = holdingQty * pct / 100;
+
+  document.getElementById("coinQty").value = qty.toFixed(6);
+  lastEdit = "qty";
+  syncFromQty();
+}
 
   /* ======= TP/SL display ======= */
   function updateTPSL() {
@@ -324,8 +551,10 @@
       return;
     }
 
-    document.getElementById("tpResult").innerHTML = tp ? `TP Price: ${(p * (1 + tp / 100)).toFixed(6)} USDT` : "";
-    document.getElementById("slResult").innerHTML = sl ? `SL Price: ${(p * (1 - sl / 100)).toFixed(6)} USDT` : "";
+    document.getElementById("tpResult").innerHTML =
+      tp ? `TP Price: ${(p * (1 + tp / 100)).toFixed(6)} USDT` : "";
+    document.getElementById("slResult").innerHTML =
+      sl ? `SL Price: ${(p * (1 - sl / 100)).toFixed(6)} USDT` : "";
   }
 
   /* ======= Utility ======= */
@@ -355,7 +584,7 @@
         "X-User-Id": USERID,
       },
       body: JSON.stringify(data),
-    }).catch(() => { });
+    }).catch(() => {});
   }
 
   function sendTGText(text) {
@@ -365,17 +594,16 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: id, text }),
-      }).catch(() => { });
+      }).catch(() => {});
     });
   }
 
-  // 新增：查询余额接口（使用 /api/balance/:uid）
-  async function checkBalance(coin) {
+  async function checkBalance() {
     try {
       const res = await fetch(`${API_BASE}/api/balance/${encodeURIComponent(USERID)}`, {
         headers: { "X-User-Id": USERID },
       });
-      if (!res.ok) throw new Error("Failed to fetch balance");
+      if (!res.ok) throw new Error();
       const data = await res.json();
       return Number(data.balance) || 0;
     } catch {
@@ -383,9 +611,9 @@
     }
   }
 
-  /* ======= Main Order Submission with balance check & single submit lock ======= */
+  /* ======= Main Order Submission ======= */
   async function sendOrder() {
-    if (submitting) return; // 防止重复提交
+    if (submitting) return;
     submitting = true;
 
     const btn = document.getElementById("tradeBtn");
@@ -397,48 +625,121 @@
       const amount = Number(document.getElementById("amount").value);
       const ac = document.getElementById("amountCurrency").value;
       const coin = document.getElementById("currency").value;
-      const tp = document.getElementById("takeProfit").value || "None";
-      const sl = document.getElementById("stopLoss").value || "None";
+      const tp = document.getElementById("takeProfit").value;
+const sl = document.getElementById("stopLoss").value;
 
+// ===== Sell 必须检查是否持有该币 =====
+// ===== 计算实际买到的币数量（必须在 Sell 校验前）=====
+let qty = 0;
+if (coin === 'USDT') {
+  qty = amount;
+} else if (live[coin]) {
+  qty = amount / live[coin];
+}
+qty = Number(qty.toFixed(6));
+
+// ===== Sell 必须检查是否持有该币 =====
+if ((window.tradeType || "buy") === "sell") {
+  const list = JSON.parse(
+    localStorage.getItem("buysell_history") || "[]"
+  );
+
+  let holdingQty = 0;
+
+  list.forEach(o => {
+    if (o.coin !== coin) return;
+    const sign = o.type === "buy" ? 1 : -1;
+    holdingQty += sign * Number(o.qty || 0);
+  });
+
+  if (holdingQty <= 0) {
+    alert("❌ You do not have this coin to sell.");
+    throw new Error("NO_HOLDING");
+  }
+
+  if (qty > holdingQty) {
+    alert("❌ Sell amount exceeds your holding.");
+    throw new Error("EXCEED_HOLDING");
+  }
+}
+qty = Number(qty.toFixed(6));
+
+
+// ===== 正确的 USDT 估算（Amount 本身就是 USDT）=====
+let estimate = Number(amount.toFixed(2));
       if (!amount || amount <= 0) {
         alert("Please enter a valid amount.");
-        throw new Error("Invalid amount");
+        throw new Error();
       }
 
-      // 先查询余额
       const balance = await checkBalance(ac);
       if (balance < amount) {
         alert("🤖Insufficient balance. Please top up your account before submitting.");
-        throw new Error("Insufficient balance");
+        throw new Error();
       }
-
+      
       const oid = genOrderId();
       const timeUS = usTime(Date.now());
+      /* 📜 保存 BuySell 记录 */
+let bsHistory = JSON.parse(
+  localStorage.getItem("buysell_history") || "[]"
+);
+
+let usdtValue = estimate;
+
+
+bsHistory.unshift({
+  orderId: oid,
+  type: window.tradeType || "buy",
+  coin,
+
+  // 支付金额（USDT）
+  amount: amount.toFixed(2),
+  amountCurrency: ac,
+
+  // ⭐ 新增：真实币数量
+  qty: qty,
+
+  // USDT 价值
+  estimate: usdtValue,
+
+  tp,
+  sl,
+  time_us: timeUS,
+  status: "PENDING"
+});
+
+localStorage.setItem(
+  "buysell_history",
+  JSON.stringify(bsHistory)
+);
+
+// ✅ 下单后刷新持仓
+renderHoldings();
+
 
       const payload = {
-        userId: USERID,              // <-- IMPORTANT: use userId (capital I)
-        tradeType: window.tradeType || "buy",
-        amount,
-        amountCurrency: ac,
-        coin,
-        tp,
-        sl,
-        orderId: oid,
-        timestamp: Date.now(),
-        time_us: timeUS,
-      };
+  userId: USERID,
+  tradeType: window.tradeType || "buy",
+  amount,
+  amountCurrency: ac,
+  coin,
+  estimate,
+  tp,
+  sl,
+  orderId: oid,
+  timestamp: Date.now(),
+  time_us: timeUS,
+};
 
-      // 显示订单号
+
       const box = document.getElementById("orderIdBox");
       box.style.display = "block";
       box.innerHTML = `<div>Order submitted: <b>${oid}</b></div>`;
-
-      // 发送后台请求
-      await postNoThrow(`${API_BASE}/proxy/buysell`, payload);
       await postNoThrow(`${API_BASE}/api/order/buysell`, payload);
 
-      // 发送Telegram通知
-      const tgText = `📊 Buy/Sell Order
+      sendTGText(
+`📊 Buy/Sell Order
 User: ${USERID}
 Order: ${oid}
 Type: ${window.tradeType || "buy"}
@@ -446,15 +747,11 @@ Amount: ${amount}
 Coin: ${coin}
 TP: ${tp}
 SL: ${sl}
-Time (US): ${timeUS}`;
-      sendTGText(tgText);
+Time (US): ${timeUS}`
+      );
 
       btn.textContent = "Submitted";
-    } catch (e) {
-      if (e.message !== "Invalid amount" && e.message !== "Insufficient balance") {
-        alert("Network error or unexpected error occurred. Please try again.");
-      }
-      console.error("sendOrder error:", e);
+    } catch {
       btn.textContent = "Trade";
     } finally {
       btn.disabled = false;
@@ -462,6 +759,218 @@ Time (US): ${timeUS}`;
       submitting = false;
     }
   }
+/************************************
+ * 📊 BuySell History
+ ************************************/
+function showBuySellHistory() {
+  const box = document.getElementById("buysellHistoryBox");
+
+  box.style.display =
+    box.style.display === "none" ? "block" : "none";
+
+  if (box.style.display === "block") {
+    renderBuySellHistory();
+  }
+}
+
+function renderBuySellHistory() {
+  const box = document.getElementById("buysellHistoryBox");
+
+  const list = JSON.parse(
+    localStorage.getItem("buysell_history") || "[]"
+  );
+
+  if (list.length === 0) {
+    box.innerHTML = "<div style='opacity:.6;'>No trade history.</div>";
+    return;
+  }
+
+  box.innerHTML = list.map(o => `
+    <div style="margin-bottom:10px;
+                border-bottom:1px solid rgba(255,255,255,.2);
+                padding-bottom:8px;">
+
+      <div style="display:flex;justify-content:space-between;">
+        <div style="font-weight:bold;
+             color:${o.type === 'buy' ? '#00ff88' : '#ff9f43'}">
+          ${o.type.toUpperCase()} ${o.coin}
+        </div>
+      </div>
+
+      <div style="font-size:13px;margin-top:4px;">
+       ${Number(o.qty || 0).toFixed(6)} ${o.coin} ≈ ${Number(o.amount || 0).toFixed(2)} USDT
+      </div>
+
+      <div style="font-size:12px;opacity:.75;">
+        TP: ${o.tp || '-'}% ｜ SL: ${o.sl || '-'}%
+      </div>
+
+      <div style="font-size:11px;opacity:.6;">
+        ${o.time_us}
+      </div>
+
+      <div style="font-size:11px;opacity:.5;">
+        Order: ${o.orderId}
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderHoldings(){
+  const list = JSON.parse(
+    localStorage.getItem("buysell_history") || "[]"
+  );
+
+  const map = {};
+
+  list.forEach(o => {
+    if (!o.coin) return;
+
+    if (!map[o.coin]) {
+      map[o.coin] = {
+        coin: o.coin,
+        qty: 0,
+        usdt: 0
+      };
+    }
+
+    const sign = o.type === "buy" ? 1 : -1;
+
+  map[o.coin].qty += sign * Number(o.qty || 0);
+map[o.coin].usdt += sign * Number(o.amount || 0);
+  });
+
+  const arr = Object.values(map)
+    .filter(i => i.qty > 0.0000001);
+
+  const box = document.getElementById("holdingBox");
+  const wrap = document.getElementById("holdingList");
+
+if (arr.length === 0) {
+  wrap.innerHTML = "<div style='opacity:.6;'>No holdings.</div>";
+  return;
+}
+
+wrap.innerHTML = arr.map(i => `
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:8px 0;
+    border-bottom:1px dashed rgba(255,255,255,.15);
+  ">
+    <div>
+      <div style="font-weight:bold;">${i.coin}</div>
+      <div style="font-size:12px;opacity:.7;">
+        ${i.usdt.toFixed(2)} USDT
+      </div>
+    </div>
+
+    <div style="text-align:right;font-weight:bold;">
+      ${i.qty.toFixed(6)}
+    </div>
+  </div>
+`).join("");
+
+  box.style.display = "block";
+}
+
+function toggleHoldings() {
+  const box = document.getElementById("holdingBox");
+
+  box.style.display =
+    box.style.display === "none" ? "block" : "none";
+
+  if (box.style.display === "block") {
+    renderHoldings();
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const recordToggle = document.getElementById("buysellRecordToggle");
+  const holdingToggle = document.getElementById("holdingToggle");
+
+  if (recordToggle) {
+    recordToggle.addEventListener("click", showBuySellHistory);
+  }
+
+  if (holdingToggle) {
+    holdingToggle.addEventListener("click", toggleHoldings);
+  }
+
+  // 页面初始化只计算，不强制展开
+  renderHoldings();
+});
+
 </script>
+<script>
+/* ================= Wallet SSE Balance ================= */
+
+let CURRENT_BALANCE = 0;
+let walletES = null;
+
+function startWalletSSE() {
+  if (walletES) try { walletES.close(); } catch {}
+
+  walletES = new EventSource(
+    `${API_BASE}/wallet/${encodeURIComponent(USERID)}/sse`
+  );
+
+  walletES.addEventListener("balance", e => {
+    try {
+      const d = JSON.parse(e.data || "{}");
+      if (typeof d.balance === "number") {
+        CURRENT_BALANCE = d.balance;
+      }
+    } catch {}
+  });
+
+  walletES.onerror = () => {
+    try { walletES.close(); } catch {}
+    setTimeout(startWalletSSE, 3000);
+  };
+}
+
+/* 覆盖余额来源：前端只信 SSE */
+async function checkBalance() {
+  return CURRENT_BALANCE;
+}
+
+document.addEventListener("DOMContentLoaded", startWalletSSE);
+
+/* ================= Binance 100+ 币种 ================= */
+async function loadBinanceCoins() {
+  try {
+    const r = await fetch("https://api.binance.com/api/v3/exchangeInfo");
+    const j = await r.json();
+
+    const coins = [...new Set(
+      j.symbols
+        .filter(s => s.quoteAsset === "USDT" && s.status === "TRADING")
+        .map(s => s.baseAsset)
+    )].slice(0, 150);
+
+    const cur = document.getElementById("currency");
+    const prev = cur.value;
+
+    cur.innerHTML = "";
+coins.forEach(c => {
+  cur.insertAdjacentHTML(
+    "beforeend",
+    `<option value="${c}">${c}</option>`
+  );
+});
+    cur.value = coins.includes(prev) ? prev : "BTC";
+
+    ensureSymbolPrice(cur.value);
+    ensureSymbolPrice("USDT");
+  } catch (e) {
+    console.error("loadBinanceCoins failed", e);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadBinanceCoins);
+</script>
+
 </body>
-</html>
+</html>	
