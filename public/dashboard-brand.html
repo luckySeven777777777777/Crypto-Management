@@ -440,6 +440,22 @@ button {
     <strong id="todayWithdraw">--</strong>
     <div class="small">USDT：<span id="todayWithdrawSum">--</span></div>
   </div>
+<div class="grid" id="buysellSummary">
+  <div class="card">
+    💲 Buy 总额<br>
+    <strong id="sumBuy">0</strong>
+  </div>
+
+  <div class="card">
+    💱 Sell 总额<br>
+    <strong id="sumSell">0</strong>
+  </div>
+
+  <div class="card">
+    📊 盈亏<br>
+    <strong id="sumProfit">0</strong>
+  </div>
+</div>
 
     <div class="card">
     BuySell<br>
@@ -1302,7 +1318,13 @@ function openRemarkDrawer(data){
 function closeRemarkDrawer(){
   document.getElementById('remarkDrawer')?.classList.remove('open');
 }
-
+/* 🔥 通用颜色函数（全站可复用） */
+function applyColor(el, value) {
+  el.style.color =
+    value > 0 ? '#16a34a' :  // 绿色
+    value < 0 ? '#dc2626' :  // 红色
+    '#555';                 // 灰色
+}
 /* -----------------------------
    Render rows for each type
 ------------------------------ */
@@ -1367,7 +1389,30 @@ ${
 
 </tr>`;
 }
+/* 🔥 加在这里 */
+function renderBuySellSummary(list) {
+  let buyTotal = 0;
+  let sellTotal = 0;
 
+  list.forEach(o => {
+    if (o.status !== 'success') return;
+
+    const amount = Number(o.amount) || 0;
+
+    if (o.side === 'buy')  buyTotal  += amount;
+    if (o.side === 'sell') sellTotal += amount;
+  });
+
+  const profit = sellTotal - buyTotal;
+
+  $('#sumBuy').innerText     = buyTotal.toFixed(2);
+  $('#sumSell').innerText   = sellTotal.toFixed(2);
+  $('#sumProfit').innerText = profit.toFixed(2);
+
+  applyColor($('#sumBuy'), buyTotal);
+  applyColor($('#sumSell'), sellTotal);
+  applyColor($('#sumProfit'), profit);
+}
 function renderRechargeRow(o){
   return `
 <tr>
