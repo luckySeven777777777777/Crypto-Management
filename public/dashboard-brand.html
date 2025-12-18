@@ -32,22 +32,7 @@ body{
   .admin-login-modal[style*="display: flex"] {
     pointer-events: auto !important;
   }
-.range-tabs {
-  display:flex;
-  gap:8px;
-  margin-bottom:12px;
-}
-.range-btn {
-  padding:6px 12px;
-  border-radius:6px;
-  border:1px solid #ddd;
-  background:#f6f6f6;
-  cursor:pointer;
-}
-.range-btn.active {
-  background:#222;
-  color:#fff;
-}
+
 /* ========= HEADER ========= */
 .top-header{
   position: fixed;
@@ -441,15 +426,6 @@ button {
 
     <!-- Dashboard -->
     <div id="page-dashboard" class="container">
- <!-- 👇 在这里加 -->
-  <div class="range-tabs">
-    <button class="range-btn active" data-range="today">今日</button>
-    <button class="range-btn" data-range="yesterday">昨日</button>
-    <button class="range-btn" data-range="week">本周</button>
-    <button class="range-btn" data-range="month">本月</button>
-  </div>
-
-  <div class="grid">
       <div class="page-title">控制台</div>
 
       <div class="grid">
@@ -491,6 +467,15 @@ button {
     风控预警<br>
     <strong id="alertsCount">--</strong>
   </div>
+<div class="card">
+  ❌ 已拒绝<br>
+  <strong id="todayRejected">--</strong>
+</div>
+
+<div class="card">
+  🔥 待处理<br>
+  <strong id="todayPending">--</strong>
+</div>
 </div>
 
 
@@ -839,10 +824,7 @@ button {
     alert('验证码错误');
   }
 }
-/* =========================
-   🔥 1️⃣ 全局变量（最顶部）
-========================= */
-let DASH_RANGE = 'today';
+
 /* -----------------------------
    后端 API
 ------------------------------ */
@@ -1916,38 +1898,6 @@ function isOrderApproved(o){
     s === '通过'
   );
 }
-// 👇👇👇【就插在这里】
-function inRange(ts, range) {
-  const t = new Date(ts);
-  const now = new Date();
-
-  if (range === 'today') {
-    return t.toDateString() === now.toDateString();
-  }
-
-  if (range === 'yesterday') {
-    const y = new Date(now);
-    y.setDate(now.getDate() - 1);
-    return t.toDateString() === y.toDateString();
-  }
-
-  if (range === 'week') {
-    const start = new Date(now);
-    start.setDate(now.getDate() - now.getDay());
-    start.setHours(0,0,0,0);
-    return t >= start;
-  }
-
-  if (range === 'month') {
-    return (
-      t.getFullYear() === now.getFullYear() &&
-      t.getMonth() === now.getMonth()
-    );
-  }
-
-  return false;
-}
-
 async function loadDashboard(){
   try{
     const all = await fetchAll();
@@ -1965,18 +1915,14 @@ async function loadDashboard(){
     const withdraw = all.withdraw || [];
     const buysell  = all.buysell  || [];
 
-   const rRange = rechargeList.filter(o =>
-  inRange(o.time || o.createdAt, DASH_RANGE)
-);
+    const rToday = recharge.filter(o => isSameDay(new Date(o.time_us), today));
+    const rYest  = recharge.filter(o => isSameDay(new Date(o.time_us), yesterday));
 
-const wRange = withdrawList.filter(o =>
-  inRange(o.time || o.createdAt, DASH_RANGE)
-);
+    const wToday = withdraw.filter(o => isSameDay(new Date(o.time_us), today));
+    const wYest  = withdraw.filter(o => isSameDay(new Date(o.time_us), yesterday));
 
-const bRange = buySellList.filter(o =>
-  inRange(o.time || o.createdAt, DASH_RANGE)
-);
-
+    const bToday = buysell.filter(o => isSameDay(new Date(o.time_us), today));
+    const bYest  = buysell.filter(o => isSameDay(new Date(o.time_us), yesterday));
 
     const sumUSDT = arr =>
       arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
@@ -1988,6 +1934,18 @@ const bOK = bToday.filter(isOrderApproved);
 const bBuy  = bOK.filter(o => String(o.side).toLowerCase() === 'buy');
 const bSell = bOK.filter(o => String(o.side).toLowerCase() === 'sell');
 
+const allTodayOrders = [
+  ...rToday.map(o => ({ ...o, _type: 'recharge' })),
+  ...wToday.map(o => ({ ...o, _type: 'withdraw' })),
+  ...bToday.map(o => ({ ...o, _type: 'buysell' }))
+];
+const rejectedToday = allTodayOrders.filter(o =>
+  String(o.status).toLowerCase() === 'failed'
+);
+
+const pendingToday = allTodayOrders.filter(o =>
+  ['processing','locked'].includes(String(o.status).toLowerCase())
+);
 // ③ 【就在这里】算金额（你问的就是这里）
 const buySum  = sumUSDT(bBuy);
 const sellSum = sumUSDT(bSell);
@@ -2008,7 +1966,12 @@ $('#todaySellSum').innerText = sellSum.toFixed(2);
 
     $('#todayRecharge').innerText += ` ${arrow(rToday.length, rYest.length)}`;
     $('#todayWithdraw').innerText += ` ${arrow(wToday.length, wYest.length)}`;
-    arrow(bOK.length, bYest.filter(isOrderApproved).length)
+    $('#todayOrders').innerText += ` ${arrow(
+  bOK.length,
+  bYest.filter(isOrderApproved).length
+)}`;
+    $('#todayRejected').innerText = rejectedToday.length;
+$('#todayPending').innerText  = pendingToday.length;
 
     // ===== 风控 =====
     const alerts =
@@ -2105,21 +2068,7 @@ async function verifyGoogle2FA() {
     alert('验证码错误');
   }
 }
-/* =========================
-   🔥 2️⃣ 事件绑定（只一次）
-========================= */
-document.addEventListener('click', e => {
-  const btn = e.target.closest('.range-btn');
-  if (!btn) return;
 
-  document.querySelectorAll('.range-btn')
-    .forEach(b => b.classList.remove('active'));
-
-  btn.classList.add('active');
-  DASH_RANGE = btn.dataset.range;
-
-  loadDashboard();
-});
 /* -----------------------------
    Init
 ------------------------------ */
