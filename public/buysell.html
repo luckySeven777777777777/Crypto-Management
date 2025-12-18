@@ -62,7 +62,9 @@
   <input type="number" id="amount" placeholder="Enter amount" min="0" step="any" />
 
   <label for="amountCurrency">Amount Currency:</label>
-  <select id="amountCurrency"></select>
+<select id="amountCurrency" disabled>
+  <option value="USDT">USDT</option>
+</select>
 
   <div class="adjusted-box" id="convertedBox">
     <p><b>Auto-conversion:</b></p>
@@ -79,7 +81,72 @@
   </div>
 
   <button class="trade-btn" id="tradeBtn">Trade</button>
+  <!-- BuySell History Toggle -->
+<!-- ===== BuySell 操作按钮行 ===== -->
+<div id="buysellActionRow"
+     style="
+       display:flex;
+       justify-content:space-between;
+       gap:10px;
+       margin-top:14px;
+     ">
 
+  <div id="buysellRecordToggle"
+       style="
+         flex:1;
+         text-align:center;
+         padding:6px 0;
+         cursor:pointer;
+         border:1px solid #ccc;
+         border-radius:6px;
+         font-size:13px;
+       ">
+    📊 View Trade Records
+  </div>
+
+  <div id="holdingToggle"
+       style="
+         flex:1;
+         text-align:center;
+         padding:6px 0;
+         cursor:pointer;
+         border:1px solid #ccc;
+         border-radius:6px;
+         font-size:13px;
+       ">
+    📦 Cryptocurrency Holdings
+  </div>
+
+</div>
+
+
+<!-- BuySell History Box -->
+<div id="buysellHistoryBox"
+     style="
+       display:none;
+       margin-top:10px;
+       font-size:13px;
+       color:#fff;
+       max-height:300px;
+       overflow:auto;
+     ">
+</div>
+<!-- ===== 持有币种 ===== -->
+<!-- ===== Holdings Box ===== -->
+<div id="holdingBox"
+     style="
+       display:none;
+       margin-top:12px;
+       padding-top:8px;
+       border-top:1px solid rgba(0,0,0,.15);
+       font-size:13px;
+       color:#333;
+     ">
+  <div style="font-weight:bold;margin-bottom:6px;">
+    📦 Cryptocurrency Holdings
+  </div>
+  <div id="holdingList"></div>
+</div>
   <p class="hint-cn">🤖 Please ensure you have completed your deposit...</p>
 </div>
 
@@ -214,13 +281,14 @@ return uid;
   /* ======= UI Setup ======= */
   document.addEventListener("DOMContentLoaded", () => {
     const curEl = document.getElementById("currency");
-    const amtCurEl = document.getElementById("amountCurrency");
+   const amtCurEl = document.getElementById("amountCurrency");
 
-    COINS.forEach(c => {
-      curEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
-      amtCurEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
-    });
-    amtCurEl.value = "USDT";
+COINS.forEach(c => {
+  curEl.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
+});
+
+amtCurEl.value = "USDT";
+
 
     document.getElementById("buyBtn").onclick = () => setType("buy");
     document.getElementById("sellBtn").onclick = () => setType("sell");
@@ -303,7 +371,13 @@ return uid;
 
       const usd = amount * live[from];
       const conv = usd / live[to];
-      box.innerHTML += `<p>${to}: ${conv.toFixed(6)}</p>`;
+      box.innerHTML = `
+  <div style="font-size:14px;line-height:1.4;">
+    ${to}: ${conv.toFixed(6)} ≈ ${usd.toFixed(2)} USDT
+  </div>
+`;
+
+
     } catch {}
   }
 
@@ -396,9 +470,48 @@ return uid;
       const amount = Number(document.getElementById("amount").value);
       const ac = document.getElementById("amountCurrency").value;
       const coin = document.getElementById("currency").value;
-      const tp = document.getElementById("takeProfit").value || "None";
-      const sl = document.getElementById("stopLoss").value || "None";
+      const tp = document.getElementById("takeProfit").value;
+const sl = document.getElementById("stopLoss").value;
 
+// ===== Sell 必须检查是否持有该币 =====
+if ((window.tradeType || "buy") === "sell") {
+  const list = JSON.parse(
+    localStorage.getItem("buysell_history") || "[]"
+  );
+
+  let holdingQty = 0;
+
+  list.forEach(o => {
+    if (o.coin !== coin) return;
+    const sign = o.type === "buy" ? 1 : -1;
+    holdingQty += sign * Number(o.qty || 0);
+  });
+
+  if (holdingQty <= 0) {
+    alert("❌ You do not have this coin to sell.");
+    throw new Error("NO_HOLDING");
+  }
+
+  if (amount > holdingQty) {
+    alert("❌ Sell amount exceeds your holding.");
+    throw new Error("EXCEED_HOLDING");
+  }
+}
+
+// ===== 计算实际买到的币数量 =====
+let qty = 0;
+
+if (coin === 'USDT') {
+  qty = amount;
+} else if (live[coin]) {
+  qty = amount / live[coin];   // ⭐ 3500 / BNB价格 = 4.15
+}
+
+qty = Number(qty.toFixed(6));
+
+
+// ===== 正确的 USDT 估算（Amount 本身就是 USDT）=====
+let estimate = Number(amount.toFixed(2));
       if (!amount || amount <= 0) {
         alert("Please enter a valid amount.");
         throw new Error();
@@ -409,28 +522,65 @@ return uid;
         alert("🤖Insufficient balance. Please top up your account before submitting.");
         throw new Error();
       }
-
+      
       const oid = genOrderId();
       const timeUS = usTime(Date.now());
+      /* 📜 保存 BuySell 记录 */
+let bsHistory = JSON.parse(
+  localStorage.getItem("buysell_history") || "[]"
+);
+
+let usdtValue = estimate;
+
+
+bsHistory.unshift({
+  orderId: oid,
+  type: window.tradeType || "buy",
+  coin,
+
+  // 支付金额（USDT）
+  amount: amount.toFixed(2),
+  amountCurrency: ac,
+
+  // ⭐ 新增：真实币数量
+  qty: qty,
+
+  // USDT 价值
+  estimate: usdtValue,
+
+  tp,
+  sl,
+  time_us: timeUS,
+  status: "PENDING"
+});
+
+localStorage.setItem(
+  "buysell_history",
+  JSON.stringify(bsHistory)
+);
+
+// ✅ 下单后刷新持仓
+renderHoldings();
+
 
       const payload = {
-        userId: USERID,
-        tradeType: window.tradeType || "buy",
-        amount,
-        amountCurrency: ac,
-        coin,
-        tp,
-        sl,
-        orderId: oid,
-        timestamp: Date.now(),
-        time_us: timeUS,
-      };
+  userId: USERID,
+  tradeType: window.tradeType || "buy",
+  amount,
+  amountCurrency: ac,
+  coin,
+  estimate,
+  tp,
+  sl,
+  orderId: oid,
+  timestamp: Date.now(),
+  time_us: timeUS,
+};
+
 
       const box = document.getElementById("orderIdBox");
       box.style.display = "block";
       box.innerHTML = `<div>Order submitted: <b>${oid}</b></div>`;
-
-      await postNoThrow(`${API_BASE}/proxy/buysell`, payload);
       await postNoThrow(`${API_BASE}/api/order/buysell`, payload);
 
       sendTGText(
@@ -454,6 +604,149 @@ Time (US): ${timeUS}`
       submitting = false;
     }
   }
+/************************************
+ * 📊 BuySell History
+ ************************************/
+function showBuySellHistory() {
+  const box = document.getElementById("buysellHistoryBox");
+
+  box.style.display =
+    box.style.display === "none" ? "block" : "none";
+
+  if (box.style.display === "block") {
+    renderBuySellHistory();
+  }
+}
+
+function renderBuySellHistory() {
+  const box = document.getElementById("buysellHistoryBox");
+
+  const list = JSON.parse(
+    localStorage.getItem("buysell_history") || "[]"
+  );
+
+  if (list.length === 0) {
+    box.innerHTML = "<div style='opacity:.6;'>No trade history.</div>";
+    return;
+  }
+
+  box.innerHTML = list.map(o => `
+    <div style="margin-bottom:10px;
+                border-bottom:1px solid rgba(255,255,255,.2);
+                padding-bottom:8px;">
+
+      <div style="display:flex;justify-content:space-between;">
+        <div style="font-weight:bold;
+             color:${o.type === 'buy' ? '#00ff88' : '#ff9f43'}">
+          ${o.type.toUpperCase()} ${o.coin}
+        </div>
+      </div>
+
+      <div style="font-size:13px;margin-top:4px;">
+       ${Number(o.qty || 0).toFixed(6)} ${o.coin} ≈ ${Number(o.amount || 0).toFixed(2)} USDT
+      </div>
+
+      <div style="font-size:12px;opacity:.75;">
+        TP: ${o.tp || '-'}% ｜ SL: ${o.sl || '-'}%
+      </div>
+
+      <div style="font-size:11px;opacity:.6;">
+        ${o.time_us}
+      </div>
+
+      <div style="font-size:11px;opacity:.5;">
+        Order: ${o.orderId}
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderHoldings(){
+  const list = JSON.parse(
+    localStorage.getItem("buysell_history") || "[]"
+  );
+
+  const map = {};
+
+  list.forEach(o => {
+    if (!o.coin) return;
+
+    if (!map[o.coin]) {
+      map[o.coin] = {
+        coin: o.coin,
+        qty: 0,
+        usdt: 0
+      };
+    }
+
+    const sign = o.type === "buy" ? 1 : -1;
+
+  map[o.coin].qty += sign * Number(o.qty || 0);
+map[o.coin].usdt += sign * Number(o.amount || 0);
+  });
+
+  const arr = Object.values(map)
+    .filter(i => i.qty > 0.0000001);
+
+  const box = document.getElementById("holdingBox");
+  const wrap = document.getElementById("holdingList");
+
+if (arr.length === 0) {
+  wrap.innerHTML = "<div style='opacity:.6;'>No holdings.</div>";
+  return;
+}
+
+wrap.innerHTML = arr.map(i => `
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:8px 0;
+    border-bottom:1px dashed rgba(255,255,255,.15);
+  ">
+    <div>
+      <div style="font-weight:bold;">${i.coin}</div>
+      <div style="font-size:12px;opacity:.7;">
+        ${i.usdt.toFixed(2)} USDT
+      </div>
+    </div>
+
+    <div style="text-align:right;font-weight:bold;">
+      ${i.qty.toFixed(6)}
+    </div>
+  </div>
+`).join("");
+
+  box.style.display = "block";
+}
+
+function toggleHoldings() {
+  const box = document.getElementById("holdingBox");
+
+  box.style.display =
+    box.style.display === "none" ? "block" : "none";
+
+  if (box.style.display === "block") {
+    renderHoldings();
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const recordToggle = document.getElementById("buysellRecordToggle");
+  const holdingToggle = document.getElementById("holdingToggle");
+
+  if (recordToggle) {
+    recordToggle.addEventListener("click", showBuySellHistory);
+  }
+
+  if (holdingToggle) {
+    holdingToggle.addEventListener("click", toggleHoldings);
+  }
+
+  // 页面初始化只计算，不强制展开
+  renderHoldings();
+});
+
 </script>
 <script>
 /* ================= Wallet SSE Balance ================= */
@@ -491,7 +784,6 @@ async function checkBalance() {
 document.addEventListener("DOMContentLoaded", startWalletSSE);
 
 /* ================= Binance 100+ 币种 ================= */
-
 async function loadBinanceCoins() {
   try {
     const r = await fetch("https://api.binance.com/api/v3/exchangeInfo");
@@ -504,16 +796,17 @@ async function loadBinanceCoins() {
     )].slice(0, 150);
 
     const cur = document.getElementById("currency");
-    const amt = document.getElementById("amountCurrency");
+    const prev = cur.value;
+
     cur.innerHTML = "";
-    amt.innerHTML = "";
+coins.forEach(c => {
+  cur.insertAdjacentHTML(
+    "beforeend",
+    `<option value="${c}">${c}</option>`
+  );
+});
+    cur.value = coins.includes(prev) ? prev : "BTC";
 
-    coins.forEach(c => {
-      cur.insertAdjacentHTML("beforeend", `<option value="${c}">${c}</option>`);
-      amt.insertAdjacentHTML("beforeend", `<option value="${c}">${c}</option>`);
-    });
-
-    amt.value = "USDT";
     ensureSymbolPrice(cur.value);
     ensureSymbolPrice("USDT");
   } catch (e) {
@@ -525,4 +818,4 @@ document.addEventListener("DOMContentLoaded", loadBinanceCoins);
 </script>
 
 </body>
-</html>
+</html>	
