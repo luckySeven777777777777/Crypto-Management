@@ -495,7 +495,7 @@ async function saveOrder(type, data){
 
     // 保存钱包地址到用户
     wallet: clean.wallet || null,
-    estimate: calcEstimateUSDT(clean.amount, clean.coin)
+    estimate: Number(clean.amount || 0)
   };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
