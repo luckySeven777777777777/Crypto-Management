@@ -1325,6 +1325,7 @@ function applyColor(el, value) {
     value < 0 ? '#dc2626' :  // 红色
     '#555';                 // 灰色
 }
+
 /* -----------------------------
    Render rows for each type
 ------------------------------ */
@@ -1403,15 +1404,51 @@ function renderBuySellSummary(list) {
     if (o.side === 'sell') sellTotal += usdt;
   });
 
-  const profit = sellTotal - buyTotal;
+ const summary = calcSummary(list, 'buysell');
 
-  $('#sumBuy').innerText     = buyTotal.toFixed(2);
-  $('#sumSell').innerText   = sellTotal.toFixed(2);
-  $('#sumProfit').innerText = profit.toFixed(2);
+$('#sumBuy').innerText     = summary.buy.toFixed(2);
+$('#sumSell').innerText   = summary.sell.toFixed(2);
+$('#sumProfit').innerText = summary.profit.toFixed(2);
 
-  applyColor($('#sumBuy'), buyTotal);
-  applyColor($('#sumSell'), sellTotal);
-  applyColor($('#sumProfit'), profit);
+applyColor($('#sumBuy'), summary.buy);
+applyColor($('#sumSell'), summary.sell);
+applyColor($('#sumProfit'), summary.profit);
+
+}
+function calcSummary(list, type){
+  let result = {
+    buy: 0,
+    sell: 0,
+    profit: 0,
+    total: 0
+  };
+
+  list
+    .filter(o => o.status === 'success')
+    .forEach(o => {
+      const v = type === 'buysell'
+  ? Number(o.estimate || 0)
+  : Number(o.amount || 0);
+
+      if (type === 'buysell') {
+        if (o.side === 'buy')  result.buy  += v;
+        if (o.side === 'sell') result.sell += v;
+      }
+
+      if (type === 'recharge') {
+        result.total += v;
+      }
+
+      if (type === 'withdraw') {
+        result.total += v;
+      }
+    });
+
+  if (type === 'buysell') {
+    result.profit = result.sell - result.buy;
+  }
+
+  return result;
 }
 function renderRechargeRow(o){
   return `
@@ -1772,14 +1809,14 @@ async function r_search(){
     // ===============================
     // ✅ 充值盈余统计（真正接入）
     // ===============================
-    const rechargeProfit = list
-      .filter(o => o.status === 'success')
-      .reduce((sum, o) => sum + Number(o.estimate || 0), 0);
 
-    // 提供给 Dashboard / 其他模块
-    window.rechargeProfit = rechargeProfit;
+const summary = calcSummary(list, 'recharge');
 
-    console.log('【充值盈余】USDT:', rechargeProfit.toFixed(2));
+// 提供给 Dashboard / 其他模块
+window.rechargeProfit = summary.total;
+
+console.log('【充值金额】USDT:', summary.total.toFixed(2));
+
 
   }catch(e){
     console.error(e);
@@ -1828,17 +1865,15 @@ tbody.innerHTML =
 
 postRenderDecorate();
 
-    // ===============================
-    // ✅ 提款支出统计（真正接入）
-    // ===============================
-    const withdrawLoss = list
-      .filter(o => o.status === 'success')
-      .reduce((sum, o) => sum + Number(o.estimate || 0), 0);
+   // ===============================
+// ✅ 提款金额统一统计（统一口径）
+// ===============================
+const summary = calcSummary(list, 'withdraw');
 
-    // 提供给 Dashboard / 其他模块
-    window.withdrawLoss = withdrawLoss;
+// 提供给 Dashboard / 其他模块
+window.withdrawLoss = summary.total;
 
-    console.log('【提款支出】USDT:', withdrawLoss.toFixed(2));
+console.log('【提款支出】USDT:', summary.total.toFixed(2));
 
   }catch(e){
     console.error(e);
