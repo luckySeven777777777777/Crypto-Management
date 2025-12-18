@@ -1391,30 +1391,18 @@ ${
 </tr>`;
 }
 /* 🔥 加在这里 */
-function renderBuySellSummary(list) {
-  let buyTotal = 0;
-  let sellTotal = 0;
+function renderBuySellSummary(list){
+  const summary = calcSummary(list, 'buysell');
 
-  list.forEach(o => {
-    if (o.status !== 'success') return;
+  $('#sumBuy').innerText     = summary.buy.toFixed(2);
+  $('#sumSell').innerText   = summary.sell.toFixed(2);
+  $('#sumProfit').innerText = summary.profit.toFixed(2);
 
-    const usdt = Number(o.estimate || 0);
-
-    if (o.side === 'buy')  buyTotal  += usdt;
-    if (o.side === 'sell') sellTotal += usdt;
-  });
-
- const summary = calcSummary(list, 'buysell');
-
-$('#sumBuy').innerText     = summary.buy.toFixed(2);
-$('#sumSell').innerText   = summary.sell.toFixed(2);
-$('#sumProfit').innerText = summary.profit.toFixed(2);
-
-applyColor($('#sumBuy'), summary.buy);
-applyColor($('#sumSell'), summary.sell);
-applyColor($('#sumProfit'), summary.profit);
-
+  applyColor($('#sumBuy'), summary.buy);
+  applyColor($('#sumSell'), summary.sell);
+  applyColor($('#sumProfit'), summary.profit);
 }
+
 function calcSummary(list, type){
   let result = {
     buy: 0,
@@ -1426,21 +1414,16 @@ function calcSummary(list, type){
   list
     .filter(o => o.status === 'success')
     .forEach(o => {
-      const v = type === 'buysell'
-  ? Number(o.estimate || 0)
-  : Number(o.amount || 0);
+      // 🔥 唯一金额来源
+      const usdt = Number(o.estimate || 0);
 
       if (type === 'buysell') {
-        if (o.side === 'buy')  result.buy  += v;
-        if (o.side === 'sell') result.sell += v;
+        if (o.side === 'buy')  result.buy  += usdt;
+        if (o.side === 'sell') result.sell += usdt;
       }
 
-      if (type === 'recharge') {
-        result.total += v;
-      }
-
-      if (type === 'withdraw') {
-        result.total += v;
+      if (type === 'recharge' || type === 'withdraw') {
+        result.total += usdt;
       }
     });
 
@@ -2146,6 +2129,34 @@ async function verifyGoogle2FA() {
     alert('2FA绑定成功');
   } else {
     alert('验证码错误');
+  }
+}
+// ✅ 充值订单：确认成功
+async function confirmRecharge(orderId) {
+  if (!confirm('确认该充值已到账？')) return;
+
+  try {
+    const res = await fetch('/api/admin/recharge/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        orderId,
+        status: 'success'
+      })
+    });
+
+    const data = await res.json();
+    if (!data.ok) {
+      alert('更新失败');
+      return;
+    }
+
+    // 🔄 刷新充值列表
+    r_search();
+  } catch (e) {
+    alert('网络错误');
   }
 }
 
