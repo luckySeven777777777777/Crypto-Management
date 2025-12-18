@@ -590,6 +590,42 @@ async function handleBuySellRequest(req, res){
     const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
 
     const sideLower = String(realSide).toLowerCase();
+// ===== SELL 下单前校验币数量（防止 0 币卖出）=====
+if (sideLower === 'sell') {
+  const coinKey = String(coin).toUpperCase();
+  const sellQty = Number(converted || 0);
+
+  const coinSnap = await userRef.child(`coins/${coinKey}`).once('value');
+  const curCoin = Number(coinSnap.val() || 0);
+
+  if (curCoin < sellQty) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Insufficient coin balance'
+    });
+  }
+}
+if (sideLower === 'sell') {
+  const coinKey = coin.toUpperCase();
+  const qty = Number(converted || 0);
+
+  const snap = await userRef.child(`coins/${coinKey}`).once('value');
+  const cur = Number(snap.val() || 0);
+
+  if (cur < qty) {
+    return res.status(400).json({ ok:false, error:'币数量不足' });
+  }
+
+  const newQty = cur - qty;
+  await userRef.child(`coins/${coinKey}`).set(newQty);
+
+  broadcastSSE({
+    type: 'coin',
+    userId: uid,
+    coin: coinKey,
+    amount: newQty
+  });
+}
 
     // ✅ BUY：立即扣钱
     if(sideLower === 'buy'){
@@ -599,27 +635,6 @@ async function handleBuySellRequest(req, res){
       const newBal = balance - amt;
       await userRef.update({ balance: newBal, lastUpdate: now() });
       broadcastSSE({ type:'balance', userId: uid, balance: newBal });
-    }
-// ⭐ 新增：记录币种数量（不影响原逻辑）
-if (sideLower === 'buy') {
-  const coinKey = String(coin).toUpperCase();
-  const qty = Number(converted || 0);
-  if (qty > 0) {
-    const snap = await userRef.child(`coins/${coinKey}`).once('value');
-    const cur = Number(snap.val() || 0);
-    const newQty = cur + qty;
-
-    await userRef.update({
-      [`coins/${coinKey}`]: newQty
-    });
-
-    broadcastSSE({
-      type: 'coin',
-      userId: uid,
-      coin: coinKey,
-      amount: newQty
-    });
-  }
 }
     // SELL：不动余额，等后台审批
     const id = await saveOrder('buysell', {
@@ -970,64 +985,56 @@ if (
   });
 }
 
+// ===== BUY 后台确认：加币 =====
 else if (
   type === 'buysell' &&
   isApproved &&
-  String(order.side || '').toLowerCase() === 'sell'
+  String(order.side || '').toLowerCase() === 'buy'
 ) {
   const coinKey = String(order.coin || '').toUpperCase();
-  const sellQty = Number(order.converted || 0);
+  const buyQty = Number(order.converted || 0);
 
-  // ① 校验币是否足够（不够直接拒绝）
-  if (coinKey && sellQty > 0) {
-    const snap = await userRef.child(`coins/${coinKey}`).once('value');
-    const curCoin = Number(snap.val() || 0);
-
-    if (curCoin < sellQty) {
-      await ref.update({
-        status: 'rejected',
-        note: '🤖 Please make sure you have sufficient coin balance',
-        processed: true,
-        updated: now()
-      });
-
-      return res.json({
-        ok: false,
-        error: '🤖 Please make sure you have sufficient coin balance'
-      });
-    }
-  }
-
-  // ② 加 USDT
-  curBal += amt;
-  await userRef.update({
-    balance: curBal,
-    lastUpdate: now(),
-    boost_last: now()
-  });
-
-  broadcastSSE({
-    type: 'balance',
-    userId,
-    balance: curBal
-  });
-
-  // ③ 扣币（唯一正确方式）
-  if (coinKey && sellQty > 0) {
+  if (coinKey && buyQty > 0) {
+    // 加币（原子）
     await userRef.child(`coins/${coinKey}`).transaction(cur => {
-      if (cur === null) return 0;
-      return cur - sellQty;
+      return (Number(cur) || 0) + buyQty;
     });
 
-    // ④ 再读最终值 → SSE
+    // 读取最终值
     const finalSnap = await userRef.child(`coins/${coinKey}`).once('value');
     const finalAmt = Number(finalSnap.val() || 0);
 
+    // SSE 通知前端
     broadcastSSE({
       type: 'coin',
       userId,
       coin: coinKey,
       amount: finalAmt
+    });
+  }
+}
+
+
+// ===== SELL 后台确认：加 USDT =====
+else if (
+  type === 'buysell' &&
+  isApproved &&
+  String(order.side || '').toLowerCase() === 'sell'
+) {
+  const usdt = Number(order.amount || 0);
+
+  if (usdt > 0) {
+    curBal += usdt;
+    await userRef.update({
+      balance: curBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal
     });
   }
 }
