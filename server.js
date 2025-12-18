@@ -1158,6 +1158,42 @@ app.get('/wallet/:uid/sse', async (req, res) => {
     global.__sseClients = global.__sseClients.filter(c => c.res !== res);
   });
 });
+app.post('/api/admin/recharge/update', async (req, res) => {
+  try {
+    const { orderId, status } = req.body;
+    if (!orderId || !status) {
+      return res.json({ ok: false, message: 'missing params' });
+    }
+
+    const ref = db.ref(`orders/recharge/${orderId}`);
+    const snap = await ref.once('value');
+    if (!snap.exists()) {
+      return res.json({ ok: false, message: 'order not found' });
+    }
+
+    await ref.update({
+      status,
+      processed: status === 'success',
+      updatedAt: now()
+    });
+
+    const order = snap.val();
+    order.status = status;
+
+    // 🔔 同步给前端（用户 + 管理后台）
+    broadcastSSE({
+      type: 'recharge',
+      userId: order.userId,
+      order
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('recharge update error', e);
+    return res.json({ ok: false });
+  }
+});
+
 /* ---------------------------------------------------------
    Firebase watchers
 --------------------------------------------------------- */
