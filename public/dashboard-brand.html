@@ -1870,6 +1870,16 @@ async function loadMembers(){
   const tbody = $('#m_table'); tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
   try{ const all = await fetchAll(); const users = all.users || {}; if(!Object.keys(users).length){ tbody.innerHTML = `<tr><td colspan="12">暂无数据</td></tr>`; return; } tbody.innerHTML = Object.keys(users).map(uid=>`<tr><td>${uid}</td><td>${users[uid].wallet||'--'}</td><td>${users[uid].updated||'--'}</td></tr>`).join(''); }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
 }
+// ✅【就插在这里】—— loadDashboard 上面
+function isOrderApproved(o){
+  const s = String(o.status || '').toLowerCase();
+  return (
+    s === 'success' ||
+    s === 'approved' ||
+    s === 'pass' ||
+    s === '通过'
+  );
+}
 async function loadDashboard(){
   try{
     const all = await fetchAll();
@@ -1899,14 +1909,20 @@ async function loadDashboard(){
     const sumUSDT = arr =>
       arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
 
-    // ===== 今日 =====
-    $('#todayRecharge').innerText = rToday.length;
-    $('#todayWithdraw').innerText = wToday.length;
-    $('#todayOrders').innerText  = bToday.length;
+    // ===== 今日数量（只算已通过）=====
+const rOK = rToday.filter(isOrderApproved);
+const wOK = wToday.filter(isOrderApproved);
+const bOK = bToday.filter(isOrderApproved);
 
-    $('#todayRechargeSum').innerText = sumUSDT(rToday).toFixed(2);
-    $('#todayWithdrawSum').innerText = sumUSDT(wToday).toFixed(2);
-    $('#todayBuySellSum').innerText  = sumUSDT(bToday).toFixed(2);
+// 数量（已通过）
+$('#todayRecharge').innerText = rOK.length;
+$('#todayWithdraw').innerText = wOK.length;
+$('#todayOrders').innerText  = bOK.length;
+
+// 金额（已通过）
+$('#todayRechargeSum').innerText = sumUSDT(rOK).toFixed(2);
+$('#todayWithdrawSum').innerText = sumUSDT(wOK).toFixed(2);
+$('#todayBuySellSum').innerText  = sumUSDT(bOK).toFixed(2);
 
     // ===== ↑ ↓ 对比 =====
     const arrow = (t,y) =>
@@ -1928,18 +1944,19 @@ async function loadDashboard(){
     // 🔥 总盈亏高亮显示（保留你原来的模式）
     // ==================================================
     const pnl =
-      sumUSDT(rToday)        // 今日充值
-      - sumUSDT(wToday)      // 今日提款
-      + (() => {
-          return bToday
-            .filter(o => o.status === 'success')
-            .reduce((sum, o) => {
-              const v = Number(o.estimate || 0);
-              if (o.side === 'buy')  return sum - v;
-              if (o.side === 'sell') return sum + v;
-              return sum;
-            }, 0);
-        })();
+  sumUSDT(rToday.filter(isOrderApproved))   // 今日充值（已通过）
+  - sumUSDT(wToday.filter(isOrderApproved)) // 今日提款（已通过）
+  + (() => {
+      return bToday
+        .filter(isOrderApproved)             // ✅ 统一状态判断
+        .reduce((sum, o) => {
+          const v = Number(o.estimate || 0);
+          if (o.side === 'buy')  return sum - v;
+          if (o.side === 'sell') return sum + v;
+          return sum;
+        }, 0);
+    })();
+
 
     const pnlCard  = document.getElementById('pnlCard');
     const pnlValue = document.getElementById('pnlValue');
