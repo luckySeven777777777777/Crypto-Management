@@ -606,27 +606,41 @@ if (sideLower === 'sell') {
   }
 }
 if (sideLower === 'sell') {
-  const coinKey = coin.toUpperCase();
-  const qty = Number(converted || 0);
+  const coinKey = String(coin).toUpperCase();
+  const sellQty = Number(converted || 0);
 
-  const snap = await userRef.child(`coins/${coinKey}`).once('value');
-  const cur = Number(snap.val() || 0);
+  const result = await userRef.child(`coins/${coinKey}`).transaction(cur => {
+    cur = Number(cur || 0);
+    if (cur < sellQty) {
+      return; // ❌ 中断事务 = 拒绝
+    }
+    return cur - sellQty; // ✅ 扣币
+  });
 
-  if (cur < qty) {
-    return res.status(400).json({ ok:false, error:'币数量不足' });
+  if (!result.committed) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Insufficient coin balance'
+    });
   }
 
-  const newQty = cur - qty;
-  await userRef.child(`coins/${coinKey}`).set(newQty);
+  // 读取最终值 → SSE
+  const finalAmt = Number(result.snapshot.val() || 0);
 
   broadcastSSE({
     type: 'coin',
     userId: uid,
     coin: coinKey,
-    amount: newQty
+    amount: finalAmt
+  });
+
+  // 🔑 同样加兜底
+  broadcastSSE({
+    type: 'coin',
+    coin: coinKey,
+    amount: finalAmt
   });
 }
-
     // ✅ BUY：立即扣钱
     if(sideLower === 'buy'){
       if(balance < amt){
@@ -1011,6 +1025,12 @@ else if (
       coin: coinKey,
       amount: finalAmt
     });
+// 🔑 兜底广播（给所有 wallet SSE，用来解决 uid 不一致问题）
+broadcastSSE({
+  type: 'coin',
+  coin: coinKey,
+  amount: finalAmt
+});
   }
 }
 
