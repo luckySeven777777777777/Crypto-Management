@@ -1120,6 +1120,23 @@ app.get('/wallet/:uid/sse', async (req, res) => {
   } catch(e){}
   req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
 });
+// ⭐⭐⭐【补推 coins 快照（关键修复）】⭐⭐⭐
+const coinsSnap = await db.ref(`users/${uid}/coins`).once('value');
+const coins = coinsSnap.val() || {};
+
+Object.entries(coins).forEach(([coin, amount]) => {
+  sendSSE(
+    res,
+    JSON.stringify({
+      type: 'coin',
+      userId: uid,
+      coin,
+      amount: Number(amount || 0)
+    }),
+    'coin'
+  );
+});
+
 
 /* ---------------------------------------------------------
    Firebase watchers
