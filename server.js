@@ -1102,7 +1102,6 @@ app.get('/api/orders/stream', async (req, res) => {
   global.__sseClients.push({ res, uid: null, ka });
   req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
 });
-
 app.get('/wallet/:uid/sse', async (req, res) => {
   const uid = String(req.params.uid || '').trim();
   await ensureUserExists(uid);
@@ -1115,47 +1114,42 @@ app.get('/wallet/:uid/sse', async (req, res) => {
   res.flushHeaders();
 
   const ka = setInterval(() => {
-    try { res.write(':\n\n'); } catch (e) {}
+    try { res.write(':\n\n'); } catch(e){}
   }, 15000);
 
   global.__sseClients.push({ res, uid, ka });
 
   try {
     // ① 推 USDT 余额
-    if (!db) {
-      sendSSE(
-        res,
-        JSON.stringify({ type: 'balance', userId: uid, balance: 0 }),
-        'balance'
-      );
-    } else {
-      const snap = await db.ref(`users/${uid}/balance`).once('value');
-      const bal = Number(snap.exists() ? snap.val() : 0);
-      sendSSE(
-        res,
-        JSON.stringify({ type: 'balance', userId: uid, balance: bal }),
-        'balance'
-      );
-    }
+    const balSnap = await db.ref(`users/${uid}/balance`).once('value');
+    const bal = Number(balSnap.val() || 0);
 
-    // ⭐⭐⭐② 补推 coins 快照（关键修复，必须在 async 里）⭐⭐⭐
-    const coinsSnap = await db.ref(`users/${uid}/coins`).once('value');
-    const coins = coinsSnap.val() || {};
+    sendSSE(
+      res,
+      JSON.stringify({ type:'balance', userId: uid, balance: bal }),
+      'balance'
+    );
 
-    Object.entries(coins).forEach(([coin, amount]) => {
+    // ② 🔑【关键】只补推 3 个币
+    const COINS = ['BTC','ETH','BNB'];
+
+    for (const c of COINS) {
+      const snap = await db.ref(`users/${uid}/coins/${c}`).once('value');
+      const amt = Number(snap.val() || 0);
+
       sendSSE(
         res,
         JSON.stringify({
           type: 'coin',
           userId: uid,
-          coin,
-          amount: Number(amount || 0)
+          coin: c,
+          amount: amt
         }),
         'coin'
       );
-    });
+    }
 
-  } catch (e) {
+  } catch(e){
     console.error('SSE init error:', e);
   }
 
