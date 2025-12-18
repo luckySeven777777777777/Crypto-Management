@@ -441,11 +441,22 @@ button {
     <div class="small">USDT：<span id="todayWithdrawSum">--</span></div>
   </div>
 
-  <div class="card">
+    <div class="card">
     BuySell<br>
-    <strong id="todayOrders">--</strong>
-    <div class="small">USDT：<span id="todayBuySellSum">--</span></div>
+
+    <div class="small">
+      Buy：<span id="todayBuySum">--</span>
+    </div>
+
+    <div class="small">
+      Sell：<span id="todaySellSum">--</span>
+    </div>
+
+    <div class="small" style="margin-top:4px">
+      笔数：<strong id="todayOrders">--</strong>
+    </div>
   </div>
+
 <div class="card pnl-card" id="pnlCard">
   总盈亏
   <div class="pnl-value" id="pnlValue">--</div>
@@ -1911,6 +1922,12 @@ async function loadDashboard(){
 const rOK = rToday.filter(isOrderApproved);
 const wOK = wToday.filter(isOrderApproved);
 const bOK = bToday.filter(isOrderApproved);
+const bBuy  = bOK.filter(o => String(o.side).toLowerCase() === 'buy');
+const bSell = bOK.filter(o => String(o.side).toLowerCase() === 'sell');
+
+// ③ 【就在这里】算金额（你问的就是这里）
+const buySum  = sumUSDT(bBuy);
+const sellSum = sumUSDT(bSell);
 
 // 数量（已通过）
 $('#todayRecharge').innerText = rOK.length;
@@ -1920,15 +1937,15 @@ $('#todayOrders').innerText  = bOK.length;
 // 金额（已通过）
 $('#todayRechargeSum').innerText = sumUSDT(rOK).toFixed(2);
 $('#todayWithdrawSum').innerText = sumUSDT(wOK).toFixed(2);
-$('#todayBuySellSum').innerText  = sumUSDT(bOK).toFixed(2);
-
+$('#todayBuySum').innerText  = buySum.toFixed(2);
+$('#todaySellSum').innerText = sellSum.toFixed(2);
     // ===== ↑ ↓ 对比 =====
     const arrow = (t,y) =>
       t > y ? '↑' : t < y ? '↓' : '–';
 
     $('#todayRecharge').innerText += ` ${arrow(rToday.length, rYest.length)}`;
     $('#todayWithdraw').innerText += ` ${arrow(wToday.length, wYest.length)}`;
-    $('#todayOrders').innerText  += ` ${arrow(bToday.length, bYest.length)}`;
+    arrow(bOK.length, bYest.filter(isOrderApproved).length)
 
     // ===== 风控 =====
     const alerts =
