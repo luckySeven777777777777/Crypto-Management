@@ -608,8 +608,8 @@ button {
     </table>
   </div>
 
- <!-- 添加 Google 2FA 部分 -->
-  <div class="card" style="margin-top:16px">
+  <!-- Google 2FA -->
+  <div class="card" style="margin-bottom:16px">
     <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
 
     <div class="filters">
@@ -624,18 +624,17 @@ button {
       <button class="primary" onclick="verifyGoogle2FA()">确认绑定</button>
     </div>
   </div>
-</div>
 
-<!-- 管理员密码重置 -->
-<div class="card" style="margin-bottom:16px">
-  <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
+  <!-- 管理员密码重置 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
 
-  <div class="filters">
-    <input id="resetAdminId" placeholder="管理员账号">
-    <input id="resetAdminPassword" placeholder="新登录密码">
-    <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
+    <div class="filters">
+      <input id="resetAdminId" placeholder="管理员账号">
+      <input id="resetAdminPassword" placeholder="新登录密码">
+      <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
+    </div>
   </div>
-</div>
 
   <!-- 用户提款密码重置 -->
   <div class="card">
@@ -643,10 +642,9 @@ button {
 
     <div class="filters">
       <input id="searchWithdrawWallet" placeholder="已提款的钱包地址">
-<input id="searchWithdrawOrder" placeholder="订单号（可选）">
-<input id="newWithdrawPassword" placeholder="新提款密码">
-<button class="primary" onclick="resetWithdrawPassword()">重置</button>
-
+      <input id="searchWithdrawOrder" placeholder="订单号（可选）">
+      <input id="newWithdrawPassword" placeholder="新提款密码">
+      <button class="primary" onclick="resetWithdrawPassword()">重置</button>
     </div>
   </div>
 
