@@ -1165,35 +1165,45 @@ app.post('/api/admin/recharge/update', async (req, res) => {
       return res.json({ ok: false, message: 'missing params' });
     }
 
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+
     const ref = db.ref(`orders/recharge/${orderId}`);
     const snap = await ref.once('value');
     if (!snap.exists()) {
       return res.json({ ok: false, message: 'order not found' });
     }
 
-    await ref.update({
-      status,
+    const order = snap.val();
+
+    // ===============================
+    // ✅ 只修这里：生成“最终订单对象”
+    // ===============================
+    const updatedOrder = {
+      ...order,
+      status,                         // ← success / failed
       processed: status === 'success',
       updatedAt: now()
-    });
+    };
 
-    const order = snap.val();
-    order.status = status;
+    // ✅ 写回数据库
+    await ref.update(updatedOrder);
 
-    // 🔔 同步给前端（用户 + 管理后台）
+    // ===============================
+    // 🔔 关键：用【updatedOrder】广播
+    // ===============================
     broadcastSSE({
-      type: 'recharge',
-      userId: order.userId,
-      order
+      type: 'recharge',               // ⚠️ 不要改！前端就听这个
+      userId: updatedOrder.userId,
+      order: updatedOrder             // ⚠️ 必须是更新后的
     });
 
     return res.json({ ok: true });
+
   } catch (e) {
     console.error('recharge update error', e);
     return res.json({ ok: false });
   }
 });
-
 /* ---------------------------------------------------------
    Firebase watchers
 --------------------------------------------------------- */
