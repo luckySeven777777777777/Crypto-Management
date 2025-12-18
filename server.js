@@ -1165,40 +1165,37 @@ app.post('/api/admin/recharge/update', async (req, res) => {
       return res.json({ ok: false, message: 'missing params' });
     }
 
-    if (!db) return res.json({ ok: false, message: 'no-db' });
-
     const ref = db.ref(`orders/recharge/${orderId}`);
     const snap = await ref.once('value');
     if (!snap.exists()) {
       return res.json({ ok: false, message: 'order not found' });
     }
 
+    // ✅ 管理后台 approved → 前端统一 success
+    const finalStatus = status === 'approved' ? 'success' : status;
+
+    await ref.update({
+      status: finalStatus,
+      processed: finalStatus === 'success',
+      updatedAt: now()
+    });
+
     const order = snap.val();
 
-    // ===============================
-    // ✅ 只修这里：生成“最终订单对象”
-    // ===============================
+    // ✅ 强制覆盖
     const updatedOrder = {
       ...order,
-      status,                         // ← success / failed
-      processed: status === 'success',
-      updatedAt: now()
+      status: finalStatus
     };
 
-    // ✅ 写回数据库
-    await ref.update(updatedOrder);
-
-    // ===============================
-    // 🔔 关键：用【updatedOrder】广播
-    // ===============================
+    // 🔔 关键：广播给前端
     broadcastSSE({
-      type: 'recharge',               // ⚠️ 不要改！前端就听这个
-      userId: updatedOrder.userId,
-      order: updatedOrder             // ⚠️ 必须是更新后的
+      type: 'recharge',
+      userId: order.userId,
+      order: updatedOrder
     });
 
     return res.json({ ok: true });
-
   } catch (e) {
     console.error('recharge update error', e);
     return res.json({ ok: false });
