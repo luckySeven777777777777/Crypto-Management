@@ -1397,10 +1397,10 @@ function renderBuySellSummary(list) {
   list.forEach(o => {
     if (o.status !== 'success') return;
 
-    const amount = Number(o.amount) || 0;
+    const usdt = Number(o.estimate || 0);
 
-    if (o.side === 'buy')  buyTotal  += amount;
-    if (o.side === 'sell') sellTotal += amount;
+    if (o.side === 'buy')  buyTotal  += usdt;
+    if (o.side === 'sell') sellTotal += usdt;
   });
 
   const profit = sellTotal - buyTotal;
