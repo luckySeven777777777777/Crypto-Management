@@ -965,26 +965,15 @@ if (isApproved) {
       boost_last: now()
     });
 
-   // 1️⃣ 更新余额（保留）
-broadcastSSE({
-  type: 'balance',
-  userId: latestOrder.userId,
-  balance: curBal,
-  source: 'recharge_approved'
-});
-
-// 2️⃣ 🔥 给用户充值记录用（关键）
-broadcastSSE({
-  type: 'recharge',
-  userId: latestOrder.userId,
-  order: {
-    ...latestOrder,
-    status: 'success'
-  }
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal,
+      source: 'recharge_approved'
     });
-
   }
-}
+ }
+
 // ===== 所有余额业务逻辑 =====
 // withdraw 拒绝 → 退钱
 if (
