@@ -483,20 +483,29 @@ async function saveOrder(type, data){
 
   const id = clean.orderId || genOrderId(type.toUpperCase());
 
-  const payload = {
-    ...clean,
-    orderId: id,
-    timestamp: ts,
-    time_us: usTime(ts),
-    status: clean.status || 'processing',
-    type,
-    processed: false,
-    coin: clean.coin || null,
+const payload = {
+  ...clean,                 // 🔥 保留你原来所有字段（这是关键）
+  orderId: id,
+  timestamp: ts,
+  time_us: usTime(ts),
+  type,
 
-    // 保存钱包地址到用户
-    wallet: clean.wallet || null,
-    estimate: Number(clean.amount || 0)
-  };
+  // 不强制覆盖已有状态
+  status: clean.status || 'processing',
+
+  // 不强制重置 processed
+  processed: clean.processed === true ? true : false,
+
+  coin: clean.coin || null,
+  wallet: clean.wallet || null,
+
+  // ✅ 只修这一行：估算 USDT
+  estimate: Number(
+    clean.estimate !== undefined
+      ? clean.estimate
+      : clean.amount || 0
+  )
+};
 
   await db.ref(`orders/${type}/${id}`).set(payload);
 
