@@ -483,8 +483,7 @@ async function saveOrder(type, data){
   if (!clean.userId && clean.user) clean.userId = clean.user;
 
   const id = clean.orderId || genOrderId(type.toUpperCase());
-
- const payload = {
+const payload = {
   orderId: id,
   timestamp: ts,
   time_us: usTime(ts),
@@ -492,20 +491,22 @@ async function saveOrder(type, data){
   type,
   processed: false,
 
+  // ✅ 金额 = 币数量（恢复你原本正常的功能）
+  amount: Number(clean.amount || 0),
+
   coin: clean.coin || null,
   wallet: clean.wallet || null,
 
-  // ✅ 修复点：提款优先使用前端传来的 estimate（USDT）
+  // ✅ 估算 USDT = 前端下单确认值（只改这一列）
   estimate: Number(
     clean.estimate !== undefined
       ? clean.estimate
       : clean.amount || 0
   ),
 
-  // 币数量（原逻辑，保留）
+  // 可选：如果你在别处用 qty
   qty: Number(clean.qty || 0)
 };
-
   await db.ref(`orders/${type}/${id}`).set(payload);
 
   // user_orders 索引
