@@ -1337,7 +1337,7 @@ function renderBuySellRow(o) {
   const coin = String(o.coin || '').toUpperCase();
 
   // ✅ 核心：只用下单时的数据，不做任何计算
-  const coinQty = Number(o.qty || 0);        // 前端下单的币数量
+  const coinQty = Number(o.coinQty || 0);
   const usdtAmt = Number(o.amount || 0);     // 前端下单的 USDT
 
   return `
