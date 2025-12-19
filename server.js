@@ -909,7 +909,7 @@ if (!await isValidAdminToken(token))
       const userRef = db.ref(`users/${userId}`);
       const uSnap = await userRef.once('value');
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
-      const amt = Number(order.amount || 0);
+      const amt = Number(order.estimate || 0);
 // 1️⃣ 先更新状态（不 processed）
 await ref.update({
   status,
