@@ -1192,11 +1192,13 @@ broadcastSSE({
     status // success / failed
   }
 });
-
 return res.json({ ok: true });
+
+  } catch (e) {
+    console.error('admin recharge update error', e);
+    return res.status(500).json({ ok: false });
   }
 });
-
 /* ---------------------------------------------------------
    Firebase watchers
 --------------------------------------------------------- */
