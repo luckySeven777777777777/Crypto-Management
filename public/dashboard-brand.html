@@ -1342,7 +1342,8 @@ function renderBuySellRow(o){
   <td>${o.ip || '--'}</td>
   <td>${(o.tp||'-')}/${(o.sl||'-')}</td>
   <td>
-    <span class="badge">${o.status}</span>
+    <span class="badge">${displayStatus(o.status)}</span>
+
   </td>
   <td>${renderActionButtons(o.orderId,'buysell', o.processed, o.status)}</td>
   <td>
@@ -1444,7 +1445,7 @@ function renderRechargeRow(o){
   <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-  <td><span class="badge">${o.status}</span></td>
+  <td><span class="badge">${displayStatus(o.status)}</span></td>
   <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
   <td>
 ${
@@ -1502,7 +1503,7 @@ function renderWithdrawRow(o){
   <td>${o.estimate ?? '--'}</td>
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-  <td><span class="badge">${o.status}</span></td>
+  <td><span class="badge">${displayStatus(o.status)}</span></td>
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
  <td>
 ${
@@ -1927,14 +1928,14 @@ tbody.innerHTML =
       <td>${o.ip || '--'}</td>
       <td>
         <span class="badge" style="background:
-          ${ o.status==='success' ? '#00c851' :
-            o.status==='failed'  ? '#ff4444' :
-            o.status==='locked'  ? '#ffbb33' :
-            '#1976d2' };
-          color:#fff;"
-          ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
-          ${o.status}
-        </span>
+  ${ o.status==='success' ? '#00c851' :
+     o.status==='failed'  ? '#ff4444' :
+     o.status==='locked'  ? '#ffbb33' :
+     '#1976d2' };
+  color:#fff;"
+  ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
+  ${displayStatus(o.status)}
+</span>
       </td>
     </tr>`;
   }).join('') +
@@ -2159,7 +2160,17 @@ async function confirmRecharge(orderId) {
     alert('网络错误');
   }
 }
-
+// ===== 状态显示中文化（只影响显示）=====
+function displayStatus(status){
+  switch(String(status).toLowerCase()){
+    case 'success': return '成功';
+    case 'failed': return '失败';
+    case 'processing': return '处理中';
+    case 'approved': return '成功';   // 你后台现在就是这个
+    case 'locked': return '锁定';
+    default: return status;
+  }
+}
 /* -----------------------------
    Init
 ------------------------------ */
