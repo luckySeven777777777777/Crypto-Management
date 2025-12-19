@@ -1331,8 +1331,8 @@ function applyColor(el, value) {
 ------------------------------ */
 function renderBuySellRow(o){
   const coinQty = Number(
-    o.qty ?? o.quantity ?? o.coinAmount ?? 0
-  ).toFixed(6);
+  o.qty ?? o.amount ?? 0
+).toFixed(6);
 
   const usdtAmt = Number(o.estimate ?? 0);
 
