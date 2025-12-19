@@ -525,7 +525,7 @@ button {
             <th>订单/会员/钱包</th>
             <th>时间 (US/Eastern)</th>
             <th>类型</th>
-            <th>金额</th>
+            <th>货币数量</th>
             <th>币种</th>
             <th>估算 USDT</th>
             <th>wallet</th>
@@ -1335,7 +1335,12 @@ function renderBuySellRow(o){
   <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
   <td>${o.time_us || o.time || o.createdAt || '--'}</td>
   <td>${o.side}</td>
-  <td>${o.amount}</td>
+  <td>
+  ${o.amount}
+  <div class="small" style="color:#888;">
+    ${o.qty || o.quantity || o.coinAmount || '--'} ${o.coin || ''}
+  </div>
+</td>
   <td>${o.coin}</td>
   <td>${o.estimate || '--'}</td>
   <td>${o.wallet || '--'}</td>
