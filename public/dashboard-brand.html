@@ -1336,24 +1336,9 @@ function renderBuySellRow(o) {
   const side = String(o.side || '').toLowerCase();
   const coin = String(o.coin || '').toUpperCase();
 
-  // 🔹 从页面顶部实时汇率里取价格
-  const priceMap = window.__priceMap || {};
-  const price = Number(priceMap[coin + 'USDT'] || 0);
-
-  let coinQty = 0;
-  let usdtAmt = 0;
-
-  if (side === 'buy') {
-    // ✅ BUY：amount = USDT
-    usdtAmt = Number(o.amount || 0);
-
-    // 用实时价格算币数量
-    coinQty = price > 0 ? usdtAmt / price : 0;
-  } else {
-    // ✅ SELL
-    coinQty = Number(o.converted || 0);
-    usdtAmt = Number(o.estimate || 0);
-  }
+  // ✅ 后台只显示“订单里存的值”，不再计算
+  const coinQty = Number(o.qty || 0);
+  const usdtAmt = Number(o.estimate ?? o.amount ?? 0);
 
   return `
 <tr>
@@ -1363,11 +1348,11 @@ function renderBuySellRow(o) {
   </td>
 
   <td>${o.time_us || '--'}</td>
-  <td>${o.side || '--'}</td>
+  <td>${side || '--'}</td>
 
   <!-- 货币数量 -->
   <td>
-    ${coinQty.toFixed(6)}
+    ${coinQty ? coinQty.toFixed(6) : '0.000000'}
     <div class="small" style="color:#888;">${coin}</div>
   </td>
 
