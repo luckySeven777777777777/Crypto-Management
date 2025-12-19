@@ -1330,9 +1330,10 @@ function applyColor(el, value) {
    Render rows for each type
 ------------------------------ */
 function renderBuySellRow(o){
-  const coinQty = o.qty || o.quantity || o.coinAmount || 0;   // ✅ 货币数量
-  const usdtAmt = o.amount || o.estimate || 0;                // ✅ 下单 USDT
-
+  const coinQty = Number(
+    o.qty ?? o.quantity ?? o.coinAmount ?? 0
+  ).toFixed(6)
+const usdtAmt = Number(o.estimate ?? o.amount ?? 0);
   return `
 <tr>
   <td>
@@ -1353,7 +1354,7 @@ function renderBuySellRow(o){
   <td>${o.coin || '--'}</td>
 
   <!-- ✅ 估算 USDT：前端下单 USDT -->
-  <td>${Number(usdtAmt).toFixed(6)}</td>
+ <td>${usdtAmt.toFixed(2)}</td>
 
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
