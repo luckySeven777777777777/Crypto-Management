@@ -1330,9 +1330,7 @@ function applyColor(el, value) {
    Render rows for each type
 ------------------------------ */
 function renderBuySellRow(o){
-  const coinQty = Number(
-  o.qty ?? o.amount ?? 0
-).toFixed(6);
+  const coinQty = Number(o.qty || 0).toFixed(6);
 
   const usdtAmt = Number(o.estimate ?? 0);
 
