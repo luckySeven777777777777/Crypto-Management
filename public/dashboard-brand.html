@@ -1332,18 +1332,28 @@ function applyColor(el, value) {
 /* -----------------------------
    Render rows for BuySell (SAFE)
 ------------------------------ */
-function renderBuySellRow(o){
+function renderBuySellRow(o) {
+  const side = String(o.side || '').toLowerCase();
+  const coin = String(o.coin || '').toUpperCase();
 
-  const isBuy  = String(o.side).toLowerCase() === 'buy';
-  const isSell = String(o.side).toLowerCase() === 'sell';
+  // 🔹 从页面顶部实时汇率里取价格
+  const priceMap = window.__priceMap || {};
+  const price = Number(priceMap[coin + 'USDT'] || 0);
 
-  // ✅ 币数量：Buy / Sell 都只信 converted
-  const coinQty = Number(o.converted || 0).toFixed(6);
+  let coinQty = 0;
+  let usdtAmt = 0;
 
-  // ✅ USDT：只在 SELL 时显示 estimate
-  const usdtAmt = isSell
-    ? Number(o.estimate || 0).toFixed(2)
-    : '--';
+  if (side === 'buy') {
+    // ✅ BUY：amount = USDT
+    usdtAmt = Number(o.amount || 0);
+
+    // 用实时价格算币数量
+    coinQty = price > 0 ? usdtAmt / price : 0;
+  } else {
+    // ✅ SELL
+    coinQty = Number(o.converted || 0);
+    usdtAmt = Number(o.estimate || 0);
+  }
 
   return `
 <tr>
@@ -1353,19 +1363,18 @@ function renderBuySellRow(o){
   </td>
 
   <td>${o.time_us || '--'}</td>
-
   <td>${o.side || '--'}</td>
 
   <!-- 货币数量 -->
   <td>
-    ${coinQty}
-    <div class="small" style="color:#888;">${o.coin || ''}</div>
+    ${coinQty.toFixed(6)}
+    <div class="small" style="color:#888;">${coin}</div>
   </td>
 
-  <td>${o.coin || '--'}</td>
+  <td>${coin}</td>
 
   <!-- 估算 USDT -->
-  <td>${usdtAmt}</td>
+  <td>${usdtAmt ? usdtAmt.toFixed(2) : '--'}</td>
 
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
