@@ -960,37 +960,42 @@ if (isApproved) {
  }
 
 // ===== 所有余额业务逻辑 =====
-// withdraw 拒绝 → 退钱
+// ===== withdraw 拒绝 → 退回 USDT（estimate）=====
 if (
   type === 'withdraw' &&
   isRejected &&
   order.deducted === true &&
   order.refunded !== true
 ) {
-  curBal += amt;
-  await userRef.update({
-    balance: curBal,
-    lastUpdate: now(),
-    boost_last: now()
-  });
+  const refundUSDT = Number(order.estimate || 0); // ✅ USDT
 
-  await ref.update({ refunded: true });
+  if (refundUSDT > 0) {
+    curBal += refundUSDT;
 
-  broadcastSSE({
-    type: 'balance',
-    userId,
-    balance: curBal,
-    source: 'withdraw_refund'
-  });
+    await userRef.update({
+      balance: curBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    await ref.update({ refunded: true });
+
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal,
+      source: 'withdraw_refund'
+    });
+  }
 }
 
-// buysell sell 通过 → 加钱（✅ 必须加 isApproved）
+// ===== buysell sell 通过 → 加钱（保持原样）=====
 else if (
   type === 'buysell' &&
   isApproved &&
   String(order.side || '').toLowerCase() === 'sell'
 ) {
-  curBal += amt;
+  curBal += amt; // amt 在 buysell 里本来就是 USDT
   await userRef.update({
     balance: curBal,
     lastUpdate: now(),
