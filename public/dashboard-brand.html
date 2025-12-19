@@ -1333,12 +1333,12 @@ function applyColor(el, value) {
    Render rows for BuySell (SAFE)
 ------------------------------ */
 function renderBuySellRow(o) {
-  const side = String(o.side || '').toLowerCase();
+  const side = String(o.side || o.tradeType || '').toLowerCase();
   const coin = String(o.coin || '').toUpperCase();
 
-  // ✅ 核心：只用下单时的数据，不做任何计算
-  const coinQty = Number(o.qty || 0);        // 前端下单的币数量
-  const usdtAmt = Number(o.amount || 0);     // 前端下单的 USDT
+  // ✅ 只用下单快照数据（不计算）
+  const coinQty = Number(o.qty || 0).toFixed(6);      // 下单币数量
+  const usdtAmt = Number(o.amount || o.estimate || 0).toFixed(2); // 下单 USDT
 
   return `
 <tr>
@@ -1348,18 +1348,18 @@ function renderBuySellRow(o) {
   </td>
 
   <td>${o.time_us || '--'}</td>
-  <td>${side || '--'}</td>
+  <td>${side}</td>
 
-  <!-- 货币数量（下单币数量） -->
+  <!-- 货币数量 -->
   <td>
-    ${coinQty.toFixed(6)}
+    ${coinQty}
     <div class="small" style="color:#888;">${coin}</div>
   </td>
 
   <td>${coin}</td>
 
-  <!-- USDT（金钱 = 下单 USDT） -->
-  <td>${usdtAmt ? usdtAmt.toFixed(2) : '--'}</td>
+  <!-- USDT（直接显示下单金额） -->
+  <td>${usdtAmt}</td>
 
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
@@ -1368,9 +1368,7 @@ function renderBuySellRow(o) {
     <span class="badge">${displayStatus(o.status)}</span>
   </td>
 
-  <td>
-    ${renderActionButtons(o.orderId, 'buysell', o.processed, o.status)}
-  </td>
+  <td>${renderActionButtons(o.orderId, 'buysell', o.processed, o.status)}</td>
 </tr>`;
 }
 /* 🔥 加在这里 */
