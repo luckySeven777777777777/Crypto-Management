@@ -455,7 +455,7 @@ async function saveOrder(type, data){
   const ts = now();
   const allowed = [
     'userId','user','amount','coin','side','converted','tp','sl',
-    'note','meta','orderId','status','deducted','wallet','ip','currency'
+    'note','meta','orderId','status','deducted','wallet','ip','currency'+ 'qty'
   ];
 
   const clean = {};
@@ -541,22 +541,21 @@ async function saveOrder(type, data){
 async function handleBuySellRequest(req, res){
   try {
     if(!db) return res.json({ ok:false, error:'no-db' });
-
-    const {
-      userId,
-      user,
-      side,
-      tradeType,   // ✅ 兼容 buysell.html
-      coin,
-      amount,
-      converted,
-      tp,
-      sl,
-      orderId,
-      wallet,
-      ip
-    } = req.body;
-
+const {
+  userId,
+  user,
+  side,
+  tradeType,
+  coin,
+  amount,
++ qty,           // ✅ 新增：币数量（前端已传）
+  converted,
+  tp,
+  sl,
+  orderId,
+  wallet,
+  ip
+} = req.body;
     const uid = userId || user;
     await ensureUserExists(uid);
     const realSide = side || tradeType;   // ✅ 关键修复
@@ -586,20 +585,21 @@ async function handleBuySellRequest(req, res){
     }
 
     // SELL：不动余额，等后台审批
-    const id = await saveOrder('buysell', {
-      userId: uid,
-      side: sideLower,     // ✅ 统一存 side
-      coin,
-      amount: amt,
-      converted: converted || null,
-      tp: tp || null,
-      sl: sl || null,
-      orderId,
-      deducted: (sideLower === 'buy'),
-      wallet: wallet || null,
-      ip: ip || null,
-      processed: false
-    });
+   const id = await saveOrder('buysell', {
+  userId: uid,
+  side: sideLower,
+  coin,
+  amount: amt,
++ qty: safeNumber(qty, 0),   // ✅ 唯一必须补的字段
+  converted: converted || null,
+  tp: tp || null,
+  sl: sl || null,
+  orderId,
+  deducted: (sideLower === 'buy'),
+  wallet: wallet || null,
+  ip: ip || null,
+  processed: false
+});
 
     return res.json({ ok:true, orderId: id });
   } catch(e){
