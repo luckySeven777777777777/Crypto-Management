@@ -1330,70 +1330,39 @@ function applyColor(el, value) {
    Render rows for each type
 ------------------------------ */
 function renderBuySellRow(o){
+  const coinQty = o.qty || o.quantity || o.coinAmount || 0;   // ✅ 货币数量
+  const usdtAmt = o.amount || o.estimate || 0;                // ✅ 下单 USDT
+
   return `
 <tr>
-  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
-  <td>${o.time_us || o.time || o.createdAt || '--'}</td>
-  <td>${o.side}</td>
   <td>
-  ${o.amount}
-  <div class="small" style="color:#888;">
-    ${o.qty || o.quantity || o.coinAmount || '--'} ${o.coin || ''}
-  </div>
-</td>
-  <td>${o.coin}</td>
-  <td>${o.estimate || '--'}</td>
+    <div class="order-id">${o.orderId || ''}</div>
+    <div class="small">${o.userId || ''}</div>
+  </td>
+
+  <td>${o.time_us || o.time || o.createdAt || '--'}</td>
+
+  <td>${o.side || '--'}</td>
+
+  <!-- ✅ 列表金额：货币数量 -->
+  <td>
+    ${coinQty}
+    <div class="small" style="color:#888;">${o.coin || ''}</div>
+  </td>
+
+  <td>${o.coin || '--'}</td>
+
+  <!-- ✅ 估算 USDT：前端下单 USDT -->
+  <td>${Number(usdtAmt).toFixed(6)}</td>
+
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
-  <td>${(o.tp||'-')}/${(o.sl||'-')}</td>
+
   <td>
     <span class="badge">${displayStatus(o.status)}</span>
-
   </td>
-  <td>${renderActionButtons(o.orderId,'buysell', o.processed, o.status)}</td>
-  <td>
-${
-  o.note
-  ? (() => {
-      const remarkData = btoa(
-        unescape(
-          encodeURIComponent(
-            JSON.stringify({
-              // 基本
-              orderId: o.orderId,
-              type: 'buysell',
-              time: o.time_us || '',
 
-              // 🔥 订单核心信息
-              side: o.side,
-              amount: o.amount,
-              coin: o.coin,
-              estimate: o.estimate,
-              tp: o.tp,
-              sl: o.sl,
-              wallet: o.wallet,
-              ip: o.ip,
-              status: o.status,
-
-              // 备注
-              note: o.note
-            })
-          )
-        )
-      );
-
-      return `
-        <span
-          style="color:#1976d2;cursor:pointer"
-          data-remark="${remarkData}"
-          onclick="openRemarkFromRow(this)"
-        >查看</span>
-      `;
-    })()
-  : '--'
-}
-</td>
-
+  <td>${renderActionButtons(o.orderId,'buysell',o.processed,o.status)}</td>
 </tr>`;
 }
 /* 🔥 加在这里 */
