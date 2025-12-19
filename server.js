@@ -631,29 +631,79 @@ app.post('/api/order/recharge', async (req, res) => {
 --------------------------------------------------------- */
 app.post('/api/order/withdraw', async (req, res) => {
   try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
+    if (!db) return res.json({ ok:false, error:'no-db' });
 
     const payload = req.body || {};
     const userId = payload.userId || payload.user;
-   await ensureUserExists(userId);
-    const amount = Number(payload.amount || 0);
 
-    if(!userId || amount === undefined || amount === null) return res.status(400).json({ ok:false, error:'missing userId/amount' });
-    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
+    if (!userId) {
+      return res.status(400).json({ ok:false, error:'missing userId' });
+    }
+    if (!isSafeUid(userId)) {
+      return res.status(400).json({ ok:false, error:'invalid uid' });
+    }
+
+    await ensureUserExists(userId);
+
+    // ===== 关键字段 =====
+    const amountCoin = Number(payload.amount || 0);        // 币数量（只记录）
+    const estimateUSDT = Number(payload.estimate || 0);    // ✅ USDT（扣款用）
+
+    if (!amountCoin || amountCoin <= 0) {
+      return res.status(400).json({ ok:false, error:'invalid amount' });
+    }
+
+    if (!estimateUSDT || estimateUSDT <= 0) {
+      return res.status(400).json({ ok:false, error:'invalid estimate' });
+    }
 
     const userRef = db.ref(`users/${userId}`);
     const snap = await userRef.once('value');
-    const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
+    const curBal = snap.exists()
+      ? safeNumber(snap.val().balance, 0)
+      : 0;
 
-    if(curBal < amount) return res.status(400).json({ ok:false, error:'余额不足' });
+    // ✅ 用 USDT 校验余额
+    if (curBal < estimateUSDT) {
+      return res.status(400).json({ ok:false, error:'余额不足' });
+    }
 
-    const newBal = curBal - amount;
-    await userRef.update({ balance: newBal, lastUpdate: now(), boost_last: now() });
-    try { broadcastSSE({ type:'balance', userId, balance: newBal }); } catch(e){}
+    // ✅ 用 USDT 扣款
+    const newBal = curBal - estimateUSDT;
 
-    const orderId = await saveOrder('withdraw', { ...payload, userId, amount, status: 'pending', deducted: true, processed: false });
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    // 推送余额更新
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId,
+        balance: newBal,
+        source: 'withdraw_submit'
+      });
+    } catch(e){}
+
+    // 保存提款订单（币数量 + USDT 都保留）
+    const orderId = await saveOrder('withdraw', {
+      ...payload,
+      userId,
+      amount: amountCoin,          // 币数量
+      estimate: estimateUSDT,       // USDT
+      status: 'pending',
+      deducted: true,
+      processed: false
+    });
+
     return res.json({ ok:true, orderId });
-  } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
+
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
 });
 // ===== 工具函数：按时间倒序 =====
 function sortByTimeDesc(arr) {
