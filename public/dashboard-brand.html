@@ -1329,12 +1329,21 @@ function applyColor(el, value) {
 /* -----------------------------
    Render rows for each type
 ------------------------------ */
+/* -----------------------------
+   Render rows for BuySell (SAFE)
+------------------------------ */
 function renderBuySellRow(o){
-  const coinQty = Number(
-  o.qty ?? o.amount ?? 0
-).toFixed(6);
 
-  const usdtAmt = Number(o.estimate ?? 0);
+  const isBuy  = String(o.side).toLowerCase() === 'buy';
+  const isSell = String(o.side).toLowerCase() === 'sell';
+
+  // ✅ 币数量：Buy / Sell 都只信 converted
+  const coinQty = Number(o.converted || 0).toFixed(6);
+
+  // ✅ USDT：只在 SELL 时显示 estimate
+  const usdtAmt = isSell
+    ? Number(o.estimate || 0).toFixed(2)
+    : '--';
 
   return `
 <tr>
@@ -1347,7 +1356,7 @@ function renderBuySellRow(o){
 
   <td>${o.side || '--'}</td>
 
-  <!-- ✅ 列表金额：货币数量（和充值/提款一致） -->
+  <!-- 货币数量 -->
   <td>
     ${coinQty}
     <div class="small" style="color:#888;">${o.coin || ''}</div>
@@ -1355,8 +1364,8 @@ function renderBuySellRow(o){
 
   <td>${o.coin || '--'}</td>
 
-  <!-- ✅ 估算 USDT：用户下单时的 USDT -->
-  <td>${usdtAmt.toFixed(2)}</td>
+  <!-- 估算 USDT -->
+  <td>${usdtAmt}</td>
 
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
