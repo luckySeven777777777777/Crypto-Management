@@ -470,9 +470,10 @@ async function saveOrder(type, data){
 
   const ts = now();
   const allowed = [
-    'userId','user','amount','coin','side','converted','tp','sl',
-    'note','meta','orderId','status','deducted','wallet','ip','currency'
-  ];
+  'userId','user','amount','coin','side','converted','tp','sl',
+  'note','meta','orderId','status','deducted','wallet','ip','currency',
+  'qty' // ✅ 新增（只加）
+];
 
   const clean = {};
   Object.keys(data || {}).forEach(k => {
@@ -484,19 +485,18 @@ async function saveOrder(type, data){
   const id = clean.orderId || genOrderId(type.toUpperCase());
 
   const payload = {
-    ...clean,
-    orderId: id,
-    timestamp: ts,
-    time_us: usTime(ts),
-    status: clean.status || 'processing',
-    type,
-    processed: false,
-    coin: clean.coin || null,
-
-    // 保存钱包地址到用户
-    wallet: clean.wallet || null,
-    estimate: Number(clean.amount || 0)
-  };
+  ...clean,
+  orderId: id,
+  timestamp: ts,
+  time_us: usTime(ts),
+  status: clean.status || 'processing',
+  type,
+  processed: false,
+  coin: clean.coin || null,
+  wallet: clean.wallet || null,
+  estimate: Number(clean.amount || 0),
+  qty: Number(clean.qty || 0) // ✅ 就加这一行
+};
 
   await db.ref(`orders/${type}/${id}`).set(payload);
 
