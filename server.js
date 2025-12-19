@@ -498,13 +498,6 @@ const payload = {
 
   coin: clean.coin || null,
   wallet: clean.wallet || null,
-
-  // ✅ 只修这一行：估算 USDT
-  estimate: Number(
-    clean.estimate !== undefined
-      ? clean.estimate
-      : clean.amount || 0
-  )
 };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
