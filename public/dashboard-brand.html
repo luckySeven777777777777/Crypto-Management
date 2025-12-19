@@ -1991,6 +1991,14 @@ async function loadDashboard(){
     const sumUSDT = arr =>
       arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
 
+// ===== Dashboard BuySell 总统计（全量）=====
+const allBuySellSuccess = buysell.filter(o =>
+  String(o.status).toLowerCase() === 'success'
+);
+
+renderBuySellSummary(allBuySellSuccess);
+
+
     // ===== 今日数量（只算已通过）=====
 const rOK = rToday.filter(isOrderApproved);
 const wOK = wToday.filter(isOrderApproved);
@@ -2004,11 +2012,14 @@ const allTodayOrders = [
   ...bToday.map(o => ({ ...o, _type: 'buysell' }))
 ];
 const rejectedToday = allTodayOrders.filter(o =>
-  String(o.status).toLowerCase() === 'failed'
+  ['failed','reject','rejected','fail'].includes(
+    String(o.status).toLowerCase()
+  )
 );
-
 const pendingToday = allTodayOrders.filter(o =>
-  ['processing','locked'].includes(String(o.status).toLowerCase())
+  ['processing','pending','waiting','locked','审核中'].includes(
+    String(o.status).toLowerCase()
+  )
 );
 // ③ 【就在这里】算金额（你问的就是这里）
 const buySum  = sumUSDT(bBuy);
