@@ -453,16 +453,10 @@ async function saveOrder(type, data){
   if (!db) return null;
 
   const ts = now();
- const allowed = [
-  'userId','user',
-  'amount',      // ✅ USDT
-  'qty',         // ✅ 币数量（新增）
-  'coin','side',
-  'tp','sl',
-  'note','meta',
-  'orderId','status','deducted',
-  'wallet','ip','currency'
-];
+  const allowed = [
+    'userId','user','amount','coin','side','converted','tp','sl',
+    'note','meta','orderId','status','deducted','wallet','ip','currency'
+  ];
 
   const clean = {};
   Object.keys(data || {}).forEach(k => {
@@ -485,7 +479,7 @@ async function saveOrder(type, data){
 
     // 保存钱包地址到用户
     wallet: clean.wallet || null,
-   estimate: Number(clean.amount || 0)   // ✅ USDT 原值
+    estimate: calcEstimateUSDT(clean.amount, clean.coin)
   };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
