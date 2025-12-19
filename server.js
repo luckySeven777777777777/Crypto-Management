@@ -470,10 +470,9 @@ async function saveOrder(type, data){
 
   const ts = now();
   const allowed = [
-  'userId','user','amount','coin','side','converted','tp','sl',
-  'note','meta','orderId','status','deducted','wallet','ip','currency',
-  'qty' // ✅ 新增（只加）
-];
+    'userId','user','amount','coin','side','converted','tp','sl',
+    'note','meta','orderId','status','deducted','wallet','ip','currency'
+  ];
 
   const clean = {};
   Object.keys(data || {}).forEach(k => {
@@ -485,18 +484,19 @@ async function saveOrder(type, data){
   const id = clean.orderId || genOrderId(type.toUpperCase());
 
   const payload = {
-  ...clean,
-  orderId: id,
-  timestamp: ts,
-  time_us: usTime(ts),
-  status: clean.status || 'processing',
-  type,
-  processed: false,
-  coin: clean.coin || null,
-  wallet: clean.wallet || null,
-  estimate: Number(clean.amount || 0),
-  qty: Number(clean.qty || 0) // ✅ 就加这一行
-};
+    ...clean,
+    orderId: id,
+    timestamp: ts,
+    time_us: usTime(ts),
+    status: clean.status || 'processing',
+    type,
+    processed: false,
+    coin: clean.coin || null,
+
+    // 保存钱包地址到用户
+    wallet: clean.wallet || null,
+    estimate: Number(clean.amount || 0)
+  };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
 
@@ -1173,32 +1173,27 @@ app.post('/api/admin/recharge/update', async (req, res) => {
 
     await ref.update({
       status,
-      processed: status === 'success' || status === 'approved',
+      processed: status === 'success',
       updatedAt: now()
     });
 
-const order = snap.val();
+    const order = snap.val();
+    order.status = status;
 
-// ✅ 强制以最新状态为准
-order.status = status;
+    // 🔔 同步给前端（用户 + 管理后台）
+    broadcastSSE({
+      type: 'recharge',
+      userId: order.userId,
+      order
+    });
 
-// 🔔【唯一一次】同步给前端（用户 + 管理后台）
-broadcastSSE({
-  type: 'recharge',
-  userId: order.userId,
-  order: {
-    ...order,
-    orderId,
-    status // success / failed
-  }
-});
-return res.json({ ok: true });
-
+    return res.json({ ok: true });
   } catch (e) {
-    console.error('admin recharge update error', e);
-    return res.status(500).json({ ok: false });
+    console.error('recharge update error', e);
+    return res.json({ ok: false });
   }
 });
+
 /* ---------------------------------------------------------
    Firebase watchers
 --------------------------------------------------------- */
