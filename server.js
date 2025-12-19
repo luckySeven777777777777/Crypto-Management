@@ -1173,7 +1173,7 @@ app.post('/api/admin/recharge/update', async (req, res) => {
 
     await ref.update({
       status,
-      processed: status === 'success',
+      processed: status === 'success' || status === 'approved',
       updatedAt: now()
     });
 
