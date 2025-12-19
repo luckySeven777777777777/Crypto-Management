@@ -1171,36 +1171,29 @@ app.post('/api/admin/recharge/update', async (req, res) => {
       return res.json({ ok: false, message: 'order not found' });
     }
 
-    // ✅ 管理后台 approved → 前端统一 success
-    const finalStatus = status === 'approved' ? 'success' : status;
-
     await ref.update({
-      status: finalStatus,
-      processed: finalStatus === 'success',
+      status,
+      processed: status === 'success',
       updatedAt: now()
     });
 
-    const order = snap.val();
+const order = snap.val();
 
-    // ✅ 强制覆盖
-    const updatedOrder = {
-      ...order,
-      status: finalStatus
-    };
+// ✅ 强制以最新状态为准
+order.status = status;
 
-    // 🔔 关键：广播给前端
-    broadcastSSE({
-      type: 'recharge',
-      userId: order.userId,
-      order: updatedOrder
-    });
-
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('recharge update error', e);
-    return res.json({ ok: false });
+// 🔔【唯一一次】同步给前端（用户 + 管理后台）
+broadcastSSE({
+  type: 'recharge',
+  userId: order.userId,
+  order: {
+    ...order,
+    orderId,
+    status // success / failed
   }
 });
+
+return res.json({ ok: true });
 /* ---------------------------------------------------------
    Firebase watchers
 --------------------------------------------------------- */
