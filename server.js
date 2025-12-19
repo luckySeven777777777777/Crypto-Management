@@ -454,9 +454,10 @@ async function saveOrder(type, data){
 
   const ts = now();
   const allowed = [
-    'userId','user','amount','coin','side','converted','tp','sl',
-    'note','meta','orderId','status','deducted','wallet','ip','currency'
-  ];
+  'userId','user','amount','coin','side','converted','coinQty',
+  'tp','sl','note','meta','orderId','status','deducted','wallet','ip','currency'
+];
+
 
   const clean = {};
   Object.keys(data || {}).forEach(k => {
@@ -588,21 +589,36 @@ async function handleBuySellRequest(req, res){
       broadcastSSE({ type:'balance', userId: uid, balance: newBal });
     }
 
-    // SELL：不动余额，等后台审批
-    const id = await saveOrder('buysell', {
-      userId: uid,
-      side: sideLower,     // ✅ 统一存 side
-      coin,
-      amount: amt,
-      converted: converted || null,
-      tp: tp || null,
-      sl: sl || null,
-      orderId,
-      deducted: (sideLower === 'buy'),
-      wallet: wallet || null,
-      ip: ip || null,
-      processed: false
-    });
+    // ===== 计算币数量（安全版）=====
+let coinQty = 0;
+
+// ① 优先用前端传来的币数量
+if (converted !== undefined && converted !== null && Number(converted) > 0) {
+  coinQty = Number(converted);
+}
+// ② 否则用 USDT / price 计算
+else {
+  const price = getUSDTPrice(coin);
+  if (price && price > 0) {
+    coinQty = Number((amt / price).toFixed(6));
+  }
+}
+
+// ===== 保存订单 =====
+const id = await saveOrder('buysell', {
+  userId: uid,
+  side: sideLower,
+  coin,
+  amount: amt,              // USDT（保持不变）
+  coinQty,                  // ✅ 新增：币数量
+  tp: tp || null,
+  sl: sl || null,
+  orderId,
+  deducted: (sideLower === 'buy'),
+  wallet: wallet || null,
+  ip: ip || null,
+  processed: false
+});
 
     return res.json({ ok:true, orderId: id });
   } catch(e){
