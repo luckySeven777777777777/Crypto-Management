@@ -470,10 +470,9 @@ async function saveOrder(type, data){
 
   const ts = now();
   const allowed = [
-  'userId','user','amount','coin','side','converted','tp','sl',
-  'note','meta','orderId','status','deducted','wallet','ip','currency',
-  'qty' // ✅ 新增（只加）
-];
+    'userId','user','amount','coin','side','converted','tp','sl',
+    'note','meta','orderId','status','deducted','wallet','ip','currency'
+  ];
 
   const clean = {};
   Object.keys(data || {}).forEach(k => {
@@ -483,30 +482,22 @@ async function saveOrder(type, data){
   if (!clean.userId && clean.user) clean.userId = clean.user;
 
   const id = clean.orderId || genOrderId(type.toUpperCase());
-const payload = {
-  orderId: id,
-  timestamp: ts,
-  time_us: usTime(ts),
-  status: clean.status || 'processing',
-  type,
-  processed: false,
 
-  // ✅ 金额 = 币数量（恢复你原本正常的功能）
-  amount: Number(clean.amount || 0),
+  const payload = {
+    ...clean,
+    orderId: id,
+    timestamp: ts,
+    time_us: usTime(ts),
+    status: clean.status || 'processing',
+    type,
+    processed: false,
+    coin: clean.coin || null,
 
-  coin: clean.coin || null,
-  wallet: clean.wallet || null,
+    // 保存钱包地址到用户
+    wallet: clean.wallet || null,
+    estimate: Number(clean.amount || 0)
+  };
 
-  // ✅ 估算 USDT = 前端下单确认值（只改这一列）
-  estimate: Number(
-    clean.estimate !== undefined
-      ? clean.estimate
-      : clean.amount || 0
-  ),
-
-  // 可选：如果你在别处用 qty
-  qty: Number(clean.qty || 0)
-};
   await db.ref(`orders/${type}/${id}`).set(payload);
 
   // user_orders 索引
@@ -1182,32 +1173,27 @@ app.post('/api/admin/recharge/update', async (req, res) => {
 
     await ref.update({
       status,
-      processed: status === 'success' || status === 'approved',
+      processed: status === 'success',
       updatedAt: now()
     });
 
-const order = snap.val();
+    const order = snap.val();
+    order.status = status;
 
-// ✅ 强制以最新状态为准
-order.status = status;
+    // 🔔 同步给前端（用户 + 管理后台）
+    broadcastSSE({
+      type: 'recharge',
+      userId: order.userId,
+      order
+    });
 
-// 🔔【唯一一次】同步给前端（用户 + 管理后台）
-broadcastSSE({
-  type: 'recharge',
-  userId: order.userId,
-  order: {
-    ...order,
-    orderId,
-    status // success / failed
-  }
-});
-return res.json({ ok: true });
-
+    return res.json({ ok: true });
   } catch (e) {
-    console.error('admin recharge update error', e);
-    return res.status(500).json({ ok: false });
+    console.error('recharge update error', e);
+    return res.json({ ok: false });
   }
 });
+
 /* ---------------------------------------------------------
    Firebase watchers
 --------------------------------------------------------- */
