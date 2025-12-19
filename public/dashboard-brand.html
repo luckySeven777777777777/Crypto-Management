@@ -1332,8 +1332,10 @@ function applyColor(el, value) {
 function renderBuySellRow(o){
   const coinQty = Number(
     o.qty ?? o.quantity ?? o.coinAmount ?? 0
-  ).toFixed(6)
-const usdtAmt = Number(o.estimate ?? o.amount ?? 0);
+  ).toFixed(6);
+
+  const usdtAmt = Number(o.estimate ?? 0);
+
   return `
 <tr>
   <td>
@@ -1341,11 +1343,11 @@ const usdtAmt = Number(o.estimate ?? o.amount ?? 0);
     <div class="small">${o.userId || ''}</div>
   </td>
 
-  <td>${o.time_us || o.time || o.createdAt || '--'}</td>
+  <td>${o.time_us || '--'}</td>
 
   <td>${o.side || '--'}</td>
 
-  <!-- ✅ 列表金额：货币数量 -->
+  <!-- ✅ 列表金额：货币数量（和充值/提款一致） -->
   <td>
     ${coinQty}
     <div class="small" style="color:#888;">${o.coin || ''}</div>
@@ -1353,8 +1355,8 @@ const usdtAmt = Number(o.estimate ?? o.amount ?? 0);
 
   <td>${o.coin || '--'}</td>
 
-  <!-- ✅ 估算 USDT：前端下单 USDT -->
- <td>${usdtAmt.toFixed(2)}</td>
+  <!-- ✅ 估算 USDT：用户下单时的 USDT -->
+  <td>${usdtAmt.toFixed(2)}</td>
 
   <td>${o.wallet || '--'}</td>
   <td>${o.ip || '--'}</td>
