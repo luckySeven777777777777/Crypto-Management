@@ -1336,9 +1336,9 @@ function renderBuySellRow(o) {
   const side = String(o.side || '').toLowerCase();
   const coin = String(o.coin || '').toUpperCase();
 
-  // ✅ 后台只显示“订单里存的值”，不再计算
-  const coinQty = Number(o.qty || 0);
-  const usdtAmt = Number(o.estimate ?? o.amount ?? 0);
+  // ✅ 核心：只用下单时的数据，不做任何计算
+  const coinQty = Number(o.qty || 0);        // 前端下单的币数量
+  const usdtAmt = Number(o.amount || 0);     // 前端下单的 USDT
 
   return `
 <tr>
@@ -1350,15 +1350,15 @@ function renderBuySellRow(o) {
   <td>${o.time_us || '--'}</td>
   <td>${side || '--'}</td>
 
-  <!-- 货币数量 -->
+  <!-- 货币数量（下单币数量） -->
   <td>
-    ${coinQty ? coinQty.toFixed(6) : '0.000000'}
+    ${coinQty.toFixed(6)}
     <div class="small" style="color:#888;">${coin}</div>
   </td>
 
   <td>${coin}</td>
 
-  <!-- 估算 USDT -->
+  <!-- USDT（金钱 = 下单 USDT） -->
   <td>${usdtAmt ? usdtAmt.toFixed(2) : '--'}</td>
 
   <td>${o.wallet || '--'}</td>
@@ -1368,7 +1368,9 @@ function renderBuySellRow(o) {
     <span class="badge">${displayStatus(o.status)}</span>
   </td>
 
-  <td>${renderActionButtons(o.orderId,'buysell',o.processed,o.status)}</td>
+  <td>
+    ${renderActionButtons(o.orderId, 'buysell', o.processed, o.status)}
+  </td>
 </tr>`;
 }
 /* 🔥 加在这里 */
