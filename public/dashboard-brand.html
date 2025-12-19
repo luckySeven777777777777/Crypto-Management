@@ -1,2185 +1,1140 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NEXBIT 管理后台 — 最终版</title>
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
+const admin = require('firebase-admin');
+const path = require('path');
+const axios = require('axios'); 
+const speakeasy = require('speakeasy');
+const qrcode = require('qrcode');
 
-<style>
+const app = express();
+app.disable('etag');
+app.use(cors());
+app.use(express.json());
 
-:root{
-  --top-blue:#1976d2;
-  --deep-blue:#0f2655;
-  --bg:#f4f7fb;
-  --card:#fff;
-  --red:#ff4444;
-  --black:#000;
-  --green:#00c851;
-  --yellow:#ffbb33;
-  --purple:#9933ff;
-}
+const PORT = process.env.PORT || 8080;
 
-*{box-sizing:border-box}
-body{
-  margin:0;
-  font-family:Segoe UI,Roboto,Arial;
-  background:var(--bg);
-  min-height:100vh;
-}
 
-  .modal[style*="display: flex"],
-  .order-detail-modal[style*="display: flex"],
-  .admin-login-modal[style*="display: flex"] {
-    pointer-events: auto !important;
+/* --------------------- Global safety handlers --------------------- */
+process.on('unhandledRejection', (reason, p) => {
+  console.error('UNHANDLED REJECTION at: Promise', p, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION', err);
+});
+// 生成 2FA 密钥和二维码
+app.post('/api/admin/generate-2fa', async (req, res) => {
+  const { adminId } = req.body;  // 获取管理员ID
+
+  if (!adminId) {
+    return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
   }
 
-/* ========= HEADER ========= */
-.top-header{
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 64px;
-  background: #1976d2;
-  z-index: 1000;
+  // 生成 2FA 密钥
+  const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
 
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
+  // 使用二维码生成库生成二维码 URL
+  qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
+    if (err) {
+      return res.status(500).json({ ok: false, message: '二维码生成失败' });
+    }
 
-  pointer-events: auto;   /* ✅ 必须是 auto */
-}
-.top-header .brand{
-  font-weight:700;
-  font-size:18px;
-}
-.top-header .user{
-  font-size:14px;
-}
+    // 将密钥存储到数据库，方便后续验证
+    // 示例：await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
 
-/* ----------- LAYOUT ---------- */
-.app{
-  display:flex;
-  padding-top:64px;
-}
-.sidebar{
-  width:88px;
-  background:var(--deep-blue);
-  color:#fff;
-  min-height:calc(100vh - 64px);
-  padding-top:20px;
-  position:fixed;
-  top:64px; left:0;
-}
-.sidebar .icon{
-  display:block;
-  padding:16px;
-  text-align:center;
-  color:#cdd6f4;
-  cursor:pointer;
-}
-.sidebar .icon.active{
-  background:var(--top-blue);
-  color:#fff;
-  border-radius:8px;
-  margin:4px;
-}
-.sidebar .buysell{
-  background:linear-gradient(90deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02));
-  border-radius:8px;
-  margin:6px;
-  padding:12px 6px;
-  text-align:center;
-}
+    // 返回生成的二维码和密钥
+    res.json({
+      ok: true,
+      qr_code: qr_code,  // 二维码链接
+      secret: secret.base32 // 2FA 密钥
+    });
+  });
+});
 
-.main{
-  margin-left:88px;
-  flex:1;
-  padding:22px 26px;
-}
-/* ====== FIX CLICK ISSUE ====== */
+// 验证 2FA 验证码
+app.post('/api/admin/verify-2fa', async (req, res) => {
+  const { adminId, code } = req.body;
 
-/* header 不挡点击，只给内部按钮 */
+  if (!adminId || !code) {
+    return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
+  }
 
-/* sidebar 必须可点 */
-.sidebar{
-  pointer-events: auto;
-  z-index: 900;
-}
+  // 从数据库获取管理员的 2FA 密钥（此处为假设，实际使用时需从数据库读取）
+  // 例如：const secret = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
+  const secret = '你的2FA密钥';  // 这里需要替换为从数据库中获取的密钥
 
-/* 主内容必须在最上层 */
-.main {
-  position: relative;
-  z-index: 2000 !important;
-  pointer-events: auto !important;
-}
-/* ----------- CARD / GRID ----------- */
-.container{
-  background:var(--card);
-  border-radius:8px;
-  padding:18px;
-  box-shadow:0 6px 18px rgba(0,0,0,0.06);
-}
-.page-title{
-  font-size:20px;
-  font-weight:700;
-  margin-bottom:12px;
-}
-.grid{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:12px;
-  margin-bottom:12px;
-}
-.card{
-  background:#fff;
-  border-radius:8px;
-  padding:12px;
-  box-shadow:0 2px 8px rgba(0,0,0,0.06);
-}
-.filters{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  align-items:center;
-  margin-bottom:12px;
+  // 使用 speakeasy 库验证验证码
+  const verified = speakeasy.totp.verify({
+    secret: secret,
+    encoding: 'base32',
+    token: code
+  });
+
+  if (verified) {
+    return res.json({ ok: true, message: '2FA 验证成功' });
+  } else {
+    return res.status(400).json({ ok: false, message: '验证码错误' });
+  }
+});
+/* ---------------------------------------------------------
+   Middleware
+--------------------------------------------------------- */
+app.use(cors({
+  origin: '*',
+  methods: ['GET','POST','OPTIONS'],
+  allowedHeaders: ['Content-Type','x-user-id','x-userid','Authorization','X-User-Id']
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname,'public')));
+
+/* ---------------------------------------------------------
+   Firebase RTDB init (optional)
+--------------------------------------------------------- */
+let db = null;
+try {
+  const admin = require('firebase-admin');
+  if (process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_DATABASE_URL) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL
+    });
+    db = admin.database();
+    console.log('✅ Firebase RTDB connected');
+  } else {
+    console.warn('⚠️ Firebase ENV missing');
+  }
+} catch (e) {
+  console.warn('❌ Firebase init failed:', e.message);
 }
 
-input,select,button{
-  padding:8px;
-  border:1px solid #ddd;
-  border-radius:6px;
+/* ---------------------------------------------------------
+   Helpers
+--------------------------------------------------------- */
+function now(){ return Date.now(); }
+function usTime(ts){ return new Date(ts).toLocaleString('en-US',{ timeZone:'America/New_York' }); }
+function genOrderId(prefix){ return `${prefix || 'ORD'}-${now()}-${Math.floor(1000+Math.random()*9000)}`; }
+function safeNumber(v, fallback=0){
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
-button.primary{
-  background:var(--top-blue);
-  color:#fff;
-  border:none;
-  cursor:pointer;
+function isSafeUid(uid){
+  if(!uid || typeof uid !== 'string') return false;
+  if(/[.#$\[\]]/.test(uid)) return false;
+  if(uid.indexOf('{{') !== -1 || uid.indexOf('}}') !== -1) return false;
+  if(uid.length < 2 || uid.length > 512) return false;
+  return true;
 }
+async function ensureUserExists(uid){
+  if(!db) return;
+  if(!isSafeUid(uid)) return;
 
-/* ----------- TABLE ----------- */
-.table{
-  width:100%;
-  border-collapse:collapse;
-  margin-top:8px;
-}
-.table th,.table td{
-  padding:10px;
-  border-bottom:1px solid #eee;
-  text-align:left;
-  font-size:13px;
-}
+  const ref = db.ref(`users/${uid}`);
+  const snap = await ref.once('value');
 
-/* 会员等级标签 */
-.member-label{
-  display:inline-block;
-  padding:4px 8px;
-  border-radius:4px;
-  color:#fff;
-  font-weight:600;
-  margin-left:8px;
-  font-size:12px;
-}
-.label-attention{background:var(--red)}
-.label-observe{background:var(--black)}
-.label-first-recharge{background:var(--green)}
-.label-first-withdraw{background:var(--yellow); color:#111}
-.label-vip{background:var(--purple)}
+  if(snap.exists()) return;
 
-.small{font-size:12px; color:#666}
-.actions button{margin-right:6px}
-.footer-note{margin-top:10px; color:#888; font-size:12px}
-
-/* BuySell ticker style */
-.table-sm th,.table-sm td{
-  padding:8px; font-size:13px;
+  const ts = now();
+  await ref.set({
+    userid: uid,
+    created: ts,
+    updated: ts,
+    balance: 0
+  });
 }
 
-/* 状态徽章 */
-.badge{
-  display:inline-block;
-  padding:4px 8px;
-  border-radius:4px;
-  background:#eee;
-  color:#333;
-  font-weight:600;
-}
-/* 👇 加在最后 */
-.btn-disabled {
-  opacity: 0.4 !important;
-  pointer-events: none !important;
-  filter: grayscale(100%);
-  cursor: not-allowed;
-}
-/* ----------- 审核按钮样式 ----------- */
-.small-btn{
-  padding:6px 8px;
-  border-radius:6px;
-  border:none;
-  cursor:pointer;
-  font-size:13px;
-}
-.small-btn:disabled{
-  opacity: 0.45;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.confirm-btn{ background:#00c851; color:#fff; }
-.cancel-btn{ background:#ff4444; color:#fff; }
-.lock-btn{ background:#ffbb33; color:#111; }
-.unlock-btn{ background:#6c757d; color:#fff; }
+// ================================
+// USDT 价格缓存（CoinGecko）
+// ================================
+const PRICE_CACHE = {
+  USDT: 1
+};
 
-/* Modal */
-.modal{
-  display:none;
-  position:fixed;
-  left:0; top:0; right:0; bottom:0;
-  background:rgba(0,0,0,0.5);
-  align-items:center;
-  justify-content:center;
-  z-index:1200;
-}
-.modal .box{
-  background:#fff;
-  padding:16px;
-  border-radius:8px;
-  min-width:320px;
-}
+// CoinGecko 币种映射（常用 + 可无限扩展）
+const COINGECKO_IDS = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  BNB: 'binancecoin',
+  SOL: 'solana',
+  XRP: 'ripple',
+  ADA: 'cardano',
+  DOGE: 'dogecoin',
+  TRX: 'tron',
+  AVAX: 'avalanche-2',
+  DOT: 'polkadot',
+  MATIC: 'matic-network',
+  LTC: 'litecoin',
+  BCH: 'bitcoin-cash',
+  LINK: 'chainlink',
+  ATOM: 'cosmos',
+  ETC: 'ethereum-classic',
+  FIL: 'filecoin',
+  ICP: 'internet-computer',
+  APT: 'aptos',
+  ARB: 'arbitrum',
+  OP: 'optimism',
+  NEAR: 'near',
+  EOS: 'eos',
+  XTZ: 'tezos',
+  XLM: 'stellar',
+  SAND: 'the-sandbox',
+  MANA: 'decentraland',
+  APE: 'apecoin',
+  AXS: 'axie-infinity',
+  GALA: 'gala',
+  FTM: 'fantom',
+  RUNE: 'thorchain',
+  KAVA: 'kava',
+  CRV: 'curve-dao-token',
+  UNI: 'uniswap',
+  AAVE: 'aave',
+  CAKE: 'pancakeswap-token',
+  DYDX: 'dydx',
+  INJ: 'injective-protocol',
+  SUI: 'sui'
+};
 
-/* ===== Extra styles: order modal, admin login, alerts ===== */
-.order-detail-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
-  background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1300; }
-.order-detail-modal .box { background:#fff; color:#111; padding:16px; border-radius:8px; width:760px; max-width:95%; max-height:86vh; overflow:auto; }
-.order-detail-modal pre { background:#f6f8fa; padding:10px; border-radius:6px; font-size:12px; white-space:pre-wrap; word-break:break-word; }
-.admin-login-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
-  background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1400; }
-.admin-login-modal .box { background:#fff; color:#111; padding:20px; border-radius:8px; width:420px; max-width:95%; }
-.badge-alert { background:#ff4444; color:#fff; padding:6px 8px; border-radius:6px; display:inline-block; margin-left:8px; }
-.flash { animation: flash 1s linear infinite; }
-@keyframes flash { 0% { box-shadow: 0 0 0 rgba(255,0,0,0.0); } 50% { box-shadow: 0 0 8px rgba(255,0,0,0.6); } 100% { box-shadow: 0 0 0 rgba(255,0,0,0.0); } }
-.tr-alert { background: #fff0f0 !important; border-left:4px solid #ff4444 !important; }
+// 拉取 CoinGecko 行情（稳定，不封云）
+async function fetchCoinGeckoPrices(){
+  try{
+    const ids = Object.values(COINGECKO_IDS).join(',');
+    const res = await axios.get(
+      'https://api.coingecko.com/api/v3/simple/price',
+      {
+        params: {
+          ids,
+          vs_currencies: 'usd'
+        },
+        timeout: 10000
+      }
+    );
 
-/* Responsive */
-@media(max-width:900px){
-  .grid{ grid-template-columns:repeat(2,1fr); }
-}
+    for(const [symbol, id] of Object.entries(COINGECKO_IDS)){
+      const price = res.data[id]?.usd;
+      if(price && price > 0){
+        PRICE_CACHE[symbol] = price;
+      }
+    }
 
-/* 只有真正显示时，才允许点击 */
-.modal[style*="display: flex"],
-.order-detail-modal[style*="display: flex"],
-.admin-login-modal[style*="display: flex"] {
-  pointer-events: auto !important;
-}
-/* ===== 兜底：确保操作按钮永远可点击 ===== */
-.small-btn{
-  position: relative;
-  z-index: 3001;
-  pointer-events: auto;
-}
-/* ===== 强制恢复后台操作区点击能力 ===== */
-table,
-tbody,
-tr,
-td,
-.small-btn,
-.action-btn,
-button {
-  pointer-events: auto !important;
-}
-.remark-drawer{
-  position: fixed;
-  top: 64px;
-  right: -420px;
-  width: 420px;
-  height: calc(100vh - 64px);
-  background: #0f172a;
-  color: #fff;
-  box-shadow: -4px 0 16px rgba(0,0,0,.4);
-  transition: right .3s ease;
-  z-index: 5000;
+    PRICE_CACHE.USDT = 1;
+    console.log('[PRICE] CoinGecko updated:', Object.keys(PRICE_CACHE).length);
+
+  }catch(e){
+    console.log('[PRICE] CoinGecko error:', e.message);
+  }
 }
 
-.remark-drawer.open{
-  right: 0;
+// 启动 & 定时刷新（10 秒一次，后台足够）
+fetchCoinGeckoPrices();
+setInterval(fetchCoinGeckoPrices, 10000);
+
+// ================================
+// USDT 估算工具（统一）
+// ================================
+function getUSDTPrice(coin){
+  if(!coin) return null;
+  return PRICE_CACHE[String(coin).toUpperCase()] || null;
 }
 
-.drawer-header{
-  padding: 14px 16px;
-  font-weight: 700;
-  background: #1976d2;
-  display:flex;
-  justify-content: space-between;
-  align-items: center;
+function calcEstimateUSDT(amount, coin){
+  const p = getUSDTPrice(coin);
+  if(!p) return null;
+  return Number((safeNumber(amount, 0) * p).toFixed(4));
+}
+/* ---------------------------------------------------------
+   SSE utilities
+--------------------------------------------------------- */
+global.__sseClients = global.__sseClients || [];
+
+function sendSSE(res, payloadStr, eventName){
+  try {
+    if (res.finished || (res.connection && res.connection.destroyed)) return false;
+    if (eventName) res.write(`event: ${eventName}\n`);
+    res.write(`data: ${payloadStr}\n\n`);
+    return true;
+  } catch(e){
+    return false;
+  }
 }
 
-.drawer-header button{
-  background: none;
-  border: none;
-  color: #fff;
-  font-size: 18px;
-  cursor: pointer;
-}
-
-.drawer-body{
-  padding: 16px;
-  overflow-y: auto;
-}
-
-.drawer-meta{
-  font-size: 13px;
-  color: #cbd5e1;
-  margin-bottom: 12px;
-}
-
-.remark-box{
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
-
-.remark-box.reject{
-  background: rgba(255,68,68,.15);
-  border-left: 4px solid #ff4444;
-}
-
-.remark-box.normal{
-  background: rgba(25,118,210,.15);
-  border-left: 4px solid #1976d2;
-}
-
-.remark-title{
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-/* ===== 盈亏高亮 ===== */
-.pnl-card{
-  position: relative;
-  border-radius: 10px;
-  padding: 14px;
-  color: #fff;
-  font-weight: 700;
-  overflow: hidden;
-}
-
-.pnl-positive{
-  background: linear-gradient(135deg,#00c851,#00e676);
-  box-shadow: 0 0 18px rgba(0,200,81,.45);
-}
-
-.pnl-negative{
-  background: linear-gradient(135deg,#ff4444,#ff6b6b);
-  box-shadow: 0 0 18px rgba(255,68,68,.45);
-}
-
-.pnl-value{
-  font-size: 22px;
-  margin-top: 6px;
-  letter-spacing: .5px;
-}
-
-.pnl-sub{
-  font-size: 12px;
-  opacity: .9;
-}
-
-.pnl-flash{
-  animation: pnlPulse 1.6s infinite;
-}
-
-@keyframes pnlPulse{
-  0%{box-shadow:0 0 10px rgba(255,255,255,.15)}
-  50%{box-shadow:0 0 24px rgba(255,255,255,.55)}
-  100%{box-shadow:0 0 10px rgba(255,255,255,.15)}
-}
-
-</style>
-</head>
-
-<body>
-<div class="top-header">
-  <div class="brand">NEXBIT 管理后台（代理）</div>
-  <div class="user">
-    <span id="adminUser">admin</span>
-    <button id="logoutBtn">Logout</button>
-  </div>
-</div>
-
-
-<div class="app">
-
-  <div class="sidebar">
-    <div class="icon active" data-page="dashboard" title="控制台">🏠</div>
-
-    <div class="icon buysell" data-page="buysell" title="BuySell（常显）">💱
-      <div style="font-size:11px;margin-top:6px;color:#cfe6ff">BuySell</div>
-    </div>
-
-    <div class="icon" data-page="recharge" title="充值管理">💳</div>
-    <div class="icon" data-page="withdraw" title="提款管理">💸</div>
-    <div class="icon" data-page="members" title="会员管理">👥</div>
-    <div class="icon" data-page="orders" title="订单记录">📜</div>
-    <div class="icon" data-page="settings" title="系统设置">⚙️</div>
-  </div>
-
-  <div class="main">
-
-    <!-- Dashboard -->
-    <div id="page-dashboard" class="container">
-      <div class="page-title">控制台</div>
-
-      <div class="grid">
-  <div class="card">
-    今日充值<br>
-    <strong id="todayRecharge">--</strong>
-    <div class="small">USDT：<span id="todayRechargeSum">--</span></div>
-  </div>
-
-  <div class="card">
-    今日提款<br>
-    <strong id="todayWithdraw">--</strong>
-    <div class="small">USDT：<span id="todayWithdrawSum">--</span></div>
-  </div>
-<div class="grid" id="buysellSummary">
-  <div class="card">
-    💲 Buy 总额<br>
-    <strong id="sumBuy">0</strong>
-  </div>
-
-  <div class="card">
-    💱 Sell 总额<br>
-    <strong id="sumSell">0</strong>
-  </div>
-
-  <div class="card">
-    📊 盈亏<br>
-    <strong id="sumProfit">0</strong>
-  </div>
-</div>
-
-    <div class="card">
-    BuySell<br>
-
-    <div class="small">
-      Buy：<span id="todayBuySum">--</span>
-    </div>
-
-    <div class="small">
-      Sell：<span id="todaySellSum">--</span>
-    </div>
-
-    <div class="small" style="margin-top:4px">
-      笔数：<strong id="todayOrders">--</strong>
-    </div>
-  </div>
-
-<div class="card pnl-card" id="pnlCard">
-  总盈亏
-  <div class="pnl-value" id="pnlValue">--</div>
-  <div class="pnl-sub">USDT（实时）</div>
-</div>
-
-  <div class="card">
-    风控预警<br>
-    <strong id="alertsCount">--</strong>
-  </div>
-<div class="card">
-  ❌ 已拒绝<br>
-  <strong id="todayRejected">--</strong>
-</div>
-
-<div class="card">
-  🔥 待处理<br>
-  <strong id="todayPending">--</strong>
-</div>
-</div>
-
-
-      <div class="container card">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div class="small">会员等级统计</div>
-          <div class="small">更新于 <span id="statTime"></span></div>
-        </div>
-        <div style="margin-top:12px" id="memberStats"></div>
-      </div>
-    </div>
-
-    <!-- BuySell page -->
-    <div id="page-buysell" class="container" style="display:none">
-      <div class="page-title">BuySell 管理</div>
-
-      <div class="filters">
-        <label>开始 <input type="date" id="bs_start"></label>
-        <label>结束 <input type="date" id="bs_end"></label>
-        <input id="bs_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
-        <select id="bs_currency"><option value="">全部币种</option><option>BTC</option><option>ETH</option><option>USDT</option></select>
-        <select id="bs_side"><option value="">全部</option><option value="buy">买</option><option value="sell">卖</option></select>
-        <button class="primary" onclick="bs_search()">搜索</button>
-      </div>
-
-      <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
-
-      <table class="table table-sm">
-        <thead>
-          <tr>
-            <th>订单/会员/钱包</th>
-            <th>时间 (US/Eastern)</th>
-            <th>类型</th>
-            <th>货币数量</th>
-            <th>币种</th>
-            <th>估算 USDT</th>
-            <th>wallet</th>
-            <th>IP</th>
-            <th>TP/SL</th>
-            <th>状态</th>
-            <th>操作</th>
-            <th>备注</th>
-          </tr>
-        </thead>
-
-        <tbody id="bs_table"><tr><td colspan="12" class="small">点击搜索加载数据</td></tr></tbody>
-      </table>
-    </div>
-
-    <!-- Recharge page -->
-    <div id="page-recharge" class="container" style="display:none">
-      <div class="page-title">充值管理</div>
-
-      <div class="filters">
-        <label>开始 <input type="date" id="r_start"></label>
-        <label>结束 <input type="date" id="r_end"></label>
-        <input id="r_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
-        <select id="r_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
-        <select id="r_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
-        <button class="primary" onclick="r_search()">搜索</button>
-      </div>
-
-      <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></tr></thead>
-        <tbody id="r_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
-      </table>
-    </div>
-
-    <!-- Withdraw page -->
-    <div id="page-withdraw" class="container" style="display:none">
-      <div class="page-title">提款管理</div>
-
-      <div class="filters">
-        <label>开始 <input type="date" id="w_start"></label>
-        <label>结束 <input type="date" id="w_end"></label>
-        <input id="w_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
-        <select id="w_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
-        <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
-        <button class="primary" onclick="w_search()">搜索</button>
-      </div>
-
-      <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></thead>
-        <tbody id="w_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
-      </table>
-    </div>
-
-    <!-- Members page -->
-    <div id="page-members" class="container" style="display:none">
-      <div class="page-title">会员管理</div>
-      <div class="filters">
-        <input id="m_search" placeholder="会员ID / 钱包地址" style="width:260px">
-        <button onclick="loadMembers()">搜索</button>
-      </div>
-      <table class="table">
-        <thead><tr><th>会员ID</th><th>wallet</th><th>最近活动</th></tr></thead>
-        <tbody id="m_table"><tr><td colspan="3" class="small">暂无数据</td></tr></tbody>
-      </table>
-    </div>
-
-    <!-- Orders page -->
-    <div id="page-orders" class="container" style="display:none">
-      <div class="page-title">订单记录（充值/提款/买卖）</div>
-      <div class="filters">
-        <label>开始 <input type="date" id="o_start"></label>
-        <label>结束 <input type="date" id="o_end"></label>
-        <input id="o_q" placeholder="订单号 / 会员ID / 钱包地址" style="width:260px">
-        <select id="o_type"><option value="">全部类型</option><option value="recharge">充值</option><option value="withdraw">提款</option><option value="trade">买卖</option></select>
-        <button class="primary" onclick="o_search()">搜索</button>
-      </div>
-      <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody id="o_table"><tr><td colspan="11" class="small">暂无数据</td></tr></tbody>
-      </table>
-    </div>
-    <!-- ===============================
-     系统设置 / 管理员管理
-=============================== -->
-<div id="page-settings" class="container" style="display:none">
-
-  <div class="page-title">系统设置</div>
-
-  <!-- 管理员账号管理 -->
-  <div class="card" style="margin-bottom:16px">
-    <div class="page-title" style="font-size:16px">管理员账号管理</div>
-
-    <div class="filters">
-      <input id="newAdminId" placeholder="管理员账号">
-      <input id="newAdminPassword" placeholder="初始密码">
-
-      <label><input type="checkbox" value="recharge"> 充值</label>
-      <label><input type="checkbox" value="withdraw"> 提款</label>
-      <label><input type="checkbox" value="buysell"> BuySell</label>
-
-      <button class="primary" onclick="createAdmin()">新增管理员</button>
-    </div>
-
-    <table class="table">
-      <thead>
-        <tr>
-          <th>账号</th>
-          <th>权限</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody id="adminTable">
-        <tr><td colspan="4">加载中...</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- Google 2FA -->
-  <div class="card" style="margin-bottom:16px">
-    <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
-
-    <div class="filters">
-      <input id="gaAdminId" placeholder="管理员账号" style="width:100%">
-      <button class="primary" onclick="generateGoogle2FA()">生成绑定</button>
-    </div>
-
-    <div id="gaBox" style="display:none;margin-top:12px">
-      <div class="small">请使用 Google Authenticator 扫码：</div>
-      <img id="gaQr" style="margin:8px 0" src="">
-      <input id="gaCode" placeholder="输入 6 位验证码">
-      <button class="primary" onclick="verifyGoogle2FA()">确认绑定</button>
-    </div>
-  </div>
-
-  <!-- 管理员密码重置 -->
-  <div class="card" style="margin-bottom:16px">
-    <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
-
-    <div class="filters">
-      <input id="resetAdminId" placeholder="管理员账号">
-      <input id="resetAdminPassword" placeholder="新登录密码">
-      <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
-    </div>
-  </div>
-
-  <!-- 用户提款密码重置 -->
-  <div class="card">
-    <div class="page-title" style="font-size:16px">重置用户提款密码</div>
-
-    <div class="filters">
-      <input id="searchWithdrawWallet" placeholder="已提款的钱包地址">
-      <input id="searchWithdrawOrder" placeholder="订单号（可选）">
-      <input id="newWithdrawPassword" placeholder="新提款密码">
-      <button class="primary" onclick="resetWithdrawPassword()">重置</button>
-    </div>
-  </div>
-
-</div>
-
-    <div class="footer-note">系统生成：<span id="genTime"></span></div>
-  </div>
-</div>
-
-<!-- Wallet modal -->
-<div class="modal" id="walletModal" onclick="closeWallet()"><div class="box" onclick="event.stopPropagation()"><div style="font-weight:700;margin-bottom:8px">钱包地址</div><div id="walletAddr" style="font-size:14px;word-break:break-all"></div><button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button></div></div>
-
-<!-- Order Detail Modal -->
-<div id="orderDetailModal" class="order-detail-modal" onclick="closeOrderDetail()">
-  <div class="box" onclick="event.stopPropagation()">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div style="font-weight:700">订单详情 <span id="orderDetailId"></span></div>
-      <div><button onclick="closeOrderDetail()" style="padding:6px 10px">关闭</button></div>
-    </div>
-    <div style="margin-top:10px">
-      <div style="font-weight:600">原始数据</div>
-      <pre id="orderRawJson">{}</pre>
-    </div>
-    <div style="margin-top:8px">
-      <div style="font-weight:600">操作记录</div>
-      <pre id="orderActions">无操作记录</pre>
-    </div>
-  </div>
-</div>
-
-<!-- Admin Login Modal -->
-<div id="adminLoginModal" class="admin-login-modal" onclick="closeAdminLogin()">
-  <div class="box" onclick="event.stopPropagation()">
-    <div style="font-weight:700;margin-bottom:8px">管理员登录</div>
-    <div style="margin-bottom:8px">
-      <input id="adminName" placeholder="管理员ID" style="width:100%;margin-bottom:8px;padding:8px" />
-      <input id="adminPassword" type="password" placeholder="密码" style="width:100%;padding:8px" />
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button onclick="submitAdminLogin()" class="primary">登录</button>
-      <button onclick="closeAdminLogin()">取消</button>
-    </div>
-    <div style="margin-top:8px;font-size:12px;color:#666">提示：管理员可以通过后端 /api/admin/create 创建新账号。</div>
-  </div>
-</div>
-<!-- 备注 Drawer -->
-<div id="remarkDrawer" class="remark-drawer">
-  <div class="drawer-header">
-    <span>备注详情</span>
-    <button onclick="closeRemarkDrawer()">✕</button>
-  </div>
-
-  <div class="drawer-body">
-    <div class="drawer-meta">
-      <div>订单号：<span id="rd-order"></span></div>
-      <div>类型：<span id="rd-type"></span></div>
-      <div>时间：<span id="rd-time"></span></div>
-    </div>
-<!-- ===== 订单详情 ===== -->
-<div class="rd-block rd-detail">
-
-  <div class="rd-row">
-    <span class="rd-label">方向</span>
-    <span id="rd-side" class="rd-value">--</span>
-  </div>
-
-  <div class="rd-row">
-    <span class="rd-label">金额</span>
-    <span id="rd-amount" class="rd-value">--</span>
-  </div>
-
-  <div class="rd-row">
-    <span class="rd-label">估算 USDT</span>
-    <span id="rd-estimate" class="rd-value">--</span>
-  </div>
-
-  <div class="rd-row">
-    <span class="rd-label">TP / SL</span>
-    <span id="rd-tpsl" class="rd-value">--</span>
-  </div>
-
-  <div class="rd-row">
-    <span class="rd-label">状态</span>
-    <span id="rd-status" class="rd-value">--</span>
-  </div>
-
-  <div class="rd-row">
-    <span class="rd-label">Wallet</span>
-    <span id="rd-wallet" class="rd-value">--</span>
-  </div>
-
-  <div class="rd-row">
-    <span class="rd-label">IP</span>
-    <span id="rd-ip" class="rd-value">--</span>
-  </div>
-
-</div>
-
-    <div id="rd-reject-box" class="remark-box reject" style="display:none">
-      <div class="remark-title">拒绝原因</div>
-      <div id="rd-reject"></div>
-    </div>
-
-    <div id="rd-note-box" class="remark-box normal" style="display:none">
-      <div class="remark-title">普通备注</div>
-      <div id="rd-note"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-  // 获取 2FA 密钥和二维码
-    async function generateGoogle2FA() {
-      const adminId = document.getElementById('gaAdminId').value.trim();
-      if (!adminId) {
-        alert('请输入管理员账号');
+function broadcastSSE(payloadObj){
+  const payload = JSON.stringify(payloadObj);
+  const toKeep = [];
+  global.__sseClients.forEach(client => {
+    try {
+      const { res, uid } = client;
+      if (!res || (res.finished || (res.connection && res.connection.destroyed))) {
         return;
       }
-
-      const response = await fetch('/api/admin/generate-2fa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId })
-      });
-      const data = await response.json();
-
-      if (data.ok) {
-        document.getElementById('gaQr').src = data.qr_code;  // 显示二维码
-        document.getElementById('gaBox').style.display = 'block';  // 显示输入框
-      } else {
-        alert('生成2FA绑定失败');
-      }
-    }
-
-    // 验证2FA验证码
-   async function verifyGoogle2FA() {
-  const code = document.getElementById('gaCode').value.trim();
-  const adminId = document.getElementById('gaAdminId').value.trim();
-  if (!code) {
-    alert('请输入验证码');
-    return;
-  }
-
-  const response = await fetch('/api/admin/verify-2fa', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ adminId, code })
-  });
-
-  const data = await response.json();
-  if (data.ok) {
-    alert('2FA验证成功');
-    setAdminToken(data.token); // 保存token
-    closeAdminLogin();
-    loadDashboard(); // 登录后跳转到后台主页
-  } else {
-    alert('验证码错误');
-  }
-}
-
-/* -----------------------------
-   后端 API
------------------------------- */
-const API_TRANSACTIONS = '/api/transactions';
-const API_UPDATE = '/api/transaction/update';
-
-/* helpers */
-function $(s){ return document.querySelector(s); }
-function $all(s){ return Array.from(document.querySelectorAll(s)); }
-// ===== Dashboard 今日时间范围 =====
-function getTodayRange(){
-  const now = new Date();
-  const start = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0, 0, 0
-  );
-  const end = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    23, 59, 59
-  );
-  return { start, end };
-}
-// ===== 判断订单是否属于今天 =====
-function isTodayOrder(o){
-  const t = o.time_us || o.time || o.createdAt;
-  if(!t) return false;
-
-  const d = new Date(t);
-  const { start, end } = getTodayRange();
-  return d >= start && d <= end;
-}
-
-/* ===== 前端真实过滤逻辑（新增）===== */
-function applyFilters(list, {
-  start, end, q, currency, status, side
-}) {
-  return list.filter(o => {
-
-   
-    // 1️⃣ 时间过滤（兼容所有时间字段）
-const t = o.time_us || o.time || o.createdAt;
-
-if (start && t && new Date(t) < new Date(start)) return false;
-if (end && t && new Date(t) > new Date(end + ' 23:59:59')) return false;
-
-
-    // 2️⃣ 关键字搜索（订单 / 会员 / 钱包）
-    if (q) {
-      const key = q.toLowerCase();
-      const hay = `
-        ${o.orderId || ''}
-        ${o.userId || ''}
-        ${o.wallet || ''}
-      `.toLowerCase();
-      if (!hay.includes(key)) return false;
-    }
-
-    // 3️⃣ 币种过滤
-   if (currency) {
-  const coin = (o.coin || o.currency || '').toUpperCase();
-  if (coin !== currency.toUpperCase()) return false;
-}
-
-    // 4️⃣ 状态过滤
-    if (status && o.status !== status) return false;
-
-    // 5️⃣ 买卖方向（BuySell 专用）
-    if (side && o.side !== side) return false;
-
-    return true;
-  });
-}
-/* ===============================
-   ✅ 通用前端分页工具
-=============================== */
-const PAGE_SIZE = 20;
-const pageState = {
-  bs: 1,
-  r: 1,
-  w: 1,
-  o: 1
-};
-
-function paginate(list, page){
-  const start = (page - 1) * PAGE_SIZE;
-  return list.slice(start, start + PAGE_SIZE);
-}
-
-function renderPager(total, page, key, onChange){
-  const pages = Math.ceil(total / PAGE_SIZE);
-  if(pages <= 1) return '';
-
-  return `
-    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-      <button ${page<=1?'disabled':''}
-        onclick="pageState.${key}--; ${onChange}()">
-        上一页
-      </button>
-      <span class="small">第 ${page} / ${pages} 页</span>
-      <button ${page>=pages?'disabled':''}
-        onclick="pageState.${key}++; ${onChange}()">
-        下一页
-      </button>
-    </div>
-  `;
-}
-
-/* ===============================
-   ✅ type 统一映射（新增）
-=============================== */
-function normalizeType(t){
-  if(!t) return t;
-  if(t === '提款' || t === '提现') return 'withdraw';
-  if(t === '充值') return 'recharge';
-  if(t === '买卖') return 'buysell';
-  return String(t).toLowerCase().trim();
-}
-/* -----------------------------
-   US/Eastern 时间显示
------------------------------- */
-
-
-/* Binance websocket (tickers) */
-const watchedSymbols = ['BTCUSDT','ETHUSDT','LTCUSDT','BCHUSDT','XRPUSDT'];
-const priceMap = {}; let bsock = null;
-function connectBinance(){
-  try{
-    const streams = watchedSymbols.map(s=>s.toLowerCase()+'@trade').join('/');
-    bsock = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + streams);
-    bsock.onmessage = ev=>{
-      const msg = JSON.parse(ev.data);
-      const d = msg.data || msg;
-      const sym = (d.s||'').toUpperCase(); const p = Number(d.p || d.P || d.price || 0);
-      if(sym && p){ priceMap[sym]=p; updateTickSummary(); }
-    };
-    bsock.onclose = ()=> setTimeout(connectBinance,3000);
-  }catch(e){}
-}
-connectBinance();
-function updateTickSummary(){ $('#tickersSummary').innerText = watchedSymbols.map(s=> `${s}: ${priceMap[s]?priceMap[s].toFixed(6):'--'}`).join(' | '); }
-
-/* -----------------------------
-   Page control
------------------------------- */
-$all(".sidebar .icon").forEach(ic=>{
-  ic.addEventListener("click", ()=>{
-    $all(".sidebar .icon").forEach(x=>x.classList.remove("active"));
-    ic.classList.add("active");
-    const page = ic.getAttribute("data-page");
-    hideAllPages();
-    const el = document.getElementById("page-" + page);
-    if(el) el.style.display = "block";
-    if(page === "dashboard") loadDashboard();
-    if(page === "recharge") r_search();
-    if(page === "withdraw") w_search();
-    if(page === "buysell") bs_search();
-    if(page === "orders") o_search();
-    if(page === "members") loadMembers();
-  });
-});
-function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="none"); }
-
-/* -----------------------------
-   Fetch all orders helper
------------------------------- */
-async function fetchAll(params = {}) {
-  const url = new URL(API_TRANSACTIONS, window.location.origin);
-  Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
-  const res = await fetch(url.toString(), {
-    headers: authHeaders()   // ✅ 关键就在这一行
-  });
-  return await res.json();
-}
-
-
-/* -----------------------------
-   Admin auth helpers (token stored in localStorage)
------------------------------- */
-const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
-function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
-function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
-function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
-
-async function ensureLoggedIn(){
-  if(getAdminToken()) return true;
-  document.getElementById('adminLoginModal').style.display = 'flex';
-  return false;
-}
-function closeAdminLogin(){ document.getElementById('adminLoginModal').style.display = 'none'; }
-async function submitAdminLogin(){
-  const id = document.getElementById('adminName').value.trim();
-  const pw = document.getElementById('adminPassword').value;
-  if (!id || !pw) return alert('请输入管理员ID与密码');
-  
-  try {
-    const r = await fetch('/api/admin/login', { 
-      method:'POST', 
-      headers:{'Content-Type':'application/json'}, 
-      body: JSON.stringify({ id, password: pw }) 
-    });
-    const j = await r.json();
-    if (j.ok && j.token) {
-      localStorage.setItem('nexbit_admin_token', j.token); 
-      document.getElementById('loginState').innerText = id; 
-      alert('登录成功'); 
-
-      // 检查是否启用了2FA
-      const has2FA = await checkIf2FAEnabled(id);
-      console.log("2FA是否启用:", has2FA);
-
-      if (has2FA) {
-        // 显示2FA验证码输入框
-        document.getElementById('adminLoginModal').style.display = 'none'; 
-        document.getElementById('gaBox').style.display = 'block'; // 显示2FA输入框
-        document.getElementById('gaAdminId').value = id; // 填充管理员ID
-        return; 
-      }
-
-      // 如果没有启用2FA，直接登录
-      setAdminToken(j.token);
-      closeAdminLogin();
-      loadDashboard();
-    } else {
-      alert('登录失败: ' + (j.error || '未知'));
-    }
-  } catch(e){
-    alert('请求失败'); 
-  }
-}
-
-/* -----------------------------
-   Render action buttons (all orders)
------------------------------- */
-function renderActionButtons(orderId, type, processed, status){
-  try{
-    const active = document.querySelector('.sidebar .icon.active')?.getAttribute('data-page') || '';
-    if(active === 'orders') return '';
-  }catch(e){}
-
-  const disabledAttr = processed ? 'disabled' : '';
-
-  return `
-    <button class="small-btn confirm-btn"
-  onclick="txAction(this,'${orderId}','${type}','approve')">
-  通过✔
-</button>
-
-    <button class="small-btn cancel-btn" ${disabledAttr}
-  onclick="txAction(this,'${orderId}','${type}','reject')">
-  拒绝❌
-</button>
-
-   <button class="small-btn lock-btn"
-  onclick="txAction(this,'${orderId}','${type}','lock')">
-  锁定🔒
-</button>
-
-    <button class="small-btn unlock-btn"
-  onclick="txAction(this,'${orderId}','${type}','unlock')">
-  已解锁🔓
-</button>
-
-    <button class="small-btn"
-  onclick="addRemark('${orderId}','${type}','${status}')">
-  备注📝
-</button>
-
-  `;
-}
-/* -----------------------------
-   Core: txAction (use authHeaders)
------------------------------- */
-async function txAction(btn, orderId, type, action){
-  if(!orderId) return alert('缺少订单ID');
-
-  // ✅ 立即锁按钮（防连点）
-  if(btn){
-    btn.disabled = true;
-    btn.classList.add('btn-disabled');
-  }
-
-  // 确认框
-  if(!confirm(`确定对订单 ${orderId} 执行：${action} 吗？`)){
-    if(btn) btn.disabled = false;
-    return;
-  }
-
-  // 登录检查
-  if(!getAdminToken()){
-    await ensureLoggedIn();
-    if(!getAdminToken()){
-      if(btn) btn.disabled = false;
-      return;
-    }
-  }
-
- // 状态映射（这段保留）
-const finalStatus =
-  action === 'approve' ? 'success' :
-  action === 'reject'  ? 'failed'  :
-  action === 'lock'    ? 'locked'  :
-  'processing';
-
-// 备注逻辑
-let note = action;
-if(action === 'reject'){
-  note = prompt('请输入拒绝原因（必填）');
-  if(!note){
-    if(btn) btn.disabled = false;
-    return;
-  }
-}
-
-// ✅ 真正发送的内容（重点）
-const body = {
-  orderId,
-  type: normalizeType(type),
-  status: finalStatus,   // ✅ 必须用 finalStatus
-  note                  // ✅ 用上面算出来的 note
-};
-
-
-  try{
-    const r = await fetch(API_UPDATE,{
-      method:'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(body)
-    });
-    const j = await r.json();
-
-    if(j.ok){
-      const active = document.querySelector('.sidebar .icon.active').dataset.page;
-      if(active==='recharge') r_search();
-      else if(active==='withdraw') w_search();
-      else if(active==='buysell') bs_search();
-      else o_search();
-    }else{
-      alert('操作失败');
-      if(btn) btn.disabled = false;
-    }
-  }catch(e){
-    alert('服务器错误');
-    if(btn) btn.disabled = false;
-  }
-}
-async function addRemark(orderId, type, currentStatus){
-  if(!orderId) return;
-
-  if(!getAdminToken()){
-    await ensureLoggedIn();
-    if(!getAdminToken()) return;
-  }
-
-  const remark = prompt('请输入备注内容（仅后台可见）：');
-  if(!remark) return;
-
-  const statusSafe = currentStatus || 'processing';
-
-  const body = {
-    orderId,
-    type: normalizeType(type),
-    status: statusSafe,
-    note: remark
-  };
-
-  try{
-    const r = await fetch(API_UPDATE,{
-      method:'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(body)
-    });
-    const j = await r.json();
-
-    if(j.ok){
-      alert('备注已保存');
-
-      const active = document.querySelector('.sidebar .icon.active')?.dataset.page;
-      if(active === 'recharge') r_search();
-      else if(active === 'withdraw') w_search();
-      else if(active === 'buysell') bs_search();
-      else o_search();
-
-    }else{
-      alert('备注失败：' + (j.error || '未知错误'));
-    }
-
-  }catch(e){
-    console.error(e);
-    alert('备注请求异常');
-  }
-}
-function openRemarkFromRow(el){
-  try{
-    const data = JSON.parse(
-      decodeURIComponent(
-        escape(
-          atob(el.dataset.remark)
-        )
-      )
-    );
-    openRemarkDrawer(data);
-  }catch(e){
-    console.error('remark parse error', e);
-    alert('备注数据解析失败');
-  }
-}
-let currentRemarkData = null;
-function openRemarkDrawer(data){
-  console.log('openRemarkDrawer', data);
-  if(!data) return;
-
-  const drawer = document.getElementById('remarkDrawer');
-  if(!drawer) return;
-
-  drawer.classList.add('open');
-
-  // ===== meta =====
-  document.getElementById('rd-order').innerText = data.orderId || '--';
-  document.getElementById('rd-type').innerText  = data.type || '--';
-  document.getElementById('rd-time').innerText  = data.time || '--';
-
-  // ===== 订单核心信息（新增）=====
-  document.getElementById('rd-side').innerText =
-    data.side ? data.side.toUpperCase() : '--';
-
-  document.getElementById('rd-amount').innerText =
-    (data.amount && data.coin)
-      ? `${data.amount} ${data.coin}`
-      : '--';
-
-  document.getElementById('rd-estimate').innerText =
-    data.estimate ? `${data.estimate} USDT` : '--';
-
-  document.getElementById('rd-tpsl').innerText =
-    (data.tp || '-') + ' / ' + (data.sl || '-');
-
-  document.getElementById('rd-status').innerText =
-    data.status || '--';
-
-  document.getElementById('rd-wallet').innerText =
-    data.wallet || '--';
-
-  document.getElementById('rd-ip').innerText =
-    data.ip || '--';
-
-  // ===== 拒绝原因 =====
-  const rejectBox = document.getElementById('rd-reject-box');
-  const rejectText = document.getElementById('rd-reject');
-
-  if (data.reject) {
-    rejectBox.style.display = 'block';
-    rejectText.innerText = data.reject;
-  } else {
-    rejectBox.style.display = 'none';
-    rejectText.innerText = '';
-  }
-
-  // ===== 普通备注 =====
-  const noteBox = document.getElementById('rd-note-box');
-  const noteText = document.getElementById('rd-note');
-
-  if (data.note) {
-    noteBox.style.display = 'block';
-    noteText.innerText = data.note;
-  } else {
-    noteBox.style.display = 'none';
-    noteText.innerText = '';
-  }
-}
-// ✅ 只保留这一个
-function closeRemarkDrawer(){
-  document.getElementById('remarkDrawer')?.classList.remove('open');
-}
-/* 🔥 通用颜色函数（全站可复用） */
-function applyColor(el, value) {
-  el.style.color =
-    value > 0 ? '#16a34a' :  // 绿色
-    value < 0 ? '#dc2626' :  // 红色
-    '#555';                 // 灰色
-}
-
-/* -----------------------------
-   Render rows for each type
------------------------------- */
-function renderBuySellRow(o){
-  const coinQty = Number(
-    o.qty ?? o.quantity ?? o.coinAmount ?? 0
-  ).toFixed(6)
-const usdtAmt = Number(o.estimate ?? o.amount ?? 0);
-  return `
-<tr>
-  <td>
-    <div class="order-id">${o.orderId || ''}</div>
-    <div class="small">${o.userId || ''}</div>
-  </td>
-
-  <td>${o.time_us || o.time || o.createdAt || '--'}</td>
-
-  <td>${o.side || '--'}</td>
-
-  <!-- ✅ 列表金额：货币数量 -->
-  <td>
-    ${coinQty}
-    <div class="small" style="color:#888;">${o.coin || ''}</div>
-  </td>
-
-  <td>${o.coin || '--'}</td>
-
-  <!-- ✅ 估算 USDT：前端下单 USDT -->
- <td>${usdtAmt.toFixed(2)}</td>
-
-  <td>${o.wallet || '--'}</td>
-  <td>${o.ip || '--'}</td>
-
-  <td>
-    <span class="badge">${displayStatus(o.status)}</span>
-  </td>
-
-  <td>${renderActionButtons(o.orderId,'buysell',o.processed,o.status)}</td>
-</tr>`;
-}
-/* 🔥 加在这里 */
-function renderBuySellSummary(list){
-  const summary = calcSummary(list, 'buysell');
-
-  $('#sumBuy').innerText     = summary.buy.toFixed(2);
-  $('#sumSell').innerText   = summary.sell.toFixed(2);
-  $('#sumProfit').innerText = summary.profit.toFixed(2);
-
-  applyColor($('#sumBuy'), summary.buy);
-  applyColor($('#sumSell'), summary.sell);
-  applyColor($('#sumProfit'), summary.profit);
-}
-
-function calcSummary(list, type){
-  let result = {
-    buy: 0,
-    sell: 0,
-    profit: 0,
-    total: 0
-  };
-
-  list
-    .filter(o => o.status === 'success')
-    .forEach(o => {
-      // 🔥 唯一金额来源
-      const usdt = Number(o.estimate || 0);
-
-      if (type === 'buysell') {
-        if (o.side === 'buy')  result.buy  += usdt;
-        if (o.side === 'sell') result.sell += usdt;
-      }
-
-      if (type === 'recharge' || type === 'withdraw') {
-        result.total += usdt;
-      }
-    });
-
-  if (type === 'buysell') {
-    result.profit = result.sell - result.buy;
-  }
-
-  return result;
-}
-function renderRechargeRow(o){
-  return `
-<tr>
-  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
-  <td>${o.time_us || '--'}</td>
-  <td>充值</td>
-  <td>${o.amount}</td>
-  <td>${o.coin || '--'}</td>
-  <td>${o.estimate ?? '--'}</td>
-  <td>${o.wallet || '--'}</td>
-  <td>${o.ip || '--'}</td>
-  <td><span class="badge">${displayStatus(o.status)}</span></td>
-  <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
-  <td>
-${
-  o.note
-  ? (() => {
-      const remarkData = btoa(
-        unescape(
-          encodeURIComponent(
-            JSON.stringify({
-              // 基本
-              orderId: o.orderId,
-              type: 'recharge',
-              time: o.time_us || '',
-
-              // 🔥 订单核心信息
-              side: o.side,
-              amount: o.amount,
-              coin: o.coin,
-              estimate: o.estimate,
-              tp: o.tp,
-              sl: o.sl,
-              wallet: o.wallet,
-              ip: o.ip,
-              status: o.status,
-
-              // 备注
-              note: o.note
-            })
-          )
-        )
-      );
-
-      return `
-        <span
-          style="color:#1976d2;cursor:pointer"
-          data-remark="${remarkData}"
-          onclick="openRemarkFromRow(this)"
-        >查看</span>
-      `;
-    })()
-  : '--'
-}
-</td>
-
-</tr>`;
-}
-function renderWithdrawRow(o){
-  return `
-<tr>
-  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
-  <td>${o.time_us || '--'}</td>
-  <td>提款</td>
-  <td>${o.amount}</td>
-  <td>${o.coin || '--'}</td>
-  <td>${o.estimate ?? '--'}</td>
-  <td>${o.wallet || '--'}</td>
-  <td>${o.ip || '--'}</td>
-  <td><span class="badge">${displayStatus(o.status)}</span></td>
-  <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
- <td>
-${
-  o.note
-  ? (() => {
-      const remarkData = btoa(
-        unescape(
-          encodeURIComponent(
-            JSON.stringify({
-              // 基本
-              orderId: o.orderId,
-              type: 'withdraw',
-              time: o.time_us || '',
-
-              // 🔥 订单核心信息
-              side: o.side,
-              amount: o.amount,
-              coin: o.coin,
-              estimate: o.estimate,
-              tp: o.tp,
-              sl: o.sl,
-              wallet: o.wallet,
-              ip: o.ip,
-              status: o.status,
-
-              // 备注
-              note: o.note
-            })
-          )
-        )
-      );
-
-      return `
-        <span
-          style="color:#1976d2;cursor:pointer"
-          data-remark="${remarkData}"
-          onclick="openRemarkFromRow(this)"
-        >查看</span>
-      `;
-    })()
-  : '--'
-}
-</td>
-
-</tr>`;
-}
-/* -----------------------------
-   Fetch single order for modal (server handles fetchOrder)
------------------------------- */
-async function fetchOrderDetail(id){
-  try{
-    const res = await fetch(`/api/transactions?fetchOrder=${encodeURIComponent(id)}`);
-    return await res.json();
-  }catch(e){ return { ok:false }; }
-}
-
-/* -----------------------------
-   Order detail modal functions
------------------------------- */
-function openOrderDetail(order){
-  if(!order) return;
-  document.getElementById('orderDetailModal').style.display = 'flex';
-  document.getElementById('orderDetailId').innerText = order.orderId || '';
-  document.getElementById('orderRawJson').innerText = JSON.stringify(order, null, 2);
-  // fetch actions
-  fetch(`/api/transactions?fetchOrder=${encodeURIComponent(order.orderId)}`).then(r=>r.json()).then(j=>{
-    if(j.ok && j.orderEvents && j.orderEvents.length) document.getElementById('orderActions').innerText = JSON.stringify(j.orderEvents, null, 2);
-    else document.getElementById('orderActions').innerText = '无操作记录';
-  }).catch(()=>{ document.getElementById('orderActions').innerText = '无法获取操作记录'; });
-}
-function closeOrderDetail(){ document.getElementById('orderDetailModal').style.display = 'none'; }
-
-/* -----------------------------
-   Bind clickable order IDs after rendering
------------------------------- */
-function bindOrderRowClicks(selector){
-  const container = document.querySelector(selector);
-  if(!container) return;
-  container.querySelectorAll('tr').forEach(tr=>{
-    const idCell = tr.querySelector('td div.order-id');
-    if(idCell){
-      const id = idCell.textContent.trim();
-      idCell.style.cursor = 'pointer';
-      idCell.style.textDecoration = 'underline';
-      idCell.onclick = async ()=>{
-        const j = await fetchOrderDetail(id);
-        if(j.ok && j.order) openOrderDetail(j.order); else openOrderDetail({ orderId: id });
-      };
-    }
-  });
-}
-
-/* -----------------------------
-   post-render decorate (highlight & bind)
------------------------------- */
-function postRenderDecorate(){
-  ['#bs_table','#r_table','#w_table','#o_table'].forEach(sel=>{
-    const tb = document.querySelector(sel);
-    if(!tb) return;
-    bindOrderRowClicks(sel);
-    tb.querySelectorAll('tr').forEach(tr=>{
-      const txt = tr.innerText.toLowerCase();
-      if(txt.includes('locked') || txt.includes('failed')){
-        tr.classList.add('tr-alert');
-      } else {
-        tr.classList.remove('tr-alert');
-      }
-    });
-  });
-}
-
-/* -----------------------------
-   SSE realtime orders
------------------------------- */
-let orderEventSource = null;
-
-function connectOrderSSE(){
-  try{
-    if(orderEventSource) orderEventSource.close();
-
-    orderEventSource = new EventSource('/api/orders/stream');
-
-    orderEventSource.onmessage = function(ev){
-      try{
-        const d = JSON.parse(ev.data);
-        if(d && d.order){
-
-          // flash alert if locked/failed
-          if(d.order.status === 'locked' || d.order.status === 'failed'){
-            let badge = document.getElementById('globalAlertBadge');
-            if(!badge){
-              badge = document.createElement('span');
-              badge.id = 'globalAlertBadge';
-              badge.className = 'badge-alert flash';
-              badge.innerText = '异常订单';
-              document
-                .querySelector('.top-header .user')
-                .appendChild(badge);
-            }
-          }
-
-          // refresh active page
-          const active = document
-            .querySelector('.sidebar .icon.active')
-            ?.getAttribute('data-page');
-
-          if(active === 'recharge'){
-            r_search();
-          }
-          else if(active === 'withdraw'){
-            w_search();
-          }
-          else if(active === 'buysell'){
-            bs_search();
-          }
-          else if(active === 'dashboard'){
-            // 🔥 核心修复：Dashboard 盈亏立刻刷新
-            loadDashboard();
-          }
-          else{
-            o_search();
-          }
+      const eventName = payloadObj && payloadObj.type ? String(payloadObj.type) : null;
+
+      if (payloadObj && payloadObj.order && payloadObj.order.userId) {
+        if (uid === null || uid === undefined || String(uid) === String(payloadObj.order.userId)) {
+          const ok = sendSSE(res, payload, eventName);
+          if (ok) toKeep.push(client);
+        } else {
+          toKeep.push(client);
         }
-      }catch(e){
-        console.error(e);
+      } else if (payloadObj && payloadObj.userId) {
+        if (uid === null || uid === undefined || String(uid) === String(payloadObj.userId)) {
+          const ok = sendSSE(res, payload, eventName);
+          if (ok) toKeep.push(client);
+        } else {
+          toKeep.push(client);
+        }
+      } else {
+        const ok = sendSSE(res, payload, eventName);
+        if (ok) toKeep.push(client);
       }
-    };
+    } catch(e){}
+  });
+  global.__sseClients = toKeep;
+}
 
-    orderEventSource.onerror = function(){
-      try{ orderEventSource.close(); }catch(e){}
-      setTimeout(connectOrderSSE, 3000);
-    };
-
-  }catch(e){
-    console.warn('SSE not available', e);
+function objToSortedArray(objOrNull){
+  if(!objOrNull) return [];
+  try {
+    const arr = Object.values(objOrNull);
+    return arr.sort((a,b)=> (b.timestamp||b.time||0) - (a.timestamp||a.time||0));
+  } catch(e){
+    return [];
   }
 }
 
-connectOrderSSE();
-/* -----------------------------
-   Search functions (bs_search / r_search / w_search / o_search)
-   Each will call postRenderDecorate() after rendering
------------------------------- */
-async function bs_search(){
-  // ✅ 确保每次搜索时，页码从 1 开始
-  pageState.bs = pageState.bs || 1;
+/* ---------------------------------------------------------
+   Root
+--------------------------------------------------------- */
+app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
 
-  const params = {};
-  if($('#bs_start').value) params.start = $('#bs_start').value;
-  if($('#bs_end').value) params.end = $('#bs_end').value;
-  if($('#bs_wallet').value) params.q = $('#bs_wallet').value;
-  if($('#bs_currency').value) params.currency = $('#bs_currency').value;
-  if($('#bs_side').value) params.side = $('#bs_side').value;
+/* ---------------------------------------------------------
+   Basic user sync
+--------------------------------------------------------- */
+app.post('/api/users/sync', async (req, res) => {
+  try {
+    const { userid, userId } = req.body;
+    const uid = userid || userId;
+    if(!uid) return res.json({ ok:false, message:'no uid' });
+    if(!db) return res.json({ ok:true, message:'no-db' });
 
-  const tbody = $('#bs_table');
-  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
+    const userRef = db.ref('users/' + uid);
+    const createdSnap = await userRef.child('created').once('value');
+    const createdVal = createdSnap.exists() ? createdSnap.val() : null;
+    const created = (createdVal !== null && createdVal !== undefined) ? createdVal : now();
+    const balanceSnap = await userRef.child('balance').once('value');
 
-  try{
-    const all = await fetchAll(params);
+    const balance = safeNumber(balanceSnap.exists() ? balanceSnap.val() : 0, 0);
 
-    /* 🔥 前端真实过滤 */
-    let list = all.buysell || [];
-
-    list = applyFilters(list, {
-      start: $('#bs_start').value,
-      end: $('#bs_end').value,
-      q: $('#bs_wallet').value,
-      currency: $('#bs_currency').value,
-      side: $('#bs_side').value
+    await userRef.update({
+      userid: uid,
+      created,
+      updated: now(),
+      balance
     });
 
-    if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
-      window.buySellPNL = 0;   // ✅ 保证变量存在
-      return;
-    }
-
-    // ✅ 分页
-    const pageList = paginate(list, pageState.bs);
-
-    // ===== 渲染表格（分页后的数据）=====
-    tbody.innerHTML =
-      pageList.map(o => renderBuySellRow(o)).join('') +
-      renderPager(list.length, pageState.bs, 'bs', 'bs_search');  // 渲染分页
-
-    postRenderDecorate();
-
-    // ===============================
-    // ✅ BuySell 盈亏统计（真正接入）
-    // ===============================
-    const buySellPNL = list
-      .filter(o => o.status === 'success')
-      .reduce((sum, o) => {
-        const amount = Number(o.estimate || 0);
-        if (o.side === 'buy')  return sum - amount;
-        if (o.side === 'sell') return sum + amount;
-        return sum;
-      }, 0);
-
-    // 提供给 Dashboard 或其他模块使用
-    window.buySellPNL = buySellPNL;
-
-    console.log('【BuySell 盈亏】USDT:', buySellPNL.toFixed(2));
-
-  }catch(e){
-    console.error(e);
-    tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
-    window.buySellPNL = 0; // 容错
+    return res.json({ ok:true });
+  } catch(e){
+    console.error('users sync error', e);
+    return res.json({ ok:false });
   }
-}
-
-async function r_search(){
-  const params = {};
-  if($('#r_start').value) params.start = $('#r_start').value;
-  if($('#r_end').value) params.end = $('#r_end').value;
-  if($('#r_wallet').value) params.q = $('#r_wallet').value;
-  if($('#r_currency').value) params.currency = $('#r_currency').value;
-  if($('#r_status').value) params.status = $('#r_status').value;
-
-  const tbody = $('#r_table');
-  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
-
-  try{
-    const all = await fetchAll(params);
-
-    /* 🔥 前端真实过滤 */
-    let list = all.recharge || [];
-
-    list = applyFilters(list, {
-      start: $('#r_start').value,
-      end: $('#r_end').value,
-      q: $('#r_wallet').value,
-      currency: $('#r_currency').value,
-      status: $('#r_status').value
-    });
-
-    if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
-      window.rechargeProfit = 0;   // ✅ 保证变量存在
-      return;
-    }
-
-    // ===== 渲染表格 =====
-    tbody.innerHTML = list.map(o => renderRechargeRow(o)).join('');
-    postRenderDecorate();
-
-    // ===============================
-    // ✅ 充值盈余统计（真正接入）
-    // ===============================
-
-const summary = calcSummary(list, 'recharge');
-
-// 提供给 Dashboard / 其他模块
-window.rechargeProfit = summary.total;
-
-console.log('【充值金额】USDT:', summary.total.toFixed(2));
-
-
-  }catch(e){
-    console.error(e);
-    tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
-    window.rechargeProfit = 0; // 容错
-  }
-}
-async function w_search(){
-  const params = {};
-  if($('#w_start').value) params.start = $('#w_start').value;
-  if($('#w_end').value) params.end = $('#w_end').value;
-  if($('#w_wallet').value) params.q = $('#w_wallet').value;
-  if($('#w_currency').value) params.currency = $('#w_currency').value;
-  if($('#w_status').value) params.status = $('#w_status').value;
-
-  const tbody = $('#w_table');
-  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
-
-  try{
-    const all = await fetchAll(params);
-
-    /* 🔥 前端真实过滤 */
-    let list = all.withdraw || [];
-
-    list = applyFilters(list, {
-      start: $('#w_start').value,
-      end: $('#w_end').value,
-      q: $('#w_wallet').value,
-      currency: $('#w_currency').value,
-      status: $('#w_status').value
-    });
-
- if(!list.length){
-  tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
-  return;
-}
-
-/* ✅ 分页 */
-pageState.w = pageState.w || 1;
-const pageList = paginate(list, pageState.w);
-
-// ===== 渲染表格（分页后）=====
-tbody.innerHTML =
-  pageList.map(o => renderWithdrawRow(o)).join('') +
-  renderPager(list.length, pageState.w, 'w', 'w_search');
-
-postRenderDecorate();
-
-   // ===============================
-// ✅ 提款金额统一统计（统一口径）
-// ===============================
-const summary = calcSummary(list, 'withdraw');
-
-// 提供给 Dashboard / 其他模块
-window.withdrawLoss = summary.total;
-
-console.log('【提款支出】USDT:', summary.total.toFixed(2));
-
-  }catch(e){
-    console.error(e);
-    tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
-    window.withdrawLoss = 0; // 容错
-  }
-}
-async function o_search(){
-  const params = {};
-  if($('#o_start').value) params.start = $('#o_start').value;
-  if($('#o_end').value) params.end = $('#o_end').value;
-  if($('#o_q').value) params.q = $('#o_q').value;
-  if($('#o_type').value) params.type = $('#o_type').value;
-  const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
-  try{
-    const all = await fetchAll(params);
-    let rows = [
-  ...(all.recharge || []).map(o => ({ ...o, _type: 'recharge' })),
-  ...(all.withdraw || []).map(o => ({ ...o, _type: 'withdraw' })),
-  ...(all.buysell || []).map(o => ({ ...o, _type: 'buysell' }))
-];
-
-// ✅ 前端真实过滤（和充值 / 提款一致）
-rows = applyFilters(rows, {
-  start: $('#o_start').value,
-  end: $('#o_end').value,
-  q: $('#o_q').value
 });
 
-// ✅ 类型过滤（订单记录专用）
-const type = $('#o_type').value;
-if (type) {
-  rows = rows.filter(o => o._type === type);
-}
-
-// ✅ 排序：最新在最上面
-rows.sort((a, b) => {
-  const ta = new Date(a.time_us || a.time || a.createdAt || 0).getTime();
-  const tb = new Date(b.time_us || b.time || b.createdAt || 0).getTime();
-  return tb - ta;
+/* ---------------------------------------------------------
+   Balance endpoints
+--------------------------------------------------------- */
+app.get('/api/balance/:uid', async (req, res) => {
+  try {
+    const uid = String(req.params.uid || '').trim();
+    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+    if (!db) return res.json({ ok:true, balance: 0 });
+    await ensureUserExists(uid);
+    const snap = await db.ref(`users/${uid}/balance`).once('value');
+    return res.json({ ok:true, balance: Number(snap.val() || 0) });
+  } catch (e){
+    console.error('balance api error', e);
+    return res.json({ ok:false, balance: 0 });
+  }
 });
 
-if (!rows.length) {
-  tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
-  return;
+app.get('/wallet/:uid/balance', async (req, res) => {
+  try {
+    const uid = String(req.params.uid || '').trim();
+    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+    if (!db) return res.json({ ok:true, uid, balance: 0 });
+    const snap = await db.ref(`users/${uid}/balance`).once('value');
+    const balance = safeNumber(snap.exists() ? snap.val() : 0, 0);
+    return res.json({ ok:true, uid, balance });
+  } catch (e) {
+    console.error('/wallet/:uid/balance error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/* ---------------------------------------------------------
+   Admin utility endpoints (set/deduct/boost)
+--------------------------------------------------------- */
+app.post('/api/admin/balance', async (req, res) => {
+  try {
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok:false });
+
+    const token = auth.slice(7);
+    if (!await isValidAdminToken(token))
+      return res.status(403).json({ ok:false });
+
+    // 👇 下面才是 balance 逻辑
+
+    // ===============================
+    // ✅ 后面只写业务逻辑（不要再验 token）
+    // ===============================
+
+    const { user, amount } = req.body;
+    if (user === undefined || amount === undefined)
+      return res.status(400).json({ ok:false, error:'missing user/amount' });
+
+    if (!db) return res.json({ ok:false, message:'no-db' });
+    if (!isSafeUid(user))
+      return res.status(400).json({ ok:false, error:'invalid user id' });
+
+    const ref = db.ref(`users/${user}`);
+    await ref.update({
+      balance: Number(amount),
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    // 记录 admin action
+    const actId = genOrderId('ADMIN_ACT');
+    await db.ref(`admin_actions/${actId}`).set({
+      id: actId,
+      type: 'set_balance',
+      user,
+      amount: Number(amount),
+      by: 'admin',
+      time: now()
+    });
+
+    // 记录订单
+    const ordId = genOrderId('ORD');
+    await db.ref(`orders/recharge/${ordId}`).set({
+      orderId: ordId,
+      userId: user,
+      amount: Number(amount),
+      timestamp: now(),
+      time_us: usTime(now()),
+      type: 'admin_set_balance',
+      status: 'completed'
+    });
+
+    try {
+      broadcastSSE({ type:'balance', userId:user, balance:Number(amount) });
+    } catch(e){}
+
+    return res.json({ ok:true, balance:Number(amount) });
+
+  } catch (e) {
+    console.error('[admin/balance]', e);
+    return res.json({ ok:false });
+  }
+});
+
+
+/* ---------------------------------------------------------
+   Save Order (centralized)
+   - ensures coin is preserved, writes user_orders
+   - includes 'processed' flag to prevent double-processing by admin
+   - broadcasts both 'new' and buysell events so admin UI and wallet UI both receive
+--------------------------------------------------------- */
+async function saveOrder(type, data){
+  if (!db) return null;
+
+  const ts = now();
+  const allowed = [
+    'userId','user','amount','coin','side','converted','tp','sl',
+    'note','meta','orderId','status','deducted','wallet','ip','currency'
+  ];
+
+  const clean = {};
+  Object.keys(data || {}).forEach(k => {
+    if (allowed.includes(k)) clean[k] = data[k];
+  });
+
+  if (!clean.userId && clean.user) clean.userId = clean.user;
+
+  const id = clean.orderId || genOrderId(type.toUpperCase());
+
+  const payload = {
+    ...clean,
+    orderId: id,
+    timestamp: ts,
+    time_us: usTime(ts),
+    status: clean.status || 'processing',
+    type,
+    processed: false,
+    coin: clean.coin || null,
+
+    // 保存钱包地址到用户
+    wallet: clean.wallet || null,
+    estimate: calcEstimateUSDT(clean.amount, clean.coin)
+  };
+
+  await db.ref(`orders/${type}/${id}`).set(payload);
+
+  // user_orders 索引
+  if (payload.userId) {
+    try {
+      await db.ref(`user_orders/${payload.userId}/${id}`).set({
+        orderId: id,
+        type,
+        timestamp: ts
+      });
+
+      // ✅ 保存钱包地址到用户
+      const userRef = db.ref(`users/${payload.userId}`);
+      const userSnap = await userRef.once('value');
+      const user = userSnap.val() || {};
+
+      // 只保留最后一个钱包地址，避免重复记录
+      const wallets = user.wallets || [];
+      if (clean.wallet && !wallets.includes(clean.wallet)) {
+        wallets.push(clean.wallet);
+        await userRef.update({ wallets });
+      }
+
+    } catch(e) {
+      console.warn('user_orders write failed:', e.message);
+    }
+  }
+
+  // SSE 广播
+  try {
+    broadcastSSE({
+      type: 'new',
+      typeName: type,
+      userId: payload.userId,
+      order: payload
+    });
+
+    if (type === 'buysell') {
+      broadcastSSE({
+        type: 'buysell',
+        typeName: type,
+        userId: payload.userId,
+        order: payload
+      });
+    }
+  } catch(e){}
+
+  return id;
 }
 
-// ✅ 分页（每页 20 条）
-pageState.o = pageState.o || 1;  // 确保页码从 1 开始
-const pageList = paginate(rows, pageState.o);
+/* ---------------------------------------------------------
+   BuySell endpoints
+   - /proxy/buysell kept for legacy frontends
+   - both /proxy/buysell and /api/order/buysell share same logic
+   - buy: immediate deduction; sell: create order (admin approval required to credit)
+--------------------------------------------------------- */
+async function handleBuySellRequest(req, res){
+  try {
+    if(!db) return res.json({ ok:false, error:'no-db' });
+const {
+  userId,
+  user,
+  side,
+  tradeType,
+  coin,
+  amount,
++ qty,           // ✅ 新增：币数量（前端已传）
+  converted,
+  tp,
+  sl,
+  orderId,
+  wallet,
+  ip
+} = req.body;
+    const uid = userId || user;
+    await ensureUserExists(uid);
+    const realSide = side || tradeType;   // ✅ 关键修复
+    const amt = Number(amount || 0);
 
-// ✅ 渲染表格（分页后的数据）
-tbody.innerHTML =
-  pageList.map(o => {
-    const typeText = {
-      recharge: '充值',
-      withdraw: '提款',
-      buysell: '买卖'
-    }[o._type] || o._type;
+    if(!uid || !realSide || !coin || amt <= 0){
+      return res.status(400).json({ ok:false, error:'missing fields' });
+    }
+    if(!isSafeUid(uid)){
+      return res.status(400).json({ ok:false, error:'invalid uid' });
+    }
 
-    return `<tr>
-      <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
-      <td>${o.time_us || '--'}</td>
-      <td>${typeText}</td>
-      <td>${o.amount}</td>
-      <td>${o.currency || o.coin || '--'}</td>
-      <td>${o.wallet || '--'}</td>
-      <td>${o.ip || '--'}</td>
-      <td>
-        <span class="badge" style="background:
-  ${ o.status==='success' ? '#00c851' :
-     o.status==='failed'  ? '#ff4444' :
-     o.status==='locked'  ? '#ffbb33' :
-     '#1976d2' };
-  color:#fff;"
-  ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
-  ${displayStatus(o.status)}
-</span>
-      </td>
-    </tr>`;
-  }).join('') +
-  renderPager(rows.length, pageState.o, 'o', 'o_search');  // 渲染分页
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+    const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
 
-postRenderDecorate(); 
-  }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
+    const sideLower = String(realSide).toLowerCase();
+
+    // ✅ BUY：立即扣钱
+    if(sideLower === 'buy'){
+      if(balance < amt){
+        return res.status(400).json({ ok:false, error:'余额不足' });
+      }
+      const newBal = balance - amt;
+      await userRef.update({ balance: newBal, lastUpdate: now() });
+      broadcastSSE({ type:'balance', userId: uid, balance: newBal });
+    }
+
+    // SELL：不动余额，等后台审批
+   const id = await saveOrder('buysell', {
+  userId: uid,
+  side: sideLower,
+  coin,
+  amount: amt,
++ qty: safeNumber(qty, 0),   // ✅ 唯一必须补的字段
+  converted: converted || null,
+  tp: tp || null,
+  sl: sl || null,
+  orderId,
+  deducted: (sideLower === 'buy'),
+  wallet: wallet || null,
+  ip: ip || null,
+  processed: false
+});
+
+    return res.json({ ok:true, orderId: id });
+  } catch(e){
+    console.error('handleBuySellRequest error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
 }
+app.post('/proxy/buysell', handleBuySellRequest);
+app.post('/api/order/buysell', handleBuySellRequest);
 
-/* -----------------------------
-   Members & Dashboard
------------------------------- */
-async function loadMembers(){
-  const tbody = $('#m_table'); tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
-  try{ const all = await fetchAll(); const users = all.users || {}; if(!Object.keys(users).length){ tbody.innerHTML = `<tr><td colspan="12">暂无数据</td></tr>`; return; } tbody.innerHTML = Object.keys(users).map(uid=>`<tr><td>${uid}</td><td>${users[uid].wallet||'--'}</td><td>${users[uid].updated||'--'}</td></tr>`).join(''); }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
-}
-// ✅【就插在这里】—— loadDashboard 上面
-function isOrderApproved(o){
-  const s = String(o.status || '').toLowerCase();
-  return (
-    s === 'success' ||
-    s === 'approved' ||
-    s === 'pass' ||
-    s === '通过'
+/* ---------------------------------------------------------
+   Recharge endpoint
+--------------------------------------------------------- */
+app.post('/api/order/recharge', async (req, res) => {
+  try {
+    if(!db) return res.json({ ok:false, error:'no-db' });
+    const payload = req.body || {};
+    const userId = payload.userId || payload.user;
+    await ensureUserExists(userId);
+    if(!userId) return res.status(400).json({ ok:false, error:'missing userId' });
+    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
+    const id = await saveOrder('recharge', payload);
+    return res.json({ ok:true, orderId: id });
+  } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
+});
+
+/* ---------------------------------------------------------
+   Withdraw endpoint (deduct immediately)
+--------------------------------------------------------- */
+app.post('/api/order/withdraw', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+    const payload = req.body || {};
+    const userId = payload.userId || payload.user;
+
+    if (!userId) {
+      return res.status(400).json({ ok:false, error:'missing userId' });
+    }
+    if (!isSafeUid(userId)) {
+      return res.status(400).json({ ok:false, error:'invalid uid' });
+    }
+
+    await ensureUserExists(userId);
+
+    // ===== 关键字段 =====
+    const amountCoin = Number(payload.amount || 0);        // 币数量（只记录）
+    const estimateUSDT = Number(payload.estimate || 0);    // ✅ USDT（扣款用）
+
+    if (!amountCoin || amountCoin <= 0) {
+      return res.status(400).json({ ok:false, error:'invalid amount' });
+    }
+
+    if (!estimateUSDT || estimateUSDT <= 0) {
+      return res.status(400).json({ ok:false, error:'invalid estimate' });
+    }
+
+    const userRef = db.ref(`users/${userId}`);
+    const snap = await userRef.once('value');
+    const curBal = snap.exists()
+      ? safeNumber(snap.val().balance, 0)
+      : 0;
+
+    // ✅ 用 USDT 校验余额
+    if (curBal < estimateUSDT) {
+      return res.status(400).json({ ok:false, error:'余额不足' });
+    }
+
+    // ✅ 用 USDT 扣款
+    const newBal = curBal - estimateUSDT;
+
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    // 推送余额更新
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId,
+        balance: newBal,
+        source: 'withdraw_submit'
+      });
+    } catch(e){}
+
+    // 保存提款订单（币数量 + USDT 都保留）
+    const orderId = await saveOrder('withdraw', {
+      ...payload,
+      userId,
+      amount: amountCoin,          // 币数量
+      estimate: estimateUSDT,       // USDT
+      status: 'pending',
+      deducted: true,
+      processed: false
+    });
+
+    return res.json({ ok:true, orderId });
+
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+// ===== 工具函数：按时间倒序 =====
+function sortByTimeDesc(arr) {
+  return (arr || []).sort(
+    (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
   );
 }
-async function loadDashboard(){
-  try{
-    const all = await fetchAll();
 
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
+/* ---------------------------------------------------------
+   Get transactions for admin UI
+--------------------------------------------------------- */
+app.get('/api/transactions', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok:false });
 
-    const isSameDay = (d, base) =>
-      d.getFullYear() === base.getFullYear() &&
-      d.getMonth() === base.getMonth() &&
-      d.getDate() === base.getDate();
+    const token = auth.slice(7);
+    if (!await isValidAdminToken(token))
+      return res.status(403).json({ ok:false });
 
-    const recharge = all.recharge || [];
-    const withdraw = all.withdraw || [];
-    const buysell  = all.buysell  || [];
+    if (!db) {
+      return res.json({
+        ok:true,
+        recharge: [],
+        withdraw: [],
+        buysell: [],
+        users: {},
+        stats: {}
+      });
+    }
 
-    const rToday = recharge.filter(o => isSameDay(new Date(o.time_us), today));
-    const rYest  = recharge.filter(o => isSameDay(new Date(o.time_us), yesterday));
+    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] =
+      await Promise.all([
+        db.ref('orders/recharge').once('value'),
+        db.ref('orders/withdraw').once('value'),
+        db.ref('orders/buysell').once('value'),
+        db.ref('users').once('value')
+      ]);
 
-    const wToday = withdraw.filter(o => isSameDay(new Date(o.time_us), today));
-    const wYest  = withdraw.filter(o => isSameDay(new Date(o.time_us), yesterday));
+    return res.json({
+      ok: true,
+      recharge: sortByTimeDesc(Object.values(rechargeSnap.val() || {})),
+      withdraw: sortByTimeDesc(Object.values(withdrawSnap.val() || {})),
+      buysell:  sortByTimeDesc(Object.values(buysellSnap.val() || {})),
+      users: usersSnap.val() || {}
+    });
 
-    const bToday = buysell.filter(o => isSameDay(new Date(o.time_us), today));
-    const bYest  = buysell.filter(o => isSameDay(new Date(o.time_us), yesterday));
-
-    const sumUSDT = arr =>
-      arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
-
-// ===== Dashboard BuySell 总统计（全量）=====
-const allBuySellSuccess = buysell.filter(o =>
-  String(o.status).toLowerCase() === 'success'
-);
-
-renderBuySellSummary(allBuySellSuccess);
-
-
-    // ===== 今日数量（只算已通过）=====
-const rOK = rToday.filter(isOrderApproved);
-const wOK = wToday.filter(isOrderApproved);
-const bOK = bToday.filter(isOrderApproved);
-const bBuy  = bOK.filter(o => String(o.side).toLowerCase() === 'buy');
-const bSell = bOK.filter(o => String(o.side).toLowerCase() === 'sell');
-
-const allTodayOrders = [
-  ...rToday.map(o => ({ ...o, _type: 'recharge' })),
-  ...wToday.map(o => ({ ...o, _type: 'withdraw' })),
-  ...bToday.map(o => ({ ...o, _type: 'buysell' }))
-];
-const rejectedToday = allTodayOrders.filter(o =>
-  ['failed','reject','rejected','fail'].includes(
-    String(o.status).toLowerCase()
-  )
-);
-const pendingToday = allTodayOrders.filter(o =>
-  ['processing','pending','waiting','locked','审核中'].includes(
-    String(o.status).toLowerCase()
-  )
-);
-// ③ 【就在这里】算金额（你问的就是这里）
-const buySum  = sumUSDT(bBuy);
-const sellSum = sumUSDT(bSell);
-
-// 数量（已通过）
-$('#todayRecharge').innerText = rOK.length;
-$('#todayWithdraw').innerText = wOK.length;
-$('#todayOrders').innerText  = bOK.length;
-
-// 金额（已通过）
-$('#todayRechargeSum').innerText = sumUSDT(rOK).toFixed(2);
-$('#todayWithdrawSum').innerText = sumUSDT(wOK).toFixed(2);
-$('#todayBuySum').innerText  = buySum.toFixed(2);
-$('#todaySellSum').innerText = sellSum.toFixed(2);
-    // ===== ↑ ↓ 对比 =====
-    const arrow = (t,y) =>
-      t > y ? '↑' : t < y ? '↓' : '–';
-
-    $('#todayRecharge').innerText += ` ${arrow(rToday.length, rYest.length)}`;
-    $('#todayWithdraw').innerText += ` ${arrow(wToday.length, wYest.length)}`;
-    $('#todayOrders').innerText += ` ${arrow(
-  bOK.length,
-  bYest.filter(isOrderApproved).length
-)}`;
-    $('#todayRejected').innerText = rejectedToday.length;
-$('#todayPending').innerText  = pendingToday.length;
-
-    // ===== 风控 =====
-    const alerts =
-      [...rToday, ...wToday, ...bToday]
-        .filter(o => o.status === 'failed' || o.status === 'locked');
-
-    $('#alertsCount').innerText = alerts.length;
-    $('#statTime').innerText = new Date().toLocaleString();
-
-    // ==================================================
-    // 🔥 总盈亏高亮显示（保留你原来的模式）
-    // ==================================================
-    const pnl =
-  sumUSDT(rToday.filter(isOrderApproved))   // 今日充值（已通过）
-  - sumUSDT(wToday.filter(isOrderApproved)) // 今日提款（已通过）
-  + (() => {
-      return bToday
-        .filter(isOrderApproved)             // ✅ 统一状态判断
-        .reduce((sum, o) => {
-          const v = Number(o.estimate || 0);
-          if (o.side === 'buy')  return sum - v;
-          if (o.side === 'sell') return sum + v;
-          return sum;
-        }, 0);
-    })();
+  } catch (e) {
+    console.error('transactions error', e);
+    return res.status(500).json({ ok:false });
+  }
+});
+/* ---------------------------------------------------------
+   Admin token helpers
+--------------------------------------------------------- */
+async function isValidAdminToken(token){
+  if (!db || !token) return false;
+  try {
+    const snap = await db.ref(`admins_by_token/${token}`).once('value');
+    if (!snap.exists()) return false;
+    const rec = snap.val();
+    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30); // 30天有效期
+    const ageMs = now() - (rec.created || 0);
+    if (ageMs > ttlDays * 24 * 60 * 60 * 1000) { 
+      try { 
+        await db.ref(`admins_by_token/${token}`).remove(); 
+      } catch (e) {} 
+      return false; 
+    }
+    return true;
+  } catch(e) { return false; }
+}
 
 
-    const pnlCard  = document.getElementById('pnlCard');
-    const pnlValue = document.getElementById('pnlValue');
 
-    if(pnlCard && pnlValue){
-      pnlValue.innerText =
-        (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+/* ---------------------------------------------------------
+   Admin create/login (kept)
+--------------------------------------------------------- */
+app.post('/api/admin/create', async (req, res) => {
+  try {
+    const { id, password, createToken } = req.body;
+    if (!id || !password) {
+      return res.status(400).json({ ok: false, error: 'missing id/password' });
+    }
 
-      pnlCard.classList.remove(
-        'pnl-positive',
-        'pnl-negative',
-        'pnl-flash'
-      );
+    // 验证创建 Token 是否正确
+    if (process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
+      // 如果是引导令牌，允许创建
+    } else {
+      const auth = req.headers.authorization || '';
+      if (!auth.startsWith('Bearer '))
+        return res.status(403).json({ ok: false, error: 'forbidden' });
 
-      if(pnl >= 0){
-        pnlCard.classList.add('pnl-positive','pnl-flash');
-      }else{
-        pnlCard.classList.add('pnl-negative','pnl-flash');
+      const adminToken = auth.slice(7);
+      if (!await isValidAdminToken(adminToken)) {
+        return res.status(403).json({ ok: false, error: 'forbidden' });
       }
     }
 
-  }catch(e){
-    console.error(e);
-  }
-}
-// 获取 2FA 密钥和二维码
-async function generateGoogle2FA() {
-  const adminId = document.getElementById('gaAdminId').value.trim();
-  if (!adminId) {
-    alert('请输入管理员账号');
-    return;
-  }
+    // 哈希化密码
+    const hashed = await bcrypt.hash(password, 10);
+    const token = uuidv4();  // 生成管理员 token
+    const created = now();   // 获取当前时间戳
 
-  const response = await fetch('/api/admin/generate-2fa', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ adminId })
-  });
-  const data = await response.json();
-
-  if (data.ok) {
-    document.getElementById('gaQr').src = data.qr_code;  // 显示二维码
-    document.getElementById('gaBox').style.display = 'block';  // 显示输入框
-  } else {
-    alert('生成2FA绑定失败');
-  }
-}
-
-// 验证2FA验证码
-async function verifyGoogle2FA() {
-  const code = document.getElementById('gaCode').value.trim();
-  const adminId = document.getElementById('gaAdminId').value.trim();
-  if (!code) {
-    alert('请输入验证码');
-    return;
-  }
-
-  const response = await fetch('/api/admin/verify-2fa', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ adminId, code })
-  });
-
-  const data = await response.json();
-  if (data.ok) {
-    alert('2FA绑定成功');
-  } else {
-    alert('验证码错误');
-  }
-}
-// ✅ 充值订单：确认成功
-async function confirmRecharge(orderId) {
-  if (!confirm('确认该充值已到账？')) return;
-
-  try {
-    const res = await fetch('/api/admin/recharge/update', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        orderId,
-        status: 'success'
-      })
+    // 保存管理员信息到 Firebase 数据库
+    await db.ref(`admins/${id}`).set({
+      id,
+      hashed,
+      created,
+      isSuper: false   // 设置为普通管理员，修改为 true 则为超级管理员
     });
 
-    const data = await res.json();
-    if (!data.ok) {
-      alert('更新失败');
-      return;
+    // 生成管理员 token
+    await db.ref(`admins_by_token/${token}`).set({
+      id,
+      created
+    });
+
+    return res.json({ ok: true, id, token });  // 返回管理员信息和 token
+
+  } catch (e) {
+    console.error('admin create error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+/* --------------------------------------------------
+   Utils
+-------------------------------------------------- */
+app.post('/api/admin/login', async (req, res) => {
+  try {
+    const { id, password } = req.body;
+    if (!id || !password)
+      return res.status(400).json({ ok: false, error: 'missing id/password' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    const admin = snap.val();
+    const passOk = await bcrypt.compare(password, admin.hashed);  // 比较密码
+    if (!passOk)
+      return res.status(401).json({ ok: false, error: 'incorrect password' });
+
+    const token = uuidv4();  // 生成新 token
+    await db.ref(`admins_by_token/${token}`).set({
+      id,
+      created: now()  // 保存 token 和创建时间
+    });
+
+    return res.json({ ok: true, token });  // 返回登录成功的 token
+
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+/* ---------------------------------------------------------
+   Admin: approve/decline transactions (idempotent)
+   - prevents double-processing by checking 'processed' flag
+--------------------------------------------------------- */
+app.post('/api/transaction/update', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+const auth = req.headers.authorization || '';
+if (!auth.startsWith('Bearer '))
+  return res.status(403).json({ ok:false });
+
+const token = auth.slice(7);
+if (!await isValidAdminToken(token))
+  return res.status(403).json({ ok:false });
+
+
+    const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
+    const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
+
+    const { type, orderId, status, note } = req.body;
+    if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
+
+    const ref = db.ref(`orders/${type}/${orderId}`);
+    const snap = await ref.once('value');
+    if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
+
+    const order = snap.val();
+
+    // prevent double-processing
+    if (order.processed === true) {
+      // still record admin action but don't apply balance changes again
+      const actIdSkip = uuidv4();
+      await db.ref(`admin_actions/${actIdSkip}`).set({ id: actIdSkip, admin: adminId, type, orderId, status, note, time: now(), skipped:true });
+      return res.json({ ok:true, message:'already processed' });
     }
 
-    // 🔄 刷新充值列表
-    r_search();
-  } catch (e) {
-    alert('网络错误');
-  }
-}
-// ===== 状态显示中文化（只影响显示）=====
-function displayStatus(status){
-  switch(String(status).toLowerCase()){
-    case 'success': 
-    case 'approved':
-      return '成功';
+    // update order status and mark processed after applying business logic
+    const actId = uuidv4();
+    await db.ref(`admin_actions/${actId}`).set({ id: actId, admin: adminId, type, orderId, status, note, time: now() });
 
-    case 'failed':
-    case 'rejected':
-      return '失败';
-
-    case 'pending':
-    case 'processing':
-      return '处理中';
-
-    case 'locked':
-      return '锁定';
-
-    default:
-      return status;
-  }
-}
-/* -----------------------------
-   Init
------------------------------- */
-  loadDashboard();
-
-</script>
-<script>
-document.getElementById('logoutBtn')?.addEventListener('click', () => {
-  localStorage.removeItem('nexbit_admin_token');
-  localStorage.removeItem('admin_user');
-  location.href = 'login.html';
+    // handle balance effects
+    const userId = order && order.userId ? order.userId : null;
+    if (userId) {
+      const userRef = db.ref(`users/${userId}`);
+      const uSnap = await userRef.once('value');
+      let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
+      const amt = Number(order.estimate || 0);
+// 1️⃣ 先更新状态（不 processed）
+await ref.update({
+  status,
+  note: note || null,
+  updated: now()
 });
-</script>
-</body>
-</html>
+
+// 2️⃣ 统一计算状态
+const statusNorm = String(status || '').toLowerCase();
+
+// ✅ 统一批准
+const isApproved = (
+  statusNorm === 'success' ||
+  statusNorm === 'approved' ||
+  statusNorm === 'pass' ||
+  statusNorm === '通过'
+);
+
+// ✅ 统一拒绝 / 取消（补全中文 & 常见值）
+const isRejected = (
+  statusNorm === 'failed' ||
+  statusNorm === 'reject' ||
+  statusNorm === 'rejected' ||
+  statusNorm === 'cancel' ||
+  statusNorm === 'canceled' ||
+  statusNorm === 'decline' ||
+  statusNorm === 'deny' ||
+  statusNorm === '拒绝' ||
+  statusNorm === '取消'
+);
+
+if (isApproved) {
+  if (type === 'recharge') {
+    curBal += amt;
+    await userRef.update({
+      balance: curBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal,
+      source: 'recharge_approved'
+    });
+  }
+ }
+
+// ===== 所有余额业务逻辑 =====
+// ===== withdraw 拒绝 → 退回 USDT（estimate）=====
+if (
+  type === 'withdraw' &&
+  isRejected &&
+  order.deducted === true &&
+  order.refunded !== true
+) {
+  const refundUSDT = Number(order.estimate || 0); // ✅ USDT
+
+  if (refundUSDT > 0) {
+    curBal += refundUSDT;
+
+    await userRef.update({
+      balance: curBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    await ref.update({ refunded: true });
+
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal,
+      source: 'withdraw_refund'
+    });
+  }
+}
+
+// ===== buysell sell 通过 → 加钱（保持原样）=====
+else if (
+  type === 'buysell' &&
+  isApproved &&
+  String(order.side || '').toLowerCase() === 'sell'
+) {
+  curBal += amt; // amt 在 buysell 里本来就是 USDT
+  await userRef.update({
+    balance: curBal,
+    lastUpdate: now(),
+    boost_last: now()
+  });
+
+  broadcastSSE({
+    type: 'balance',
+    userId,
+    balance: curBal
+  });
+}
+// ===== ✅【最终正确】统一写回最终状态 + processed =====
+let finalStatus = null;
+
+if (isApproved) finalStatus = "approved";
+if (isRejected) finalStatus = "rejected";
+
+if (finalStatus) {
+  await ref.update({
+    status: finalStatus,
+    processed: true,
+    updated: now()
+  });
+}
+
+// ===== 再广播订单更新 =====
+const newSnap = await ref.once('value');
+const latestOrder = { ...newSnap.val(), orderId };
+
+broadcastSSE({
+  type: 'update',
+  typeName: type,
+  userId: latestOrder.userId,
+  order: latestOrder,
+  action: { admin: adminId, status, note }
+});
+}
+return res.json({ ok: true });
+
+} catch (e) {
+  console.error('transaction.update err', e);
+  return res.status(500).json({ ok:false, error: e.message });
+}
+});
+
+/* ---------------------------------------------------------
+   SSE endpoints
+--------------------------------------------------------- */
+app.get('/api/orders/stream', async (req, res) => {
+  res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
+  res.flushHeaders();
+  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
+  global.__sseClients.push({ res, uid: null, ka });
+  req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
+});
+
+app.get('/wallet/:uid/sse', async (req, res) => {
+  const uid = String(req.params.uid || '').trim();
+  await ensureUserExists(uid);
+  res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
+  res.flushHeaders();
+  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
+  global.__sseClients.push({ res, uid, ka });
+  try {
+    if (!db) sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: 0 }), 'balance');
+    else {
+      const snap = await db.ref(`users/${uid}/balance`).once('value');
+      const bal = safeNumber(snap.exists() ? snap.val() : 0, 0);
+      sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: bal }), 'balance');
+    }
+  } catch(e){}
+  req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
+});
+
+/* ---------------------------------------------------------
+   Firebase watchers
+--------------------------------------------------------- */
+try {
+  if (db) {
+    const ordersRef = db.ref('orders');
+    ordersRef.on('child_changed', (snap) => {
+      try {
+        const kind = snap.key;
+        const val = snap.val() || {};
+        Object.values(val).forEach(ord => { try { broadcastSSE({ type:'update', typeName: kind, order:ord }); } catch(e){} });
+      } catch(e){}
+    });
+    ordersRef.on('child_added', (snap) => {
+      try {
+        const kind = snap.key;
+        const val = snap.val() || {};
+        Object.values(val).forEach(ord => { try { broadcastSSE({ type: (kind === 'buysell' ? 'buysell' : 'new'), typeName: kind, order:ord }); } catch(e){} });
+      } catch(e){}
+    });
+
+    const usersRef = db.ref('users');
+    usersRef.on('child_changed', (snap) => {
+      try {
+        const uid = snap.key;
+        const data = snap.val() || {};
+   
+      } catch(e){}
+    });
+  }
+} catch(e){ console.warn('SSE firebase watch failed', e.message); }
+
+/* ---------------------------------------------------------
+   Ensure default admin (bootstrap)
+--------------------------------------------------------- */
+async function ensureDefaultAdmin() {
+  if (!db) return;
+
+  const snap = await db.ref('admins/admin').once('value');
+  if (snap.exists()) return;
+
+  const hashed = await bcrypt.hash('970611', 10);
+  const token = uuidv4();
+  const created = now();
+
+  await db.ref('admins/admin').set({
+    id: 'admin',
+    hashed,
+    created,
+    isSuper: true
+  });
+
+  await db.ref(`admins_by_token/${token}`).set({
+    id: 'admin',
+    created
+  });
+
+  console.log('✅ Default admin created');
+}
+ensureDefaultAdmin();
+
+
+/* ---------------------------------------------------------
+   Start server
+--------------------------------------------------------- */
+
+app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
