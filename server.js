@@ -473,27 +473,20 @@ async function saveOrder(type, data){
 
   const id = clean.orderId || genOrderId(type.toUpperCase());
 
-const payload = {
-  ...clean,
+  const payload = {
+    ...clean,
+    orderId: id,
+    timestamp: ts,
+    time_us: usTime(ts),
+    status: clean.status || 'processing',
+    type,
+    processed: false,
+    coin: clean.coin || null,
 
-  orderId: id,
-  timestamp: ts,
-  time_us: usTime(ts),
-  status: clean.status || 'processing',
-  type,
-  processed: false,
-
-  coin: clean.coin || null,
-
-  // 保存钱包地址到用户
-  wallet: clean.wallet || null,
-
-  // ✅ 真实币数量（关键，不写这一行永远是 0）
-  qty: Number(clean.qty || 0),
-
-  // ✅ USDT 估算（必须用前端传来的）
-  estimate: Number(clean.estimate || 0)
-};
+    // 保存钱包地址到用户
+    wallet: clean.wallet || null,
+   estimate: Number(clean.amount || 0)   // ✅ USDT 原值
+  };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
 
