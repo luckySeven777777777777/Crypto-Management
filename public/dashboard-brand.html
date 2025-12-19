@@ -2163,12 +2163,23 @@ async function confirmRecharge(orderId) {
 // ===== 状态显示中文化（只影响显示）=====
 function displayStatus(status){
   switch(String(status).toLowerCase()){
-    case 'success': return '成功';
-    case 'failed': return '失败';
-    case 'processing': return '处理中';
-    case 'approved': return '成功';   // 你后台现在就是这个
-    case 'locked': return '锁定';
-    default: return status;
+    case 'success': 
+    case 'approved':
+      return '成功';
+
+    case 'failed':
+    case 'rejected':
+      return '失败';
+
+    case 'pending':
+    case 'processing':
+      return '处理中';
+
+    case 'locked':
+      return '锁定';
+
+    default:
+      return status;
   }
 }
 /* -----------------------------
