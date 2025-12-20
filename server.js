@@ -881,21 +881,22 @@ app.post('/api/admin/login', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
-
 /* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
+   - prevents double-processing by checking 'processed' flag
 --------------------------------------------------------- */
 app.post('/api/transaction/update', async (req, res) => {
   try {
     if (!db) return res.json({ ok:false, error:'no-db' });
 
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok:false });
+const auth = req.headers.authorization || '';
+if (!auth.startsWith('Bearer '))
+  return res.status(403).json({ ok:false });
 
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token))
-      return res.status(403).json({ ok:false });
+const token = auth.slice(7);
+if (!await isValidAdminToken(token))
+  return res.status(403).json({ ok:false });
+
 
     const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
     const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
@@ -911,6 +912,7 @@ app.post('/api/transaction/update', async (req, res) => {
 
     // prevent double-processing
     if (order.processed === true) {
+      // still record admin action but don't apply balance changes again
       const actIdSkip = uuidv4();
       await db.ref(`admin_actions/${actIdSkip}`).set({ id: actIdSkip, admin: adminId, type, orderId, status, note, time: now(), skipped:true });
       return res.json({ ok:true, message:'already processed' });
@@ -927,118 +929,54 @@ app.post('/api/transaction/update', async (req, res) => {
       const uSnap = await userRef.once('value');
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.estimate || 0);
-
-      // 1️⃣ 先更新状态（不 processed）
-      await ref.update({
-        status,
-        note: note || null,
-        updated: now()
-      });
-
-      // 2️⃣ 统一计算状态
-      const statusNorm = String(status || '').toLowerCase();
-
-      const isApproved = (
-        statusNorm === 'success' ||
-        statusNorm === 'approved' ||
-        statusNorm === 'pass' ||
-        statusNorm === '通过'
-      );
-
-      const isRejected = (
-        statusNorm === 'failed' ||
-        statusNorm === 'reject' ||
-        statusNorm === 'rejected' ||
-        statusNorm === 'cancel' ||
-        statusNorm === 'canceled' ||
-        statusNorm === 'decline' ||
-        statusNorm === 'deny' ||
-        statusNorm === '拒绝' ||
-        statusNorm === '取消'
-      );
-
-      if (isApproved) {
-        if (type === 'recharge') {
-          curBal += amt;
-          await userRef.update({
-            balance: curBal,
-            lastUpdate: now(),
-            boost_last: now()
-          });
-
-          broadcastSSE({
-            type: 'balance',
-            userId,
-            balance: curBal,
-            source: 'recharge_approved'
-          });
-        }
-      }
-    }
-  } catch (error) {
-    console.error('交易更新失败:', error);
-    return res.status(500).json({ ok: false, message: '服务器错误' });
-  }
+// 1️⃣ 先更新状态（不 processed）
+await ref.update({
+  status,
+  note: note || null,
+  updated: now()
 });
 
-/* ---------------------------------------------------------
-   Reset Withdraw Password API
---------------------------------------------------------- */
-app.post('/api/resetWithdrawPassword', async (req, res) => {
-  const { wallet, orderId, newPassword } = req.body;
+// 2️⃣ 统一计算状态
+const statusNorm = String(status || '').toLowerCase();
 
-  if (!wallet && !orderId) {
-    return res.status(400).json({ ok: false, message: '钱包地址或订单号必须提供' });
+// ✅ 统一批准
+const isApproved = (
+  statusNorm === 'success' ||
+  statusNorm === 'approved' ||
+  statusNorm === 'pass' ||
+  statusNorm === '通过'
+);
+
+// ✅ 统一拒绝 / 取消（补全中文 & 常见值）
+const isRejected = (
+  statusNorm === 'failed' ||
+  statusNorm === 'reject' ||
+  statusNorm === 'rejected' ||
+  statusNorm === 'cancel' ||
+  statusNorm === 'canceled' ||
+  statusNorm === 'decline' ||
+  statusNorm === 'deny' ||
+  statusNorm === '拒绝' ||
+  statusNorm === '取消'
+);
+
+if (isApproved) {
+  if (type === 'recharge') {
+    curBal += amt;
+    await userRef.update({
+      balance: curBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal,
+      source: 'recharge_approved'
+    });
   }
-
-  if (!newPassword) {
-    return res.status(400).json({ ok: false, message: '新密码不能为空' });
-  }
-
-  try {
-    let user;
-    if (wallet) {
-      // 根据钱包地址查找用户
-      user = await findUserByWallet(wallet);
-    } else if (orderId) {
-      // 根据订单号查找用户
-      user = await findUserByOrderId(orderId);
-    }
-
-    if (!user) {
-      return res.status(404).json({ ok: false, message: '未找到用户' });
-    }
-
-    // 重置用户提款密码
-    await resetPasswordForUser(user, newPassword);
-
-    return res.json({ ok: true, message: '密码已成功重置' });
-  } catch (error) {
-    console.error('重置提款密码失败:', error);
-    return res.status(500).json({ ok: false, message: '服务器错误' });
-  }
-});
-
-// 查找用户根据钱包地址
-async function findUserByWallet(wallet) {
-  const ref = db.ref(`users`);
-  const snap = await ref.orderByChild('wallet').equalTo(wallet).once('value');
-  return snap.val() ? Object.values(snap.val())[0] : null;
-}
-
-// 查找用户根据订单号
-async function findUserByOrderId(orderId) {
-  const ref = db.ref(`orders`);
-  const snap = await ref.orderByChild('orderId').equalTo(orderId).once('value');
-  return snap.val() ? Object.values(snap.val())[0] : null;
-}
-
-// 重置密码
-async function resetPasswordForUser(user, newPassword) {
-  const ref = db.ref(`users/${user.userId}`);
-  await ref.update({ withdrawPassword: newPassword });
-}
-
+ }
 
 // ===== 所有余额业务逻辑 =====
 // ===== withdraw 拒绝 → 退回 USDT（estimate）=====
