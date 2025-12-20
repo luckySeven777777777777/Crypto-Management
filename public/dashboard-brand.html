@@ -688,16 +688,44 @@ button {
   </div>
 
   <!-- 用户提款密码重置 -->
-  <div class="card">
-    <div class="page-title" style="font-size:16px">重置用户提款密码</div>
+<!-- 用户提款密码重置 -->
+<div class="card">
+  <div class="page-title" style="font-size:16px">重置用户提款密码</div>
 
-    <div class="filters">
-      <input id="searchWithdrawWallet" placeholder="已提款的钱包地址">
-      <input id="searchWithdrawOrder" placeholder="订单号（可选）">
-      <input id="newWithdrawPassword" placeholder="新提款密码">
-      <button class="primary" onclick="resetWithdrawPassword()">重置</button>
-    </div>
+  <div class="filters">
+
+    <!-- 校验方式 -->
+    <select id="verifyType">
+      <option value="address">钱包地址</option>
+      <option value="order">订单号</option>
+    </select>
+
+    <!-- 已提款的钱包地址 -->
+    <input
+      id="searchWithdrawWallet"
+      placeholder="已提款的钱包地址"
+    >
+
+    <!-- 提款订单号 -->
+    <input
+      id="searchWithdrawOrder"
+      placeholder="订单号（当选择订单号校验时填写）"
+    >
+
+    <!-- 新提款密码 -->
+    <input
+      id="newWithdrawPassword"
+      type="password"
+      placeholder="新提款密码"
+    >
+
+    <button
+      class="primary"
+      onclick="resetWithdrawPassword()"
+    >重置</button>
+
   </div>
+</div>
 
 </div>
 
@@ -2293,6 +2321,45 @@ if (viewYesterdayBtn) {  // 确保按钮存在
 } else {
   console.error('查看昨日数据按钮未找到');
 }
+async function resetWithdrawPwd() {
+  const userId = document.getElementById('userId').value;
+  const verifyType = document.getElementById('verifyType').value;
+  const verifyValue = document.getElementById('verifyValue').value;
+  const newPwd = document.getElementById('newWithdrawPwd').value;
+
+  if (!userId || !verifyValue || !newPwd) {
+    alert('请填写完整信息');
+    return;
+  }
+
+  const payload = {
+    userId,
+    verifyType,
+    newWithdrawPwd: newPwd
+  };
+
+  if (verifyType === 'order') {
+    payload.orderId = verifyValue;
+  } else {
+    payload.walletAddress = verifyValue;
+  }
+
+  const res = await fetch('/api/admin/reset-withdraw-password', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+
+  if (data.success) {
+    alert('提款密码已成功重置');
+  } else {
+    alert(data.error || '请求失败，请稍后再试');
+  }
+}
 /* -----------------------------
    Init
 ------------------------------ */
@@ -2306,47 +2373,51 @@ document.getElementById('logoutBtn')?.addEventListener('click', () => {
   location.href = 'login.html';
 });
 async function resetWithdrawPassword() {
+  const verifyType = document.getElementById('verifyType').value;
   const wallet = document.getElementById('searchWithdrawWallet').value.trim();
   const orderId = document.getElementById('searchWithdrawOrder').value.trim();
-  const newPassword = document.getElementById('newWithdrawPassword').value.trim();
+  const newPwd = document.getElementById('newWithdrawPassword').value.trim();
 
-  if (!wallet && !orderId) {
-    alert('请输入钱包地址或订单号');
+  if (!newPwd) {
+    alert('新提款密码不能为空');
     return;
   }
 
-  if (!newPassword) {
-    alert('请输入新的提款密码');
+  if (verifyType === 'order' && !orderId) {
+    alert('请输入提款订单号');
     return;
   }
 
-  // 创建请求体
-  const requestData = {
-    wallet,   // 钱包地址
-    orderId,  // 订单号
-    newPassword
+  if (verifyType === 'address' && !wallet) {
+    alert('请输入已提款的钱包地址');
+    return;
+  }
+
+  const payload = {
+    verifyType,
+    newWithdrawPwd: newPwd
   };
 
-  // 发起请求进行重置
-  try {
-    const response = await fetch('/api/resetWithdrawPassword', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestData)
-    });
+  if (verifyType === 'order') {
+    payload.orderId = orderId;
+  } else {
+    payload.walletAddress = wallet;
+  }
 
-    const result = await response.json();
+  const res = await fetch('/api/admin/reset-withdraw-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
 
-    if (result.ok) {
-      alert('提款密码重置成功');
-    } else {
-      alert('重置失败：' + result.error);
-    }
-  } catch (error) {
-    alert('请求失败，请稍后再试');
+  const data = await res.json();
+
+  if (data.success) {
+    alert('提款密码已成功重置');
+  } else {
+    alert(data.error || '校验失败，无法重置');
   }
 }
-
 </script>
 </body>
 </html>
