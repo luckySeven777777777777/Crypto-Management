@@ -827,9 +827,11 @@ if (verifyType === 'address') {
     // =========================
     const hashedPwd = await bcrypt.hash(newWithdrawPwd, 10);
 
-    await db.ref(`users/${targetUserId}`).update({
-      withdrawPassword: hashedPwd
-    });
+    res.json({
+  success: true,
+  newWithdrawPassword: newWithdrawPwd   // 明文，仅用于前端同步
+});
+
 
     return res.json({
       success: true,
