@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
@@ -8,14 +7,13 @@ const admin = require('firebase-admin');
 const path = require('path');
 const axios = require('axios'); 
 const speakeasy = require('speakeasy');
-
 const qrcode = require('qrcode');
+
 const app = express();
-app.use(cookieParser());
 app.disable('etag');
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); 
+
 const PORT = process.env.PORT || 8080;
 
 
@@ -1153,151 +1151,6 @@ async function ensureDefaultAdmin() {
 }
 ensureDefaultAdmin();
 
-// ===============================
-// 扫码登录（100% 真登录版）
-// ===============================
-
-const QR_LOGIN_MAP = new Map();
-
-/**
- * 1️⃣ 电脑端：创建二维码
- */
-app.get('/api/create-qr-login', async (req, res) => {
-  const token = uuidv4();
-
-  QR_LOGIN_MAP.set(token, {
-    status: 'pending',
-    userId: null,
-    createdAt: Date.now()
-  });
-
-  const scanUrl =
-    `${process.env.PUBLIC_URL}/api/qr-login-confirm?token=${token}`;
-
-  const qr = await qrcode.toDataURL(scanUrl);
-
-  res.json({ token, qr });
-});
-
-/**
- * 2️⃣ 电脑端：轮询扫码状态
- */
-app.get('/api/qr-login-status', (req, res) => {
-  const { token } = req.query;
-  const data = QR_LOGIN_MAP.get(token);
-
-  if (!data) return res.json({ status: 'expired' });
-
-  res.json({ status: data.status });
-});
-
-/**
- * 3️⃣ 手机端：扫码确认（只确认，不写 Cookie）
- */
-app.get('/api/qr-login-confirm', (req, res) => {
-  const { token } = req.query;
-  const data = QR_LOGIN_MAP.get(token);
-
-  if (!data) {
-    return res.send('❌ 二维码已失效');
-  }
-
-  data.status = 'success';
-
-  // 👉 模拟一个真实登录用户（以后可换成数据库 userId）
-  data.userId = 'qr_user_' + Date.now();
-
-  res.send('✅ 扫码成功，可返回电脑');
-});
-
-/**
- * 4️⃣ 电脑端：真正完成登录（写 Cookie）
- */
-app.post('/api/qr-login-complete', (req, res) => {
-  const { token } = req.body;
-  const data = QR_LOGIN_MAP.get(token);
-
-  if (!data || data.status !== 'success') {
-    return res.status(400).json({ ok: false });
-  }
-
-  // ✅ 在「电脑请求」里写 Cookie（这一步才是真登录）
-  res.cookie('login_user', data.userId, {
-    httpOnly: false,
-    sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000
-  });
-
-  // 用完即删（防复用）
-  QR_LOGIN_MAP.delete(token);
-
-  res.json({ ok: true });
-});
-
-/**
- * 5️⃣ 判断是否已登录
- */
-app.get('/api/me', (req, res) => {
-  const user = req.cookies.login_user;
-  if (!user) return res.json({ loggedIn: false });
-  res.json({ loggedIn: true, user });
-});
-// ===============================
-// 满屏二维码页面（/qr）
-// ===============================
-app.get('/qr', (req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>扫码登录</title>
-<style>
-body{
-  margin:0;
-  background:#0f1724;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  color:#fff;
-  font-family:sans-serif;
-}
-img{
-  width:70vw;
-  max-width:320px;
-}
-</style>
-</head>
-<body>
-  <img id="qr" />
-
-<script>
-(async()=>{
-  const res = await fetch('/api/create-qr-login');
-  const data = await res.json();
-  document.getElementById('qr').src = data.qr;
-
-  setInterval(async()=>{
-    const r = await fetch('/api/qr-login-status?token=' + data.token)
-      .then(r => r.json());
-
-    if(r.status === 'success'){
-      await fetch('/api/qr-login-complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: data.token })
-      });
-
-      location.href = '/';
-    }
-  }, 1500);
-})();
-</script>
-</body>
-</html>
-  `);
-});
 
 /* ---------------------------------------------------------
    Start server
