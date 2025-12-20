@@ -2260,29 +2260,39 @@ function resetDashboardData() {
 }
 
 // 页面加载时检查时间并重置数据
+// 页面加载时检查时间并重置数据
 resetDataAtMidnightMMT();
- // 获取昨日数据并展示
-  function loadYesterdayData() {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1); // 设置为昨天日期
 
-    // 假设你有一个获取昨日数据的 API
-    fetch(`/api/getDataForDate?date=${yesterday.toISOString()}`)
-      .then(response => response.json())
-      .then(data => {
-        // 更新页面上的数据
-        $('#yesterdayRecharge').textContent = data.recharge;
-        $('#yesterdayWithdraw').textContent = data.withdraw;
-        $('#yesterdayBuySum').textContent = data.buySum;
-        $('#yesterdaySellSum').textContent = data.sellSum;
-        $('#yesterdayOrders').textContent = data.orders;
-      })
-      .catch(error => console.error('获取昨日数据失败:', error));
-  }
+// 获取昨日数据并展示
+function loadYesterdayData() {
+  console.log('查看昨日数据按钮被点击');
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1); // 设置为昨天日期
 
-  // 在页面上找到“查看昨日数据”按钮，并绑定点击事件
-  const viewYesterdayBtn = document.getElementById('viewYesterdayBtn');
+  // 假设你有一个获取昨日数据的 API
+  fetch(`/api/getDataForDate?date=${yesterday.toISOString()}`)
+    .then(response => response.json())
+    .then(data => {
+      console.log(data); // 打印数据，确保你能看到返回的内容
+      // 更新页面上的数据
+      $('#yesterdayRecharge').text(data.recharge);
+      $('#yesterdayWithdraw').text(data.withdraw);
+      $('#yesterdayBuySum').text(data.buySum);
+      $('#yesterdaySellSum').text(data.sellSum);
+      $('#yesterdayOrders').text(data.orders);
+    })
+    .catch(error => {
+      console.error('获取昨日数据失败:', error);
+    });
+}
+
+// 在页面上找到“查看昨日数据”按钮，并绑定点击事件
+const viewYesterdayBtn = document.getElementById('viewYesterdayBtn');
+if (viewYesterdayBtn) {  // 确保按钮存在
   viewYesterdayBtn.onclick = loadYesterdayData;
+} else {
+  console.error('查看昨日数据按钮未找到');
+}
 /* -----------------------------
    Init
 ------------------------------ */
