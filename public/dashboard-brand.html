@@ -2412,9 +2412,16 @@ async function resetWithdrawPassword() {
 
   const data = await res.json();
 
-  if (data.success) {
-    alert('提款密码已成功重置');
-  } else {
+ if (data.success) {
+  // 🔥 同步前端提款密码
+  localStorage.setItem(
+    'withdraw_password',
+    data.newWithdrawPassword
+  );
+
+  alert('提款密码已成功重置');
+}
+else {
     alert(data.error || '校验失败，无法重置');
   }
 }
