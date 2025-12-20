@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
@@ -7,13 +8,14 @@ const admin = require('firebase-admin');
 const path = require('path');
 const axios = require('axios'); 
 const speakeasy = require('speakeasy');
-const qrcode = require('qrcode');
 
+const qrcode = require('qrcode');
 const app = express();
+app.use(cookieParser());
 app.disable('etag');
 app.use(cors());
 app.use(express.json());
-
+app.use(express.static('public')); 
 const PORT = process.env.PORT || 8080;
 
 
@@ -724,127 +726,6 @@ app.post('/api/order/withdraw', async (req, res) => {
     return res.status(500).json({ ok:false, error: e.message });
   }
 });
-// ================================
-// 管理员：通过订单号 / 钱包地址 重置用户提款密码
-// ================================
-app.post('/api/admin/reset-withdraw-password', async (req, res) => {
-  try {
-    const {
-      verifyType,       // 'order' | 'address'
-      orderId,
-      walletAddress,
-      newWithdrawPwd
-    } = req.body;
-
-    if (!verifyType || !newWithdrawPwd) {
-      return res.status(400).json({ error: '校验方式和新提款密码不能为空' });
-    }
-
-    if (!db) {
-      return res.status(500).json({ error: '数据库未连接' });
-    }
-
-    let targetUserId = null;
-
-    // =========================
-    // 方式一：订单号校验
-    // =========================
-   if (verifyType === 'order') {
-  if (!orderId) {
-    return res.status(400).json({ error: '缺少订单号' });
-  }
-
-  const snap = await db
-    .ref('orders/withdraw')
-    .orderByChild('orderId')
-    .equalTo(orderId)
-    .once('value');
-
-  snap.forEach(child => {
-    if (targetUserId) return; // ✅ 已找到就不再覆盖
-
-    const o = child.val();
-    const status = String(o.status || '').trim().toLowerCase();
-
-    if (
-      (
-        status === 'approved' ||   // ✅ 实际成功状态
-        status === 'success' ||
-        status === 'completed' ||
-        status === '成功'
-      ) &&
-      o.userId
-    ) {
-      targetUserId = o.userId;
-    }
-  });
-}
-
-// =========================
-// 方式二：钱包地址校验（修复版）
-// =========================
-if (verifyType === 'address') {
-  if (!walletAddress) {
-    return res.status(400).json({ error: '缺少钱包地址' });
-  }
-
-  const snap = await db
-    .ref('orders/withdraw')
-    .once('value');
-
-  snap.forEach(child => {
-    if (targetUserId) return; // ✅ 已找到就不再覆盖
-
-    const o = child.val();
-    const status = String(o.status || '').trim().toLowerCase();
-    const orderWallet = String(o.wallet || o.address || '')
-      .trim()
-      .toLowerCase();
-
-    if (
-      (
-        status === 'approved' ||   // ✅ 实际成功状态
-        status === 'success' ||
-        status === 'completed' ||
-        status === '成功'
-      ) &&
-      orderWallet === String(walletAddress).trim().toLowerCase() &&
-      o.userId
-    ) {
-      targetUserId = o.userId;
-    }
-  });
-}
-
-    if (!targetUserId) {
-      return res.status(403).json({
-        error: '校验失败，未找到匹配的提款记录'
-      });
-    }
-
-// =========================
-// 设置新的提款密码（最终正确版）
-// =========================
-
-// 1️⃣ 按你原本逻辑生成 hash（不改你的加密方式）
-const hashedPwd = await bcrypt.hash(newWithdrawPwd, 10);
-
-// 2️⃣ 🔴 真正写入用户表（这是之前缺失的关键一步）
-await db.ref(`users/${targetUserId}`).update({
-  withdrawPassword: hashedPwd
-});
-
-// 3️⃣ 只返回一次（给前端同步 localStorage 用）
-return res.json({
-  success: true,
-  newWithdrawPassword: newWithdrawPwd   // 明文，仅用于前端同步
-});
-
-  } catch (err) {
-    console.error('reset-withdraw-password error:', err);
-    return res.status(500).json({ error: '服务器错误' });
-  }
-});
 // ===== 工具函数：按时间倒序 =====
 function sortByTimeDesc(arr) {
   return (arr || []).sort(
@@ -1272,6 +1153,79 @@ async function ensureDefaultAdmin() {
 }
 ensureDefaultAdmin();
 
+// ===============================
+// 扫码登录（最终版｜真登录｜Cookie）
+// ===============================
+
+const QR_LOGIN_MAP = new Map();
+
+/**
+ * 1️⃣ 电脑端：创建二维码
+ */
+app.get('/api/create-qr-login', async (req, res) => {
+  const token = uuidv4();
+
+  QR_LOGIN_MAP.set(token, {
+    status: 'pending',
+    createdAt: Date.now()
+  });
+
+  const scanUrl =
+    `${process.env.PUBLIC_URL}/api/qr-login-confirm?token=${token}`;
+
+  const qr = await qrcode.toDataURL(scanUrl);
+
+  res.json({ token, qr });
+});
+
+/**
+ * 2️⃣ 电脑端：轮询状态
+ */
+app.get('/api/qr-login-status', (req, res) => {
+  const { token } = req.query;
+  const data = QR_LOGIN_MAP.get(token);
+
+  if (!data) return res.json({ status: 'expired' });
+
+  res.json({ status: data.status });
+});
+
+/**
+ * 3️⃣ 手机端：扫码确认（真登录）
+ */
+app.get('/api/qr-login-confirm', (req, res) => {
+  const { token } = req.query;
+  const data = QR_LOGIN_MAP.get(token);
+
+  if (!data) {
+    return res.send('❌ 二维码已失效');
+  }
+
+  // ✅ 标记成功
+  data.status = 'success';
+
+  // ✅ 模拟一个已登录用户（你以后可换成真实 userId）
+  const userId = 'qr_user_' + Date.now();
+
+  // ✅ 给电脑浏览器写 Cookie（真登录）
+  res.cookie('login_user', userId, {
+    httpOnly: false,
+    maxAge: 24 * 60 * 60 * 1000, // 1 天
+    sameSite: 'lax'
+  });
+
+  res.send('✅ 登录成功，可关闭此页面');
+});
+
+/**
+ * 4️⃣ 前端用来判断是否已登录
+ */
+app.get('/api/me', (req, res) => {
+  const user = req.cookies?.login_user;
+  if (!user) return res.json({ loggedIn: false });
+
+  res.json({ loggedIn: true, user });
+});
 
 /* ---------------------------------------------------------
    Start server
