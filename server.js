@@ -730,93 +730,97 @@ app.post('/api/order/withdraw', async (req, res) => {
 app.post('/api/admin/reset-withdraw-password', async (req, res) => {
   try {
     const {
-      userId,
-      verifyType,     // 'order' | 'address'
+      verifyType,       // 'order' | 'address'
       orderId,
       walletAddress,
       newWithdrawPwd
     } = req.body;
 
-    if (!userId || !newWithdrawPwd || !verifyType) {
-      return res.status(400).json({ error: '参数不完整' });
+    if (!verifyType || !newWithdrawPwd) {
+      return res.status(400).json({ error: '校验方式和新提款密码不能为空' });
     }
 
-    const userRef = db.ref(`users/${userId}`);
-    const userSnap = await userRef.once('value');
-    if (!userSnap.exists()) {
-      return res.status(404).json({ error: '用户不存在' });
+    if (!db) {
+      return res.status(500).json({ error: '数据库未连接' });
     }
 
-    let verified = false;
+    let targetUserId = null;
 
- // ===== 方式一：订单号校验 =====
-if (verifyType === 'order') {
-  if (!orderId) {
-    return res.status(400).json({ error: '缺少订单号' });
-  }
+    // =========================
+    // 方式一：订单号校验
+    // =========================
+    if (verifyType === 'order') {
+      if (!orderId) {
+        return res.status(400).json({ error: '缺少订单号' });
+      }
 
-  const snap = await db
-    .ref('orders/withdraw')
-    .orderByChild('orderId')
-    .equalTo(orderId)
-    .once('value');
+      const snap = await db
+        .ref('orders/withdraw')
+        .orderByChild('orderId')
+        .equalTo(orderId)
+        .once('value');
 
-  snap.forEach(child => {
-    const o = child.val();
-    if (
-      o.userId === userId &&
-      (o.status === 'success' || o.status === 'completed')
-    ) {
-      verified = true;
-    }
-  });
-}
-
-// ===== 方式二：钱包地址校验 =====
-if (verifyType === 'address') {
-  if (!walletAddress) {
-    return res.status(400).json({ error: '缺少钱包地址' });
-  }
-
-  const snap = await db
-    .ref('orders/withdraw')
-    .orderByChild('userId')
-    .equalTo(userId)
-    .once('value');
-
-  snap.forEach(child => {
-    const o = child.val();
-    if (
-      String(o.wallet || o.address || '').toLowerCase() ===
-      String(walletAddress).toLowerCase() &&
-      (o.status === 'success' || o.status === 'completed')
-    ) {
-      verified = true;
-    }
-  });
-}
-
-    if (!verified) {
-      return res.status(403).json({
-        error: '校验失败，订单号或钱包地址不匹配'
+      snap.forEach(child => {
+        const o = child.val();
+        if (
+          (o.status === 'success' || o.status === 'completed') &&
+          o.userId
+        ) {
+          targetUserId = o.userId;
+        }
       });
     }
 
-    // ===== 设置新的提款密码（加密）=====
+    // =========================
+    // 方式二：钱包地址校验
+    // =========================
+    if (verifyType === 'address') {
+      if (!walletAddress) {
+        return res.status(400).json({ error: '缺少钱包地址' });
+      }
+
+      const snap = await db
+        .ref('orders/withdraw')
+        .once('value');
+
+      snap.forEach(child => {
+        const o = child.val();
+        if (
+          (o.status === 'success' || o.status === 'completed') &&
+          String(o.wallet || o.address || '').toLowerCase() ===
+            String(walletAddress).toLowerCase() &&
+          o.userId
+        ) {
+          targetUserId = o.userId;
+        }
+      });
+    }
+
+    if (!targetUserId) {
+      return res.status(403).json({
+        error: '校验失败，未找到匹配的提款记录'
+      });
+    }
+
+    // =========================
+    // 设置新的提款密码
+    // =========================
     const hashedPwd = await bcrypt.hash(newWithdrawPwd, 10);
 
-    await userRef.update({
+    await db.ref(`users/${targetUserId}`).update({
       withdrawPassword: hashedPwd
     });
 
-    return res.json({ success: true });
+    return res.json({
+      success: true,
+      userId: targetUserId
+    });
 
   } catch (err) {
     console.error('reset-withdraw-password error:', err);
-    res.status(500).json({ error: '服务器错误' });
+    return res.status(500).json({ error: '服务器错误' });
   }
 });
-
 // ===== 工具函数：按时间倒序 =====
 function sortByTimeDesc(arr) {
   return (arr || []).sort(
