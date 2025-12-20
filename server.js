@@ -822,21 +822,23 @@ if (verifyType === 'address') {
       });
     }
 
-    // =========================
-    // 设置新的提款密码
-    // =========================
-    const hashedPwd = await bcrypt.hash(newWithdrawPwd, 10);
+// =========================
+// 设置新的提款密码（最终正确版）
+// =========================
 
-    res.json({
+// 1️⃣ 按你原本逻辑生成 hash（不改你的加密方式）
+const hashedPwd = await bcrypt.hash(newWithdrawPwd, 10);
+
+// 2️⃣ 🔴 真正写入用户表（这是之前缺失的关键一步）
+await db.ref(`users/${targetUserId}`).update({
+  withdrawPassword: hashedPwd
+});
+
+// 3️⃣ 只返回一次（给前端同步 localStorage 用）
+return res.json({
   success: true,
   newWithdrawPassword: newWithdrawPwd   // 明文，仅用于前端同步
 });
-
-
-    return res.json({
-      success: true,
-      userId: targetUserId
-    });
 
   } catch (err) {
     console.error('reset-withdraw-password error:', err);
