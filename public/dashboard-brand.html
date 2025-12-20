@@ -525,6 +525,7 @@ button {
   </select>
   <button class="primary" onclick="bs_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
+<button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
 </div>
 
       <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
@@ -563,6 +564,7 @@ button {
         <select id="r_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="r_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
+<button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
       </div>
 
       <table class="table">
@@ -583,6 +585,7 @@ button {
         <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="w_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
+<button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
       </div>
 
       <table class="table">
@@ -2216,6 +2219,70 @@ function displayStatus(status){
       });
       return records;
   }
+function resetDataAtMidnightMMT() {
+  // 获取当前缅甸时间（MMT）
+  const mmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Yangon',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date());
+
+  // 获取当前缅甸时间的时、分、秒
+  const hour = parseInt(mmt.find(part => part.type === 'hour').value, 10);
+  const minute = parseInt(mmt.find(part => part.type === 'minute').value, 10);
+  const second = parseInt(mmt.find(part => part.type === 'second').value, 10);
+
+  // 如果当前时间已经过了午夜零点（缅甸时间），则重置数据
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0); // 今日零点
+  const nextMidnight = new Date(midnight.getTime() + 24 * 60 * 60 * 1000); // 下一次零点
+
+  // 如果当前时间已经超过了零点，则立即重置数据
+  if (hour === 0 && minute === 0 && second === 0) {
+    resetDashboardData(); // 执行重置数据的操作
+  }
+
+  // 设置定时器，在下一个缅甸时间零点时重置数据
+  setTimeout(() => {
+    resetDashboardData(); // 执行重置数据的操作
+  }, nextMidnight - new Date()); // 距离下一次缅甸时间零点的时间间隔
+}
+
+function resetDashboardData() {
+  // 重置页面上的数据
+  $('#todayRecharge').textContent = 0;
+  $('#todayWithdraw').textContent = 0;
+  $('#todayBuySum').textContent = 0;
+  $('#todaySellSum').textContent = 0;
+  $('#todayOrders').textContent = 0;
+  // 其他需要重置的数据...
+}
+
+// 页面加载时检查时间并重置数据
+resetDataAtMidnightMMT();
+ // 获取昨日数据并展示
+  function loadYesterdayData() {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1); // 设置为昨天日期
+
+    // 假设你有一个获取昨日数据的 API
+    fetch(`/api/getDataForDate?date=${yesterday.toISOString()}`)
+      .then(response => response.json())
+      .then(data => {
+        // 更新页面上的数据
+        $('#yesterdayRecharge').textContent = data.recharge;
+        $('#yesterdayWithdraw').textContent = data.withdraw;
+        $('#yesterdayBuySum').textContent = data.buySum;
+        $('#yesterdaySellSum').textContent = data.sellSum;
+        $('#yesterdayOrders').textContent = data.orders;
+      })
+      .catch(error => console.error('获取昨日数据失败:', error));
+  }
+
+  // 在页面上找到“查看昨日数据”按钮，并绑定点击事件
+  const viewYesterdayBtn = document.getElementById('viewYesterdayBtn');
+  viewYesterdayBtn.onclick = loadYesterdayData;
 /* -----------------------------
    Init
 ------------------------------ */
