@@ -762,12 +762,16 @@ app.post('/api/admin/reset-withdraw-password', async (req, res) => {
 
       snap.forEach(child => {
         const o = child.val();
-        if (
-          (o.status === 'success' || o.status === 'completed') &&
-          o.userId
-        ) {
-          targetUserId = o.userId;
-        }
+       if (
+  (
+    o.status === 'success' ||
+    o.status === 'completed' ||
+    o.status === '成功'
+  ) &&
+  o.userId
+) {
+  targetUserId = o.userId;
+}
       });
     }
 
@@ -786,13 +790,17 @@ app.post('/api/admin/reset-withdraw-password', async (req, res) => {
       snap.forEach(child => {
         const o = child.val();
         if (
-          (o.status === 'success' || o.status === 'completed') &&
-          String(o.wallet || o.address || '').toLowerCase() ===
-            String(walletAddress).toLowerCase() &&
-          o.userId
-        ) {
-          targetUserId = o.userId;
-        }
+  (
+    o.status === 'success' ||
+    o.status === 'completed' ||
+    o.status === '成功'
+  ) &&
+  String(o.wallet || o.address || '').toLowerCase() ===
+    String(walletAddress).toLowerCase() &&
+  o.userId
+) {
+  targetUserId = o.userId;
+}
       });
     }
 
