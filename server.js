@@ -724,6 +724,99 @@ app.post('/api/order/withdraw', async (req, res) => {
     return res.status(500).json({ ok:false, error: e.message });
   }
 });
+// ================================
+// 管理员：通过订单号 / 钱包地址 重置用户提款密码
+// ================================
+app.post('/api/admin/reset-withdraw-password', async (req, res) => {
+  try {
+    const {
+      userId,
+      verifyType,     // 'order' | 'address'
+      orderId,
+      walletAddress,
+      newWithdrawPwd
+    } = req.body;
+
+    if (!userId || !newWithdrawPwd || !verifyType) {
+      return res.status(400).json({ error: '参数不完整' });
+    }
+
+    const userRef = db.ref(`users/${userId}`);
+    const userSnap = await userRef.once('value');
+    if (!userSnap.exists()) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+
+    let verified = false;
+
+ // ===== 方式一：订单号校验 =====
+if (verifyType === 'order') {
+  if (!orderId) {
+    return res.status(400).json({ error: '缺少订单号' });
+  }
+
+  const snap = await db
+    .ref('orders/withdraw')
+    .orderByChild('orderId')
+    .equalTo(orderId)
+    .once('value');
+
+  snap.forEach(child => {
+    const o = child.val();
+    if (
+      o.userId === userId &&
+      (o.status === 'success' || o.status === 'completed')
+    ) {
+      verified = true;
+    }
+  });
+}
+
+// ===== 方式二：钱包地址校验 =====
+if (verifyType === 'address') {
+  if (!walletAddress) {
+    return res.status(400).json({ error: '缺少钱包地址' });
+  }
+
+  const snap = await db
+    .ref('orders/withdraw')
+    .orderByChild('userId')
+    .equalTo(userId)
+    .once('value');
+
+  snap.forEach(child => {
+    const o = child.val();
+    if (
+      String(o.wallet || o.address || '').toLowerCase() ===
+      String(walletAddress).toLowerCase() &&
+      (o.status === 'success' || o.status === 'completed')
+    ) {
+      verified = true;
+    }
+  });
+}
+
+    if (!verified) {
+      return res.status(403).json({
+        error: '校验失败，订单号或钱包地址不匹配'
+      });
+    }
+
+    // ===== 设置新的提款密码（加密）=====
+    const hashedPwd = await bcrypt.hash(newWithdrawPwd, 10);
+
+    await userRef.update({
+      withdrawPassword: hashedPwd
+    });
+
+    return res.json({ success: true });
+
+  } catch (err) {
+    console.error('reset-withdraw-password error:', err);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
 // ===== 工具函数：按时间倒序 =====
 function sortByTimeDesc(arr) {
   return (arr || []).sort(
