@@ -749,60 +749,72 @@ app.post('/api/admin/reset-withdraw-password', async (req, res) => {
     // =========================
     // 方式一：订单号校验
     // =========================
-    if (verifyType === 'order') {
-      if (!orderId) {
-        return res.status(400).json({ error: '缺少订单号' });
-      }
+   if (verifyType === 'order') {
+  if (!orderId) {
+    return res.status(400).json({ error: '缺少订单号' });
+  }
 
-      const snap = await db
-        .ref('orders/withdraw')
-        .orderByChild('orderId')
-        .equalTo(orderId)
-        .once('value');
+  const snap = await db
+    .ref('orders/withdraw')
+    .orderByChild('orderId')
+    .equalTo(orderId)
+    .once('value');
 
-      snap.forEach(child => {
-        const o = child.val();
-       if (
-  (
-    o.status === 'success' ||
-    o.status === 'completed' ||
-    o.status === '成功'
-  ) &&
-  o.userId
-) {
-  targetUserId = o.userId;
-}
-      });
+  snap.forEach(child => {
+    if (targetUserId) return; // ✅ 已找到就不再覆盖
+
+    const o = child.val();
+    const status = String(o.status || '').trim().toLowerCase();
+
+    if (
+      (
+        status === 'approved' ||   // ✅ 实际成功状态
+        status === 'success' ||
+        status === 'completed' ||
+        status === '成功'
+      ) &&
+      o.userId
+    ) {
+      targetUserId = o.userId;
     }
-
-    // =========================
-    // 方式二：钱包地址校验
-    // =========================
-    if (verifyType === 'address') {
-      if (!walletAddress) {
-        return res.status(400).json({ error: '缺少钱包地址' });
-      }
-
-      const snap = await db
-        .ref('orders/withdraw')
-        .once('value');
-
-      snap.forEach(child => {
-        const o = child.val();
-        if (
-  (
-    o.status === 'success' ||
-    o.status === 'completed' ||
-    o.status === '成功'
-  ) &&
-  String(o.wallet || o.address || '').toLowerCase() ===
-    String(walletAddress).toLowerCase() &&
-  o.userId
-) {
-  targetUserId = o.userId;
+  });
 }
-      });
+
+// =========================
+// 方式二：钱包地址校验（修复版）
+// =========================
+if (verifyType === 'address') {
+  if (!walletAddress) {
+    return res.status(400).json({ error: '缺少钱包地址' });
+  }
+
+  const snap = await db
+    .ref('orders/withdraw')
+    .once('value');
+
+  snap.forEach(child => {
+    if (targetUserId) return; // ✅ 已找到就不再覆盖
+
+    const o = child.val();
+    const status = String(o.status || '').trim().toLowerCase();
+    const orderWallet = String(o.wallet || o.address || '')
+      .trim()
+      .toLowerCase();
+
+    if (
+      (
+        status === 'approved' ||   // ✅ 实际成功状态
+        status === 'success' ||
+        status === 'completed' ||
+        status === '成功'
+      ) &&
+      orderWallet === String(walletAddress).trim().toLowerCase() &&
+      o.userId
+    ) {
+      targetUserId = o.userId;
     }
+  });
+}
 
     if (!targetUserId) {
       return res.status(403).json({
