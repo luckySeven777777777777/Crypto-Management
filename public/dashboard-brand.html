@@ -526,6 +526,20 @@ button {
   <button class="primary" onclick="bs_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
 <button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
+<!-- 自动刷新设置 -->
+<select id="autoRefreshSelect_buysell"style="
+  margin-left:8px;
+  background:#1f2933;
+  color:#fff;
+  border:1px solid #444;
+  padding:6px 10px;
+  border-radius:4px;
+">
+  <option value="0">自动刷新：关闭</option>
+  <option value="15">自动刷新：15 秒</option>
+  <option value="30">自动刷新：30 秒</option>
+  <option value="60">自动刷新：60 秒</option>
+</select>
 </div>
 
       <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
@@ -565,6 +579,20 @@ button {
         <button class="primary" onclick="r_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
 <button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
+<!-- 自动刷新设置 -->
+<select id="autoRefreshSelect_recharge"style="
+  margin-left:8px;
+  background:#1f2933;
+  color:#fff;
+  border:1px solid #444;
+  padding:6px 10px;
+  border-radius:4px;
+">
+  <option value="0">自动刷新：关闭</option>
+  <option value="15">自动刷新：15 秒</option>
+  <option value="30">自动刷新：30 秒</option>
+  <option value="60">自动刷新：60 秒</option>
+</select>
       </div>
 
       <table class="table">
@@ -586,6 +614,20 @@ button {
         <button class="primary" onclick="w_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
 <button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
+<!-- 自动刷新设置 -->
+<select id="autoRefreshSelect_draw"style="
+  margin-left:8px;
+  background:#1f2933;
+  color:#fff;
+  border:1px solid #444;
+  padding:6px 10px;
+  border-radius:4px;
+">
+  <option value="0">自动刷新：关闭</option>
+  <option value="15">自动刷新：15 秒</option>
+  <option value="30">自动刷新：30 秒</option>
+  <option value="60">自动刷新：60 秒</option>
+</select>
       </div>
 
       <table class="table">
@@ -2360,6 +2402,52 @@ async function resetWithdrawPwd() {
     alert(data.error || '请求失败，请稍后再试');
   }
 }
+let autoRefreshTimer = null;
+
+function initAutoRefresh(selectId, refreshFn) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  const key = selectId + '_value';
+  const saved = localStorage.getItem(key);
+  if (saved) select.value = saved;
+
+  if (saved && saved !== '0') {
+    startTimer(saved, refreshFn);
+  }
+
+  select.addEventListener('change', () => {
+    const sec = select.value;
+    localStorage.setItem(key, sec);
+    stopTimer();
+    if (sec !== '0') startTimer(sec, refreshFn);
+  });
+}
+
+function startTimer(sec, fn) {
+  stopTimer();
+  autoRefreshTimer = setInterval(fn, sec * 1000);
+}
+
+function stopTimer() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+}
+
+/* 分页面初始化 */
+initAutoRefresh('autoRefreshSelect_recharge', () => {
+  if (typeof r_search === 'function') r_search();
+});
+
+initAutoRefresh('autoRefreshSelect_draw', () => {
+  if (typeof w_search === 'function') w_search();
+});
+
+initAutoRefresh('autoRefreshSelect_buysell', () => {
+  if (typeof bs_search === 'function') bs_search();
+});
 /* -----------------------------
    Init
 ------------------------------ */
