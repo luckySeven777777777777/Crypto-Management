@@ -2530,51 +2530,6 @@ else {
     alert(data.error || '校验失败，无法重置');
   }
 }
-/* ================================
-   控制台：每日 0 点自动清零统计
-   不影响订单 / 下载 / 历史记录
-================================ */
-
-function getTodayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-}
-
-function resetDashboardStats() {
-  const resetKeys = [
-    'todayDeposit',
-    'todayWithdraw',
-    'todayBuyTotal',
-    'todaySellTotal',
-    'todayProfit',
-    'todayOrders',
-    'todayReject',
-    'todayPending'
-  ];
-
-  resetKeys.forEach(k => {
-    localStorage.setItem(k, '0');
-  });
-
-  console.log('[Dashboard] 已过 0 点，今日统计已清零');
-}
-
-function checkDashboardDate() {
-  const today = getTodayKey();
-  const lastDay = localStorage.getItem('dashboard_last_day');
-
-  if (lastDay !== today) {
-    resetDashboardStats();
-    localStorage.setItem('dashboard_last_day', today);
-  }
-}
-
-// 页面加载立即检查一次
-checkDashboardDate();
-
-// 每 60 秒检查一次（防止一直不刷新）
-setInterval(checkDashboardDate, 60 * 1000);
-
 </script>
 </body>
 </html>
