@@ -2279,16 +2279,33 @@ function displayStatus(status){
   }
 
   function getTableRecords() {
-      const rows = document.querySelectorAll(".table tr");
-      const records = [];
-      rows.forEach(row => {
-          const cells = row.querySelectorAll("td");
-          if (cells.length > 0) {
-              records.push(Array.from(cells).map(cell => cell.innerText));
-          }
-      });
-      return records;
-  }
+  const rows = document.querySelectorAll(".table tbody tr");
+  const records = [];
+
+  rows.forEach(row => {
+    const cells = row.querySelectorAll("td");
+    if (!cells.length) return;
+
+    const rowData = [];
+
+    cells.forEach((cell, index) => {
+      // ❌ 跳过「操作」「备注」两列
+      if (index === cells.length - 2) return;
+      if (index === cells.length - 1) return;
+
+      rowData.push(
+        cell.innerText
+          .replace(/\s+/g, ' ')
+          .trim()
+      );
+    });
+
+    records.push(rowData);
+  });
+
+  return records;
+}
+
 function resetDataAtMidnightMMT() {
   // 获取当前缅甸时间（MMT）
   const mmt = new Intl.DateTimeFormat('en-GB', {
