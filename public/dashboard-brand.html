@@ -525,7 +525,7 @@ button {
   </select>
   <button class="primary" onclick="bs_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
-<button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
+<button class="primary view-yesterday-btn">查看昨日数据</button>
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_buysell"style="
   margin-left:8px;
@@ -578,7 +578,7 @@ button {
         <select id="r_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="r_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
-<button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
+<button class="primary view-yesterday-btn">查看昨日数据</button>
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_recharge"style="
   margin-left:8px;
@@ -613,7 +613,7 @@ button {
         <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="w_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
-<button class="primary" id="viewYesterdayBtn">查看昨日数据</button>
+<button class="primary view-yesterday-btn">查看昨日数据</button>
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_draw"style="
   margin-left:8px;
@@ -2464,6 +2464,58 @@ initAutoRefresh('autoRefreshSelect_draw', () => {
 
 initAutoRefresh('autoRefreshSelect_buysell', () => {
   if (typeof bs_search === 'function') bs_search();
+});
+/* ===============================
+   查看昨日数据（统一修复版）
+=============================== */
+
+function getYesterdayRange() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+
+  return {
+    start: dateStr,
+    end: dateStr
+  };
+}
+
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest('.view-yesterday-btn');
+  if (!btn) return;
+
+  const activePage =
+    document.querySelector('.sidebar .icon.active')?.dataset.page;
+
+  if (!activePage) return;
+
+  const { start, end } = getYesterdayRange();
+
+  if (activePage === 'buysell') {
+    document.getElementById('bs_start').value = start;
+    document.getElementById('bs_end').value = end;
+    pageState.bs = 1;
+    bs_search();
+  }
+
+  if (activePage === 'recharge') {
+    document.getElementById('r_start').value = start;
+    document.getElementById('r_end').value = end;
+    pageState.r = 1;
+    r_search();
+  }
+
+  if (activePage === 'withdraw') {
+    document.getElementById('w_start').value = start;
+    document.getElementById('w_end').value = end;
+    pageState.w = 1;
+    w_search();
+  }
 });
 /* -----------------------------
    Init
