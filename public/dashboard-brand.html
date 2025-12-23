@@ -2583,5 +2583,54 @@ else {
   }
 }
 </script>
+<script>
+/**
+ * 今日统计自动清零 & 自动恢复
+ * 不影响任何现有功能
+ */
+
+(function () {
+  const TODAY_KEY = 'dashboard_today_date';
+
+  function getToday() {
+    const d = new Date();
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+
+  function resetTodayStats() {
+    //⚠️ 只清“今日相关”
+    localStorage.setItem('today_recharge', '0');
+    localStorage.setItem('today_withdraw', '0');
+
+    // 若你是用 innerText 渲染
+    const rechargeEl = document.querySelector('[data-today-recharge]');
+    const withdrawEl = document.querySelector('[data-today-withdraw]');
+
+    if (rechargeEl) rechargeEl.innerText = '0';
+    if (withdrawEl) withdrawEl.innerText = '0';
+
+    console.log('[Dashboard] 已跨天，今日统计已清零');
+  }
+
+  function checkDayChange() {
+    const today = getToday();
+    const saved = localStorage.getItem(TODAY_KEY);
+
+    if (saved !== today) {
+      localStorage.setItem(TODAY_KEY, today);
+      resetTodayStats();
+    }
+  }
+
+  // 页面加载立即检查一次
+  checkDayChange();
+
+  // 每 60 秒检查一次是否跨天（不用刷新页面）
+  setInterval(checkDayChange, 60 * 1000);
+})();
+</script>
+
 </body>
 </html>
