@@ -696,6 +696,69 @@ app.post('/api/order/recharge', async (req, res) => {
     return res.json({ ok:true, orderId: id });
   } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
 });
+/* ---------------------------------------------------------
+   PLAN order endpoint  ✅【新增】
+--------------------------------------------------------- */
+app.post('/api/order/plan', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+    const {
+      userId,
+      user,
+      plan,
+      amount,          // 用户输入 USDT
+      estimated,       // 预计 USDT
+      received,        // 实际币数量
+      currency         // ETH / BTC / USDT
+    } = req.body;
+
+    const uid = userId || user;
+    if (!uid) return res.status(400).json({ ok:false, error:'missing user' });
+    if (!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+
+    await ensureUserExists(uid);
+
+    // 生成订单 & 保存
+    const orderId = await saveOrder('plan', {
+      userId: uid,
+      plan,
+      amount: Number(amount),
+      estimate: Number(estimated),
+      coin: currency,
+      coinQty: received,
+      status: 'pending'
+    });
+
+    // ===============================
+    // 🤖 Telegram 机器人通知（你要的格式）
+    // ===============================
+    const msg = `
+💰 New Order Created
+━━━━━━━━━━━━━━
+📌 Order ID: ${orderId}
+💵 Amount: ${amount} USD
+💹 Estimated Amount: ${estimated} USDT
+✅ Received Amount: ${received} ${currency}
+🪙 Currency: ${currency}
+📦 Plan: ${plan}
+👤 User: WEB-USER
+━━━━━━━━━━━━━━
+`;
+
+    try {
+      bot.sendMessage(process.env.GROUP_CHAT_ID, msg);
+    } catch(e){
+      console.error('TG send failed:', e.message);
+    }
+
+    return res.json({ ok:true, orderId });
+
+  } catch (e) {
+    console.error('PLAN order error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
 
 /* ---------------------------------------------------------
    Withdraw endpoint (deduct immediately)
