@@ -15,56 +15,6 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
-// ===== Telegram Notify (ADD HERE) =====
-const TG_TOKEN = process.env.BOT_TOKEN;
-const TG_GROUP_ID = process.env.GROUP_ID;
-
-async function sendTelegramGroup(text) {
-  if (!TG_TOKEN || !TG_GROUP_ID) {
-    console.error("Telegram env missing", {
-      BOT_TOKEN: !!TG_TOKEN,
-      GROUP_ID: TG_GROUP_ID
-    });
-    return;
-  }
-
-  try {
-    await axios.post(
-      `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,
-      {
-        chat_id: TG_GROUP_ID,
-        text,
-        parse_mode: "Markdown"
-      }
-    );
-  } catch (e) {
-    console.error(
-      "sendTelegramGroup error:",
-      e.response?.data || e.message
-    );
-  }
-}
-
-async function sendTelegramUser(chatId, text) {
-  if (!TG_TOKEN || !chatId) return;
-
-  try {
-    await axios.post(
-      `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,
-      {
-        chat_id: chatId,
-        text,
-        parse_mode: "Markdown"
-      }
-    );
-  } catch (e) {
-    console.error(
-      "sendTelegramUser error:",
-      e.response?.data || e.message
-    );
-  }
-}
-// ===== Telegram Notify END =====
 
 
 /* --------------------- Global safety handlers --------------------- */
@@ -616,7 +566,6 @@ async function saveOrder(type, data){
     }
   }
 
-
   // SSE 广播
   try {
     broadcastSSE({
@@ -635,35 +584,6 @@ async function saveOrder(type, data){
       });
     }
   } catch(e){}
-  // ===============================
-  // 🔔 Telegram 通知（PLAN / ORDER）
-  // ===============================
-  try {
-    if (type === 'plan') {
-      const msg =
-`💰 New Order Created
-
-📌 Order ID: ${payload.orderId}
-💵 Amount: ${payload.amount} ${payload.currency || 'USDT'}
-
-📈 DAILY REVENUE: ${payload.meta?.dailyRevenue || '-'}
-🎲 Available for purchase: ${payload.meta?.available || '-'}
-⚡️ Remaining number: ${payload.meta?.remaining || '-'}
-
-🪙 Currency: ${payload.currency || 'USDT'}
-📦 Plan: ${payload.note || payload.meta?.plan || 'PLAN'}
-👤 User: ${payload.userId || 'WEB-USER'}
-`;
-
-      sendTelegramGroup(msg);
-
-      if (payload.telegramId) {
-        sendTelegramUser(payload.telegramId, msg);
-      }
-    }
-  } catch(e) {
-    console.error('PLAN telegram notify failed', e);
-  }
 
   return id;
 }
@@ -760,52 +680,6 @@ const id = await saveOrder('buysell', {
 }
 app.post('/proxy/buysell', handleBuySellRequest);
 app.post('/api/order/buysell', handleBuySellRequest);
-/* ---------------------------------------------------------
-   PLAN order endpoint  ✅ 新增
---------------------------------------------------------- */
-app.post('/api/order/plan', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
-
-    const {
-      orderId,
-      amount,
-      currency,
-      plan,
-      rateMin,
-      rateMax,
-      limit,
-      remaining,
-      user
-    } = req.body;
-
-    const userId = user || 'WEB-USER';
-
-    const id = await saveOrder('plan', {
-      orderId,
-      userId,
-      amount,
-      currency: currency || 'USDT',
-      note: plan,
-      meta: {
-        dailyRevenue: `${rateMin}% - ${rateMax}%`,
-        available: Number(limit),
-        remaining: Number(remaining)
-      },
-      status: 'created'
-    });
-
-    // ✅ 这里什么都不做，直接返回
-    return res.json({ ok:true, orderId: id });
-
-  } catch (e) {
-    console.error('PLAN order error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-
-    /* =============================== */
-/* 🔼🔼🔼 PLAN 接口到此结束 🔼🔼🔼 */
 
 /* ---------------------------------------------------------
    Recharge endpoint
