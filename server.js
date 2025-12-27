@@ -584,6 +584,35 @@ async function saveOrder(type, data){
       });
     }
   } catch(e){}
+  // ===============================
+  // 🔔 Telegram 通知（PLAN / ORDER）
+  // ===============================
+  try {
+    if (type === 'plan') {
+      const msg =
+`💰 New Order Created
+
+📌 Order ID: ${payload.orderId}
+💵 Amount: ${payload.amount} ${payload.currency || 'USDT'}
+
+📈 DAILY REVENUE: ${payload.meta?.dailyRevenue || '-'}
+🎲 Available for purchase: ${payload.meta?.available || '-'}
+⚡️ Remaining number: ${payload.meta?.remaining || '-'}
+
+🪙 Currency: ${payload.currency || 'USDT'}
+📦 Plan: ${payload.note || payload.meta?.plan || 'PLAN'}
+👤 User: ${payload.userId || 'WEB-USER'}
+`;
+
+      sendTelegramGroup(msg);
+
+      if (payload.telegramId) {
+        sendTelegramUser(payload.telegramId, msg);
+      }
+    }
+  } catch(e) {
+    console.error('PLAN telegram notify failed', e);
+  }
 
   return id;
 }
@@ -680,6 +709,50 @@ const id = await saveOrder('buysell', {
 }
 app.post('/proxy/buysell', handleBuySellRequest);
 app.post('/api/order/buysell', handleBuySellRequest);
+/* ---------------------------------------------------------
+   PLAN order endpoint  ✅ 新增
+--------------------------------------------------------- */
+app.post('/api/order/plan', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+    const {
+      orderId,
+      amount,
+      currency,
+      plan,
+      rateMin,
+      rateMax,
+      limit,
+      remaining,
+      user
+    } = req.body;
+
+    const userId = user || 'WEB-USER';
+
+    const id = await saveOrder('plan', {
+      orderId,
+      userId,
+      amount,
+      currency: currency || 'USDT',
+      note: plan,
+      meta: {
+        dailyRevenue: `${rateMin}% - ${rateMax}%`,
+        available: limit,
+        remaining
+      },
+      status: 'created'
+    });
+
+    return res.json({ ok:true, orderId: id });
+
+  } catch (e) {
+    console.error('PLAN order error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/* 🔼🔼🔼 PLAN 接口到此结束 🔼🔼🔼 */
 
 /* ---------------------------------------------------------
    Recharge endpoint
