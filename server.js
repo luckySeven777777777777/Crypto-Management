@@ -244,6 +244,43 @@ function calcEstimateUSDT(amount, coin){
   if(!p) return null;
   return Number((safeNumber(amount, 0) * p).toFixed(4));
 }
+/* 🔥🔥🔥 只允许加在这里（开始）🔥🔥🔥 */
+async function sendTelegramOrder(payload) {
+  try {
+    const token = process.env.BOT_TOKEN;
+    const chatId = process.env.GROUP_ID;
+    if (!token || !chatId) return;
+
+    const orderId = payload.orderId || "UNKNOWN";
+    const amount  = payload.amount || 0;
+    const coin    = payload.coin || payload.currency || "ETH";
+    const user    = payload.userId || payload.user || "WEB-USER";
+    const type    = payload.type ? payload.type.toUpperCase() : "PLAN";
+
+    const text =
+`💰 New Order Created
+━━━━━━━━━━━━━━
+📌 Order ID: ${orderId}
+💵 Amount: ${amount} USD
+DAILY REVENUE: 1.6% - 1.7%
+Available for purchase: 1
+Remaining number: 1
+🪙 Currency: ${coin}
+📦 Plan: ${type}
+👤 User: ${user}`;
+
+    await axios.post(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        chat_id: chatId,
+        text
+      }
+    );
+  } catch (e) {
+    console.error("Telegram notify error:", e.message);
+  }
+}
+/* 🔥🔥🔥 只允许加在这里（结束）🔥🔥🔥 */
 /* ---------------------------------------------------------
    SSE utilities
 --------------------------------------------------------- */
@@ -539,7 +576,7 @@ async function saveOrder(type, data){
   };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
-
+ sendTelegramOrder(payload);
   // user_orders 索引
   if (payload.userId) {
     try {
