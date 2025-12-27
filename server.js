@@ -89,48 +89,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname,'public')));
-/* ===============================
-   🔔 Telegram Notify（就插这里）
-   =============================== */
-
-const TELEGRAM_BOT_TOKEN = process.env.TG_BOT_TOKEN;
-const TELEGRAM_CHAT_ID  = process.env.TG_CHAT_ID;
-
-async function sendTelegramOrder(data) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.log("Telegram not configured");
-    return;
-  }
-
-  const text =
-`💰 New Order Created
-
-📌 Order ID: ${data.orderId}
-💵 Amount: ${data.amount} USD
-
-📈 DAILY REVENUE:
-${data.rateMin}% - ${data.rateMax}%
-
-🎲 Available for purchase: ${data.limit}
-⚡️ Remaining number: ${data.remaining}
-
-🪙 Currency: ${data.currency}
-📦 Plan: ${data.plan}
-👤 User: ${data.user}
-`;
-
-  await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text
-      })
-    }
-  );
-}
 
 /* ---------------------------------------------------------
    Firebase RTDB init (optional)
@@ -286,56 +244,6 @@ function calcEstimateUSDT(amount, coin){
   if(!p) return null;
   return Number((safeNumber(amount, 0) * p).toFixed(4));
 }
-/* 🔥🔥🔥 只允许加在这里（开始）🔥🔥🔥 */
-async function sendTelegramOrder(payload) {
-  try {
-    const token = process.env.BOT_TOKEN;
-    const chatId = process.env.GROUP_ID;
-    if (!token || !chatId) return;
-
-    const orderId = payload.orderId || "UNKNOWN";
-    const amount  = payload.amount || 0;
-    const currency = payload.currency || payload.coin || "USDT";
-    const plan    = payload.plan || payload.note || "A PLAN — 1 DAY";
-    const user    = payload.user || payload.userId || "WEB-USER";
-
-    // 下面这三个字段，如果前端/后端没传，就显示 --
-    const dailyRevenue = payload.dailyRevenue || "--";
-    const available    = payload.available || "--";
-    const remaining    = payload.remaining || "--";
-
-    const text =
-`💰 New Order Created
-
-📌 Order ID: ${orderId}
-
-💵 Amount: ${amount} USD
-
-📈 DAILY REVENUE: ${dailyRevenue}
-
-🎲 Available for purchase: ${available}
-
-⚡️ Remaining number: ${remaining}
-
-🪙 Currency: ${currency}
-
-📦 Plan: ${plan}
-
-👤 User: ${user}`;
-
-    await axios.post(
-      `https://api.telegram.org/bot${token}/sendMessage`,
-      {
-        chat_id: chatId,
-        text
-      }
-    );
-
-  } catch (e) {
-    console.error("Telegram notify error:", e.message);
-  }
-}
-/* 🔥🔥🔥 只允许加在这里（结束）🔥🔥🔥 */
 /* ---------------------------------------------------------
    SSE utilities
 --------------------------------------------------------- */
@@ -600,12 +508,6 @@ async function saveOrder(type, data){
   const allowed = [
   'userId','user','amount','coin','side','converted','coinQty',
   'tp','sl','note','meta','orderId','status','deducted','wallet','ip','currency'
- // ✅ PLAN 必需字段（新增）
-  'rateMin',
-  'rateMax',
-  'limit',
-  'remaining',
-  'plan'
 ];
 
 
@@ -637,7 +539,7 @@ async function saveOrder(type, data){
   };
 
   await db.ref(`orders/${type}/${id}`).set(payload);
- sendTelegramOrder(payload);
+
   // user_orders 索引
   if (payload.userId) {
     try {
@@ -685,54 +587,7 @@ async function saveOrder(type, data){
 
   return id;
 }
-/* ---------------------------------------------------------
-   PLAN order endpoint (🔥你缺的就是这个🔥)
---------------------------------------------------------- */
-app.post('/api/order/plan', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
 
-    const { orderId, amount, currency, plan, user, userId } = req.body || {};
-    const uid = userId || user;
-
-    if (!uid || !amount) {
-      return res.status(400).json({
-        ok: false,
-        message: 'missing user or amount'
-      });
-    }
-
-    await ensureUserExists(uid);
-
-    // ✅ 统一用 saveOrder
-    const id = await saveOrder('plan', {
-      orderId,
-      userId: uid,
-      amount,
-      currency: currency || 'USDT',
-      note: plan || 'PLAN',
-       // ✅ 接住前端字段
-  rateMin: req.body.rateMin,
-  rateMax: req.body.rateMax,
-  limit: req.body.limit,
-  remaining: req.body.remaining,
-
-      status: 'created'
-    });
-
-    return res.json({
-      ok: true,
-      orderId: id
-    });
-
-  } catch (err) {
-    console.error('PLAN ORDER ERROR:', err);
-    return res.status(500).json({
-      ok: false,
-      message: err.message
-    });
-  }
-});
 /* ---------------------------------------------------------
    BuySell endpoints
    - /proxy/buysell kept for legacy frontends
