@@ -15,6 +15,56 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
+// ===== Telegram Notify (ADD HERE) =====
+const TG_TOKEN = process.env.BOT_TOKEN;
+const TG_GROUP_ID = process.env.GROUP_ID;
+
+async function sendTelegramGroup(text) {
+  if (!TG_TOKEN || !TG_GROUP_ID) {
+    console.error("Telegram env missing", {
+      BOT_TOKEN: !!TG_TOKEN,
+      GROUP_ID: TG_GROUP_ID
+    });
+    return;
+  }
+
+  try {
+    await axios.post(
+      `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,
+      {
+        chat_id: TG_GROUP_ID,
+        text,
+        parse_mode: "Markdown"
+      }
+    );
+  } catch (e) {
+    console.error(
+      "sendTelegramGroup error:",
+      e.response?.data || e.message
+    );
+  }
+}
+
+async function sendTelegramUser(chatId, text) {
+  if (!TG_TOKEN || !chatId) return;
+
+  try {
+    await axios.post(
+      `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,
+      {
+        chat_id: chatId,
+        text,
+        parse_mode: "Markdown"
+      }
+    );
+  } catch (e) {
+    console.error(
+      "sendTelegramUser error:",
+      e.response?.data || e.message
+    );
+  }
+}
+// ===== Telegram Notify END =====
 
 
 /* --------------------- Global safety handlers --------------------- */
@@ -566,6 +616,7 @@ async function saveOrder(type, data){
     }
   }
 
+
   // SSE 广播
   try {
     broadcastSSE({
@@ -738,12 +789,13 @@ app.post('/api/order/plan', async (req, res) => {
       note: plan,
       meta: {
         dailyRevenue: `${rateMin}% - ${rateMax}%`,
-        available: limit,
-        remaining
+        available: Number(limit),
+        remaining: Number(remaining)
       },
       status: 'created'
     });
 
+    // ✅ 这里什么都不做，直接返回
     return res.json({ ok:true, orderId: id });
 
   } catch (e) {
@@ -752,6 +804,7 @@ app.post('/api/order/plan', async (req, res) => {
   }
 });
 
+    /* =============================== */
 /* 🔼🔼🔼 PLAN 接口到此结束 🔼🔼🔼 */
 
 /* ---------------------------------------------------------
