@@ -540,6 +540,9 @@ button {
   <option value="30">自动刷新：30 秒</option>
   <option value="60">自动刷新：60 秒</option>
 </select>
+<button class="primary" onclick="resetBuySellPage()" style="margin-left:8px;">
+  重置
+</button>
 </div>
 
       <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
@@ -593,6 +596,9 @@ button {
   <option value="30">自动刷新：30 秒</option>
   <option value="60">自动刷新：60 秒</option>
 </select>
+<button class="primary" onclick="resetRechargePage()" style="margin-left:8px;">
+  重置
+</button>
       </div>
 
       <table class="table">
@@ -628,6 +634,9 @@ button {
   <option value="30">自动刷新：30 秒</option>
   <option value="60">自动刷新：60 秒</option>
 </select>
+<button class="primary" onclick="resetWithdrawPage()" style="margin-left:8px;">
+  重置
+</button>
       </div>
 
       <table class="table">
@@ -2528,6 +2537,72 @@ document.addEventListener('click', function (e) {
     w_search();
   }
 });
+function resetBuySellPage() {
+  const page = document.getElementById('page-buysell');
+  if (!page) return;
+
+  page.querySelectorAll('input').forEach(el => {
+    if (el.type === 'text' || el.type === 'date') {
+      el.value = '';
+    }
+  });
+
+  page.querySelectorAll('select').forEach(el => {
+    el.selectedIndex = 0;
+  });
+
+  if (window.autoRefreshTimer_buysell) {
+    clearInterval(window.autoRefreshTimer_buysell);
+    window.autoRefreshTimer_buysell = null;
+  }
+
+  location.reload();
+}
+function resetRechargePage() {
+  const page = document.getElementById('page-recharge');
+  if (!page) return;
+
+  const ids = ['r_start', 'r_end', 'r_wallet', 'r_currency', 'r_status'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') el.selectedIndex = 0;
+    else el.value = '';
+  });
+
+  const autoSel = document.getElementById('autoRefreshSelect_recharge');
+  if (autoSel) autoSel.selectedIndex = 0;
+
+  if (window.autoRefreshTimer_recharge) {
+    clearInterval(window.autoRefreshTimer_recharge);
+    window.autoRefreshTimer_recharge = null;
+  }
+
+  location.reload();
+}
+function resetWithdrawPage() {
+  const page = document.getElementById('page-withdraw');
+  if (!page) return;
+
+  const ids = ['w_start', 'w_end', 'w_wallet', 'w_currency', 'w_status'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') el.selectedIndex = 0;
+    else el.value = '';
+  });
+
+  const autoSel = document.getElementById('autoRefreshSelect_withdraw');
+  if (autoSel) autoSel.selectedIndex = 0;
+
+  if (window.autoRefreshTimer_withdraw) {
+    clearInterval(window.autoRefreshTimer_withdraw);
+    window.autoRefreshTimer_withdraw = null;
+  }
+
+  location.reload();
+}
+
 /* -----------------------------
    Init
 ------------------------------ */
