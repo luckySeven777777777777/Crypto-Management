@@ -2635,39 +2635,38 @@ else {
 ===================================================== */
 async function autoCalcDashboardStats() {
   try {
-    // ✅ 使用你现有的接口
     const res = await fetch('/api/orders');
-    const data = await res.json();
+    const list = await res.json();
 
-    const today = new Date().toISOString().slice(0,10);
+    const today = new Date().toISOString().slice(0, 10);
 
     let todayDeposit = 0;
     let todayWithdraw = 0;
-    let buy = 0;
-    let sell = 0;
     let rejected = 0;
     let pending = 0;
-    let risk = 0;
+    let buy = 0;
+    let sell = 0;
     let count = 0;
 
-    (data || []).forEach(o => {
-      const d = (o.createdAt || '').slice(0,10);
-      const amt = Number(o.amount || 0);
+    (list || []).forEach(o => {
+      const date = (o.time || '').slice(0, 10);
+      const amt = Number(o.usdt || o.amount || 0);
 
       // ===== 今日充值 / 提款 =====
-      if (d === today) {
-        if (o.category === 'deposit' && o.state === 'success') todayDeposit += amt;
-        if (o.category === 'withdraw' && o.state === 'success') todayWithdraw += amt;
+      if (date === today) {
+        if (o.type === '充值' && o.status === '成功') {
+          todayDeposit += amt;
+        }
+        if (o.type === '提款' && o.status === '成功') {
+          todayWithdraw += amt;
+        }
       }
 
-      // ===== 状态统计 =====
-      if (o.state === 'rejected') rejected++;
-      if (o.state === 'pending') pending++;
+      // ===== 状态统计（重点修复）=====
+      if (o.status === '处理中') pending++;
+      if (o.status === '失败') rejected++;
 
-      // ===== 风控 =====
-      if (o.risk === true || o.risk_level > 0) risk++;
-
-      // ===== Buy / Sell =====
+      // ===== Buy / Sell（如果有）=====
       if (o.side === 'buy') buy += amt;
       if (o.side === 'sell') sell += amt;
 
@@ -2676,21 +2675,18 @@ async function autoCalcDashboardStats() {
 
     const profit = sell - buy;
 
-    /* ===== 注入到控制台 ===== */
+    // ===== 注入控制台 =====
     setText('todayDeposit', todayDeposit);
     setText('todayWithdraw', todayWithdraw);
-    setText('totalProfit', profit);
-
     setText('rejectedCount', rejected);
     setText('pendingCount', pending);
-    setText('riskCount', risk);
-
     setText('buyTotal', buy);
     setText('sellTotal', sell);
     setText('orderCount', count);
+    setText('totalProfit', profit);
 
   } catch (e) {
-    console.error('AUTO STATS ERROR', e);
+    console.error('AUTO DASHBOARD STATS ERROR', e);
   }
 }
 
