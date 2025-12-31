@@ -1169,34 +1169,45 @@ function renderActionButtons(orderId, type, processed, status){
     if(active === 'orders') return '';
   }catch(e){}
 
-  const disabledAttr = processed ? 'disabled' : '';
+  // ===== 状态判断 =====
+  const isLocked = status === 'locked';
+  const isProcessed = processed;
+
+  // 通过 / 拒绝：
+  // 1️⃣ 已处理 → 禁用
+  // 2️⃣ 被锁定 → 禁用
+  const approveRejectDisabled =
+    isProcessed || isLocked ? 'disabled' : '';
+
+  // 锁定按钮：已经 locked 就禁用
+  const lockDisabled =
+    isLocked ? 'disabled' : '';
 
   return `
-    <button class="small-btn confirm-btn"
-  onclick="txAction(this,'${orderId}','${type}','approve')">
-  通过✔
-</button>
+    <button class="small-btn confirm-btn" ${approveRejectDisabled}
+      onclick="txAction(this,'${orderId}','${type}','approve')">
+      通过✔
+    </button>
 
-    <button class="small-btn cancel-btn" ${disabledAttr}
-  onclick="txAction(this,'${orderId}','${type}','reject')">
-  拒绝❌
-</button>
+    <button class="small-btn cancel-btn" ${approveRejectDisabled}
+      onclick="txAction(this,'${orderId}','${type}','reject')">
+      拒绝❌
+    </button>
 
-   <button class="small-btn lock-btn"
-  onclick="txAction(this,'${orderId}','${type}','lock')">
-  锁定🔒
-</button>
+    <button class="small-btn lock-btn" ${lockDisabled}
+      onclick="txAction(this,'${orderId}','${type}','lock')">
+      锁定🔒
+    </button>
 
     <button class="small-btn unlock-btn"
-  onclick="txAction(this,'${orderId}','${type}','unlock')">
-  已解锁🔓
-</button>
+      onclick="txAction(this,'${orderId}','${type}','unlock')">
+      已解锁🔓
+    </button>
 
     <button class="small-btn"
-  onclick="addRemark('${orderId}','${type}','${status}')">
-  备注📝
-</button>
-
+      onclick="addRemark('${orderId}','${type}','${status}')">
+      备注📝
+    </button>
   `;
 }
 /* -----------------------------
