@@ -1499,7 +1499,10 @@ function calcSummary(list, type){
     total: 0
   };
 
-  list
+  // ✅ 关键修复：只统计“今天”的订单
+  const todayList = list.filter(isTodayOrder);
+
+  todayList
     .filter(o => o.status === 'success')
     .forEach(o => {
       // 🔥 唯一金额来源
