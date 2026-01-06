@@ -371,58 +371,6 @@ app.get('/wallet/:uid/balance', async (req, res) => {
     return res.status(500).json({ ok:false, error: e.message });
   }
 });
-/* ---------------------------------------------------------
-   Wallet internal deduct (PLAN / TRADE 用)
---------------------------------------------------------- */
-app.post('/wallet/:uid/deduct', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
-
-    const uid = String(req.params.uid || '').trim();
-    const amount = Number(req.body.amount || 0);
-
-    if (!isSafeUid(uid))
-      return res.status(400).json({ ok:false, error:'invalid uid' });
-
-    if (amount <= 0)
-      return res.status(400).json({ ok:false, error:'invalid amount' });
-
-    await ensureUserExists(uid);
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const curBal = snap.exists()
-      ? safeNumber(snap.val().balance, 0)
-      : 0;
-
-    if (curBal < amount) {
-      return res.status(400).json({ ok:false, error:'Insufficient balance' });
-    }
-
-    const newBal = curBal - amount;
-
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: now()
-    });
-
-    // 🔔 推送钱包余额（前端 SSE 立刻生效）
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBal,
-        source: 'plan_deduct'
-      });
-    } catch(e){}
-
-    return res.json({ ok:true, balance: newBal });
-
-  } catch (e) {
-    console.error('/wallet/:uid/deduct error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
 
 /* ---------------------------------------------------------
    Admin utility endpoints (set/deduct/boost)
