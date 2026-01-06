@@ -86,6 +86,49 @@ app.post('/api/admin/verify-2fa', async (req, res) => {
 
   return res.json({ ok:true, message:'2FA 绑定成功' });
 });
+// ===== 🔐 2FA 登录验证（登录专用）=====
+app.post('/api/admin/login-2fa', async (req, res) => {
+  try {
+    const { adminId, code } = req.body;
+    if (!adminId || !code) {
+      return res.status(400).json({ ok:false, error:'missing adminId/code' });
+    }
+
+    const snap = await db.ref(`admins/${adminId}`).once('value');
+    if (!snap.exists()) {
+      return res.status(404).json({ ok:false, error:'admin not found' });
+    }
+
+    const admin = snap.val();
+    if (admin.google_2fa_enabled !== 1 || !admin.google_secret) {
+      return res.status(400).json({ ok:false, error:'2FA not enabled' });
+    }
+
+    const verified = speakeasy.totp.verify({
+      secret: admin.google_secret,
+      encoding: 'base32',
+      token: code,
+      window: 1
+    });
+
+    if (!verified) {
+      return res.status(400).json({ ok:false, error:'验证码错误' });
+    }
+
+    const token = uuidv4();
+    await db.ref(`admins_by_token/${token}`).set({
+      id: adminId,
+      created: now()
+    });
+
+    return res.json({ ok:true, token });
+
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok:false, error:'internal server error' });
+  }
+});
+
 /* ---------------------------------------------------------
    Middleware
 --------------------------------------------------------- */
@@ -916,41 +959,48 @@ app.post('/api/admin/create', async (req, res) => {
 app.post('/api/admin/login', async (req, res) => {
   try {
     const { id, password } = req.body;
-    if (!id || !password)
-      return res.status(400).json({ ok: false, error: 'missing id/password' });
+    if (!id || !password) {
+      return res.status(400).json({ ok:false, error:'missing id/password' });
+    }
 
     const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
+    if (!snap.exists()) {
+      return res.status(404).json({ ok:false, error:'admin not found' });
+    }
 
     const admin = snap.val();
 
+    // ① 校验密码
     const passOk = await bcrypt.compare(password, admin.hashed);
-    if (!passOk)
-      return res.status(401).json({ ok: false, error: 'incorrect password' });
+    if (!passOk) {
+      return res.status(401).json({ ok:false, error:'incorrect password' });
+    }
 
-    // ===== 🔐 2FA 登录拦截（关键）=====
+    // ② 已开启 2FA：先不发 token，只告诉前端要 2FA
     if (admin.google_2fa_enabled === 1) {
       return res.json({
-        ok: false,
+        ok: true,
         need2fa: true,
         adminId: id
       });
     }
-    // ===== 🔐 END =====
 
-    // ===== 未开启 2FA，正常登录 =====
+    // ③ 未开启 2FA：直接登录
     const token = uuidv4();
     await db.ref(`admins_by_token/${token}`).set({
       id,
       created: now()
     });
 
-    return res.json({ ok: true, token });
+    return res.json({
+      ok: true,
+      token,
+      need2fa: false
+    });
 
   } catch (e) {
     console.error('admin login error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    return res.status(500).json({ ok:false, error:'internal server error' });
   }
 });
 app.post('/api/admin/login-2fa', async (req, res) => {
@@ -966,8 +1016,9 @@ app.post('/api/admin/login-2fa', async (req, res) => {
     }
 
     const admin = snap.val();
-    if (!admin.google_secret) {
-      return res.status(400).json({ ok:false, error:'2FA not bound' });
+
+    if (admin.google_2fa_enabled !== 1 || !admin.google_secret) {
+      return res.status(400).json({ ok:false, error:'2FA not enabled' });
     }
 
     const verified = speakeasy.totp.verify({
@@ -981,14 +1032,17 @@ app.post('/api/admin/login-2fa', async (req, res) => {
       return res.status(400).json({ ok:false, error:'验证码错误' });
     }
 
-    // ===== 2FA 通过，正式登录 =====
+    // ✅ 2FA 通过，正式登录
     const token = uuidv4();
     await db.ref(`admins_by_token/${token}`).set({
       id: adminId,
       created: now()
     });
 
-    return res.json({ ok:true, token });
+    return res.json({
+      ok: true,
+      token
+    });
 
   } catch (e) {
     console.error('login-2fa error', e);
