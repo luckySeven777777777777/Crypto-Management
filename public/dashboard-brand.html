@@ -809,32 +809,15 @@ button {
 <div id="adminLoginModal" class="admin-login-modal" onclick="closeAdminLogin()">
   <div class="box" onclick="event.stopPropagation()">
     <div style="font-weight:700;margin-bottom:8px">管理员登录</div>
-
     <div style="margin-bottom:8px">
       <input id="adminName" placeholder="管理员ID" style="width:100%;margin-bottom:8px;padding:8px" />
       <input id="adminPassword" type="password" placeholder="密码" style="width:100%;padding:8px" />
     </div>
-
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="submitAdminLogin()" class="primary">登录</button>
       <button onclick="closeAdminLogin()">取消</button>
     </div>
-
-    <!-- 🔐 新增：2FA 验证输入（默认隐藏） -->
-    <div id="gaBox" style="display:none;margin-top:12px">
-      <input
-        id="gaCode"
-        placeholder="Google 6 位验证码"
-        style="width:100%;padding:8px;margin-bottom:8px"
-      />
-      <button class="primary" style="width:100%" onclick="verifyGoogle2FA()">
-        确认二级验证
-      </button>
-    </div>
-
-    <div style="margin-top:8px;font-size:12px;color:#666">
-      提示：管理员可以通过后端 /api/admin/create 创建新账号。
-    </div>
+    <div style="margin-top:8px;font-size:12px;color:#666">提示：管理员可以通过后端 /api/admin/create 创建新账号。</div>
   </div>
 </div>
 <!-- 备注 Drawer -->
@@ -1149,75 +1132,40 @@ async function submitAdminLogin(){
   const id = document.getElementById('adminName').value.trim();
   const pw = document.getElementById('adminPassword').value;
   if (!id || !pw) return alert('请输入管理员ID与密码');
-
+  
   try {
-    const r = await fetch('/api/admin/login', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ id, password: pw })
+    const r = await fetch('/api/admin/login', { 
+      method:'POST', 
+      headers:{'Content-Type':'application/json'}, 
+      body: JSON.stringify({ id, password: pw }) 
     });
-
     const j = await r.json();
-
-    // ✅【1】启用 2FA → 只显示验证码框
-    if (j.need2fa) {
-      document.getElementById('gaBox').style.display = 'block';
-      document.getElementById('gaAdminId').value = j.adminId;
-      return;
-    }
-
-    // ✅【2】未启用 2FA → 正常登录
     if (j.ok && j.token) {
-      setAdminToken(j.token);
-      closeAdminLogin();
-      loadDashboard();
-      return;
-    }
+      localStorage.setItem('nexbit_admin_token', j.token); 
+      document.getElementById('loginState').innerText = id; 
+      alert('登录成功'); 
 
-    alert('登录失败：' + (j.error || '未知错误'));
+      // 检查是否启用了2FA
+      const has2FA = await checkIf2FAEnabled(id);
+      console.log("2FA是否启用:", has2FA);
 
-  } catch (e) {
-    alert('请求失败');
-  }
-}
+      if (has2FA) {
+        // 显示2FA验证码输入框
+        document.getElementById('adminLoginModal').style.display = 'none'; 
+        document.getElementById('gaBox').style.display = 'block'; // 显示2FA输入框
+        document.getElementById('gaAdminId').value = id; // 填充管理员ID
+        return; 
+      }
 
-async function verifyGoogle2FA(){
-  const code = document.getElementById('gaCode').value.trim();
-  const adminId = window.__2faAdminId;
-
-  if (!adminId) {
-    alert('2FA 会话失效，请重新登录');
-    return;
-  }
-
-  if (!code || code.length !== 6) {
-    alert('请输入 6 位 Google 验证码');
-    return;
-  }
-
-  try {
-    const r = await fetch('/api/admin/verify-2fa', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        adminId,
-        code
-      })
-    });
-
-    const j = await r.json();
-
-    if (j.ok && j.token) {
-      // ✅ 只有这里才真正登录
+      // 如果没有启用2FA，直接登录
       setAdminToken(j.token);
       closeAdminLogin();
       loadDashboard();
     } else {
-      alert(j.error || '验证码错误');
+      alert('登录失败: ' + (j.error || '未知'));
     }
-
-  } catch (e) {
-    alert('2FA 验证请求失败');
+  } catch(e){
+    alert('请求失败'); 
   }
 }
 
