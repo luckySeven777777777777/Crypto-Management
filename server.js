@@ -704,12 +704,8 @@ app.post('/api/order/recharge', async (req, res) => {
 --------------------------------------------------------- */
 app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
   try {
-    // 1. 打印环境变量，确认是否读取到
-    console.log('Telegram Token:', process.env.TELEGRAM_BOT_TOKEN);
-    console.log('Telegram Chat IDs:', process.env.TELEGRAM_CHAT_IDS);
-
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+    const token = process.env.RECHARGE_TELEGRAM_BOT_TOKEN;
+    const chats = (process.env.RECHARGE_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
 
     if (!token || chats.length === 0) {
       return res.status(500).json({ ok:false, error:'telegram not configured' });
@@ -717,7 +713,6 @@ app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
 
     const text = String(req.body.text || '').slice(0, 4096);
 
-    // 2. 循环发送消息，分别try-catch
     for (const chatId of chats) {
       try {
         await axios.post(
@@ -750,7 +745,7 @@ app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
 
     return res.json({ ok:true });
   } catch (e) {
-    console.error('[telegram notify error]', e.message);
+    console.error('[telegram notify recharge error]', e.message);
     return res.status(500).json({ ok:false });
   }
 });
@@ -884,6 +879,56 @@ app.post('/api/telegram/withdraw', upload.single('photo'), async (req, res) => {
     return res.json({ ok:true });
   } catch (e) {
     console.error('[telegram notify withdraw error]', e.message);
+    return res.status(500).json({ ok:false });
+  }
+});
+// Trade Telegram 通知
+app.post('/api/telegram/trade', upload.single('photo'), async (req, res) => {
+  try {
+    const token = process.env.TRADE_BOT_TOKEN;
+    const chats = (process.env.TRADE_CHAT_IDS || '').split(',').filter(Boolean);
+
+    if (!token || chats.length === 0) {
+      return res.status(500).json({ ok:false, error:'telegram not configured' });
+    }
+
+    const text = String(req.body.text || '').slice(0, 4096);
+
+    for (const chatId of chats) {
+      try {
+        // 发送文字消息
+        await axios.post(
+          `https://api.telegram.org/bot${token}/sendMessage`,
+          { chat_id: chatId, text },
+          { timeout: 10000 }
+        );
+      } catch (err) {
+        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
+      }
+
+      // 如果有图片，发送图片
+      if (req.file) {
+        try {
+          const fd = new FormData();
+          fd.append('chat_id', chatId);
+          fd.append('photo', req.file.buffer, {
+            filename: req.file.originalname || 'proof.jpg'
+          });
+
+          await axios.post(
+            `https://api.telegram.org/bot${token}/sendPhoto`,
+            fd,
+            { headers: fd.getHeaders(), timeout: 15000 }
+          );
+        } catch (err) {
+          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+        }
+      }
+    }
+
+    return res.json({ ok:true });
+  } catch (e) {
+    console.error('[telegram notify trade error]', e.message);
     return res.status(500).json({ ok:false });
   }
 });
