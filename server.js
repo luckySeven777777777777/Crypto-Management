@@ -10,6 +10,7 @@ const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const multer = require('multer');
 const FormData = require('form-data');
+const upload = multer();  
 
 const app = express();
 app.disable('etag');
