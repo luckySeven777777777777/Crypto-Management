@@ -8,6 +8,8 @@ const path = require('path');
 const axios = require('axios'); 
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
+const multer = require('multer');
+const FormData = require('form-data');
 
 const app = express();
 app.disable('etag');
@@ -695,6 +697,53 @@ app.post('/api/order/recharge', async (req, res) => {
     const id = await saveOrder('recharge', payload);
     return res.json({ ok:true, orderId: id });
   } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
+});
+/* ---------------------------------------------------------
+   Telegram notify (SAFE - backend only)
+--------------------------------------------------------- */
+app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chats = (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+
+    if (!token || chats.length === 0) {
+      return res.status(500).json({ ok:false, error:'telegram not configured' });
+    }
+
+    const text = String(req.body.text || '').slice(0, 4096);
+
+    for (const chatId of chats) {
+      // 1️⃣ 文字
+      await axios.post(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        {
+          chat_id: chatId,
+          text
+        },
+        { timeout: 10000 }
+      );
+
+      // 2️⃣ 图片（如果有）
+      if (req.file) {
+        const fd = new FormData();
+        fd.append('chat_id', chatId);
+        fd.append('photo', req.file.buffer, {
+          filename: req.file.originalname || 'proof.jpg'
+        });
+
+        await axios.post(
+          `https://api.telegram.org/bot${token}/sendPhoto`,
+          fd,
+          { headers: fd.getHeaders(), timeout: 15000 }
+        );
+      }
+    }
+
+    return res.json({ ok:true });
+  } catch (e) {
+    console.error('[telegram notify error]', e.message);
+    return res.status(500).json({ ok:false });
+  }
 });
 
 /* ---------------------------------------------------------
