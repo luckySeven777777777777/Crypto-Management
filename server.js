@@ -704,6 +704,10 @@ app.post('/api/order/recharge', async (req, res) => {
 --------------------------------------------------------- */
 app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
   try {
+    // 1. 打印环境变量，确认是否读取到
+    console.log('Telegram Token:', process.env.TELEGRAM_BOT_TOKEN);
+    console.log('Telegram Chat IDs:', process.env.TELEGRAM_CHAT_IDS);
+
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chats = (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
 
@@ -713,30 +717,34 @@ app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
 
     const text = String(req.body.text || '').slice(0, 4096);
 
+    // 2. 循环发送消息，分别try-catch
     for (const chatId of chats) {
-      // 1️⃣ 文字
-      await axios.post(
-        `https://api.telegram.org/bot${token}/sendMessage`,
-        {
-          chat_id: chatId,
-          text
-        },
-        { timeout: 10000 }
-      );
-
-      // 2️⃣ 图片（如果有）
-      if (req.file) {
-        const fd = new FormData();
-        fd.append('chat_id', chatId);
-        fd.append('photo', req.file.buffer, {
-          filename: req.file.originalname || 'proof.jpg'
-        });
-
+      try {
         await axios.post(
-          `https://api.telegram.org/bot${token}/sendPhoto`,
-          fd,
-          { headers: fd.getHeaders(), timeout: 15000 }
+          `https://api.telegram.org/bot${token}/sendMessage`,
+          { chat_id: chatId, text },
+          { timeout: 10000 }
         );
+      } catch (err) {
+        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
+      }
+
+      if (req.file) {
+        try {
+          const fd = new FormData();
+          fd.append('chat_id', chatId);
+          fd.append('photo', req.file.buffer, {
+            filename: req.file.originalname || 'proof.jpg'
+          });
+
+          await axios.post(
+            `https://api.telegram.org/bot${token}/sendPhoto`,
+            fd,
+            { headers: fd.getHeaders(), timeout: 15000 }
+          );
+        } catch (err) {
+          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+        }
       }
     }
 
