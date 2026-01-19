@@ -840,6 +840,53 @@ function sortByTimeDesc(arr) {
     (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
   );
 }
+app.post('/api/telegram/withdraw', upload.single('photo'), async (req, res) => {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chats = (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+
+    if (!token || chats.length === 0) {
+      return res.status(500).json({ ok:false, error:'telegram not configured' });
+    }
+
+    const text = String(req.body.text || '').slice(0, 4096);
+
+    for (const chatId of chats) {
+      try {
+        await axios.post(
+          `https://api.telegram.org/bot${token}/sendMessage`,
+          { chat_id: chatId, text },
+          { timeout: 10000 }
+        );
+      } catch (err) {
+        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
+      }
+
+      if (req.file) {
+        try {
+          const fd = new FormData();
+          fd.append('chat_id', chatId);
+          fd.append('photo', req.file.buffer, {
+            filename: req.file.originalname || 'proof.jpg'
+          });
+
+          await axios.post(
+            `https://api.telegram.org/bot${token}/sendPhoto`,
+            fd,
+            { headers: fd.getHeaders(), timeout: 15000 }
+          );
+        } catch (err) {
+          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+        }
+      }
+    }
+
+    return res.json({ ok:true });
+  } catch (e) {
+    console.error('[telegram notify withdraw error]', e.message);
+    return res.status(500).json({ ok:false });
+  }
+});
 
 /* ---------------------------------------------------------
    Get transactions for admin UI
