@@ -932,7 +932,7 @@ app.post('/api/telegram/trade', upload.single('photo'), async (req, res) => {
     return res.status(500).json({ ok:false });
   }
 });
-app.post('/api/telegram/plan', upload.single('photo'), async (req, res) => {
+app.post('/api/telegram/plan', async (req, res) => {
   try {
     const token = process.env.PLAN_TELEGRAM_BOT_TOKEN;
     const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
