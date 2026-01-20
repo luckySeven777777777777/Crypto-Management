@@ -934,30 +934,54 @@ app.post('/api/telegram/trade', upload.single('photo'), async (req, res) => {
 });
 app.post('/api/telegram/plan', async (req, res) => {
   try {
+    // 🔥 1️⃣ 确认接口是否被命中
+    console.log('🔥 [/api/telegram/plan] HIT');
+    console.log('BODY:', req.body);
+
     const token = process.env.PLAN_TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+    const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '')
+      .split(',')
+      .map(c => c.trim())        // ✅ 2️⃣ 关键：去掉空格
+      .filter(Boolean);
+
+    // 🔥 3️⃣ 打印 ENV 实际值（非常重要）
+    console.log('[PLAN] TOKEN:', token);
+    console.log('[PLAN] CHATS:', chats);
 
     if (!token || chats.length === 0) {
+      console.error('[PLAN] telegram not configured');
       return res.status(500).json({ ok: false, error: 'telegram not configured' });
     }
 
     const text = String(req.body.text || '').slice(0, 4096);
+    console.log('[PLAN] TEXT:', text);
 
     for (const chatId of chats) {
       try {
-        await axios.post(
+        console.log('[PLAN] sending to chat:', chatId);
+
+        const r = await axios.post(
           `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
+          {
+            chat_id: chatId,
+            text
+          },
           { timeout: 10000 }
         );
+
+        console.log('[PLAN] sent ok:', r.data);
       } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
+        console.error(
+          `[PLAN] send failed chat=${chatId}`,
+          err.response?.data || err.message
+        );
       }
     }
 
     return res.json({ ok: true });
+
   } catch (e) {
-    console.error('[telegram notify plan error]', e.message);
+    console.error('[telegram notify plan error]', e);
     return res.status(500).json({ ok: false });
   }
 });
