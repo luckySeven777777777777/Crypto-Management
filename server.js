@@ -961,6 +961,25 @@ app.post('/api/telegram/plan', async (req, res) => {
     return res.status(500).json({ ok: false });
   }
 });
+app.get('/api/test-plan', async (req,res)=>{
+  try{
+    const token = process.env.PLAN_TELEGRAM_BOT_TOKEN;
+    const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+    const text = "🔥 TEST PLAN MESSAGE 🔥";
+
+    console.log('TOKEN:', token, 'CHATS:', chats);
+
+    for(const chatId of chats){
+      const r = await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {chat_id: chatId, text});
+      console.log('Sent to', chatId, r.data);
+    }
+
+    res.json({ok:true});
+  }catch(e){
+    console.error('TEST PLAN ERROR', e.response?.data || e.message);
+    res.status(500).json({ok:false});
+  }
+});
 
 /* ---------------------------------------------------------
    Get transactions for admin UI
