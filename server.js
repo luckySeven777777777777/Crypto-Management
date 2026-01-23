@@ -1004,6 +1004,71 @@ app.get('/api/test-plan', async (req,res)=>{
     res.status(500).json({ok:false});
   }
 });
+app.post('/api/order/plan', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+    const payload = req.body || {};
+    const {
+      orderId,
+      user,
+      amount,
+      currency,
+      plan,
+      rateMin,
+      rateMax,
+      days,
+      limit,
+      remaining
+    } = payload;
+
+    if (!orderId || !user || !amount || !plan) {
+      return res.status(400).json({ ok:false, error:'missing fields' });
+    }
+
+    // ✅ 保存 PLAN 订单
+    const id = await saveOrder('plan', {
+      orderId,
+      userId: user,
+      amount: Number(amount),
+      currency,
+      plan,
+      rateMin,
+      rateMax,
+      days,
+      limit,
+      remaining,
+      status: 'pending'
+    });
+
+    // ✅ 发送 Telegram 通知
+    try {
+      const text = `
+📥 New PLAN Order Created📥 
+
+📌 Order ID: ${orderId}
+💵 Amount: ${amount} ${currency}
+📦 Plan: ${plan}
+
+📈 Daily Revenue: ${rateMin}% - ${rateMax}%
+📆 ${new Date().toLocaleString()}
+      `;
+
+      await axios.post(
+        `http://localhost:${PORT}/api/telegram/plan`,
+        { text }
+      );
+    } catch (e) {
+      console.error('[PLAN telegram notify error]', e.message);
+    }
+
+    return res.json({ ok:true, orderId: id });
+
+  } catch (e) {
+    console.error('[plan order error]', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
 
 /* ---------------------------------------------------------
    Get transactions for admin UI
