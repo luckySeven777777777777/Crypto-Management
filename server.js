@@ -14,6 +14,8 @@ const upload = multer();
 
 const app = express();
 app.disable('etag');
+app.use(cors());
+app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 
@@ -309,111 +311,6 @@ function objToSortedArray(objOrNull){
    Root
 --------------------------------------------------------- */
 app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
-// 🔍 Loan health check（非常重要）
-app.get('/api/loan/ping', (req, res) => {
-  res.json({
-    ok: true,
-    service: 'loan',
-    time: new Date().toISOString()
-  });
-});
-
-/* ---------------------------------------------------------
-   Loan Application (Front → Backend → Telegram)
---------------------------------------------------------- */
-app.post(
-  '/api/loan/submit',
-  upload.fields([
-    { name: 'front', maxCount: 1 },
-    { name: 'back',  maxCount: 1 },
-    { name: 'hand',  maxCount: 1 }
-  ]),
-  async (req, res) => {
-    try {
-      const { amount, period, date } = req.body;
-
-      const front = req.files?.front?.[0];
-      const back  = req.files?.back?.[0];
-      const hand  = req.files?.hand?.[0];
-
-      if (!front || !back || !hand) {
-        return res.status(400).json({ ok: false, error: 'missing photos' });
-      }
-
-      // ===== caption =====
-      const caption =
-        `🟦 <b>New Loan Application</b> 🟦\n\n` +
-        `💰 <b>Amount:</b> ${amount} USDT\n` +
-        `📅 <b>Date:</b> ${date}\n` +
-        `⏳ <b>Period:</b> ${period} days\n\n` +
-        `📷 <b>Photos:</b>\n` +
-        `1️⃣ ID Card Front\n` +
-        `2️⃣ ID Card Back\n` +
-        `3️⃣ Hand-held ID\n\n` +
-        `⚠️ Please save a screenshot of this notification!`;
-
-      // ===== Telegram ENV =====
-      const token = process.env.LOAN_BOT_TOKEN;
-      const chats = (process.env.LOAN_CHAT_IDS || '')
-        .split(',')
-        .map(c => c.trim())
-        .filter(Boolean);
-
-      console.log('[LOAN] TOKEN exists:', !!token);
-      console.log('[LOAN] CHATS:', chats);
-
-      if (!token || chats.length === 0) {
-        return res.status(500).json({ ok: false, error: 'telegram not configured' });
-      }
-// ✅ 立刻返回（Loan = 通知型）
-res.json({ ok: true });
-
-      // ===== Send to Telegram =====
-      for (const chatId of chats) {
-        try {
-          console.log('[LOAN] sending to chat:', chatId);
-
-          const media = [
-  { type: 'photo', media: 'attach://front' },
-  { type: 'photo', media: 'attach://back' },
-  {
-    type: 'photo',
-    media: 'attach://hand',
-    caption,
-    parse_mode: 'HTML'
-  }
-];
-
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('media', JSON.stringify(media));
-          fd.append('front', front.buffer, { filename: 'front.jpg' });
-          fd.append('back', back.buffer, { filename: 'back.jpg' });
-          fd.append('hand', hand.buffer, { filename: 'hand.jpg' });
-
-          const r = await axios.post(
-            `https://api.telegram.org/bot${token}/sendMediaGroup`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 20000 }
-          );
-
-          console.log('[LOAN] sent OK:', chatId, r.data);
-
-        } catch (err) {
-          console.error(
-            '[LOAN] send FAILED:',
-            chatId,
-            err.response?.data || err.message
-          );
-        }
-      }
-
-    } catch (e) {
-      console.error('[loan submit error]', e);
-      return res.status(500).json({ ok: false });
-    }
-  }
-);
 
 /* ---------------------------------------------------------
    Basic user sync
@@ -1081,6 +978,7 @@ app.post('/api/telegram/plan', async (req, res) => {
       }
     }
 
+    return res.json({ ok: true });
 
   } catch (e) {
     console.error('[telegram notify plan error]', e);
@@ -1429,6 +1327,7 @@ broadcastSSE({
   action: { admin: adminId, status, note }
 });
 }
+return res.json({ ok: true });
 
 } catch (e) {
   console.error('transaction.update err', e);
