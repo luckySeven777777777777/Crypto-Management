@@ -1,1433 +1,309 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
-const admin = require('firebase-admin');
-const path = require('path');
-const axios = require('axios'); 
-const speakeasy = require('speakeasy');
-const qrcode = require('qrcode');
-const multer = require('multer');
-const FormData = require('form-data');
-const upload = multer();  
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loan Application</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: transparent;
+    margin: 0;
+    padding: 20px;
+    color: white;
+}
 
-const app = express();
-app.disable('etag');
-app.use(cors());
-app.use(express.json());
+.container {
+    max-width: 500px;
+    width: 90%;
+    margin: auto;
+    padding: 20px;
+    border-radius: 12px;
+    background: transparent; /* 透明背景 */
+    box-sizing: border-box;
+}
 
-const PORT = process.env.PORT || 8080;
+/* Labels */
+label { font-size: 14px; }
 
+/* Inputs */
+input, select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #1fa2ff;
+    margin-top: 6px;
+    background: transparent; /* 透明背景 */
+    color: white;  /* 字体颜色 */
+    box-sizing: border-box;
+    font-size: 14px; /* 字体大小 */
+}
 
-/* --------------------- Global safety handlers --------------------- */
-process.on('unhandledRejection', (reason, p) => {
-  console.error('UNHANDLED REJECTION at: Promise', p, 'reason:', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION', err);
-});
-// 生成 2FA 密钥和二维码
-app.post('/api/admin/generate-2fa', async (req, res) => {
-  const { adminId } = req.body;  // 获取管理员ID
+select {
+    appearance: none; /* 去掉默认下拉箭头 */
+    -webkit-appearance: none; /* 去掉苹果设备的默认下拉箭头 */
+    -moz-appearance: none; /* 去掉Firefox的默认下拉箭头 */
+}
 
-  if (!adminId) {
-    return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
+select::-ms-expand {
+    display: none; /* 隐藏 IE 的默认下拉箭头 */
+}
+
+/* Customize dropdown arrow */
+select::after {
+    content: "▼";
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    font-size: 16px;
+    color: #1fa2ff;
+}
+
+/* Buttons */
+.btn {
+    width: 100%;
+    padding: 12px;
+    background: transparent; /* 透明背景 */
+    border: 2px solid #1fa2ff;
+    border-radius: 10px;
+    font-size: 17px;
+    margin-top: 20px;
+    color: #1fa2ff;
+    cursor: pointer;
+    transition: 0.25s;
+}
+.btn:hover {
+    background: rgba(31,162,255,0.2); /* 半透明悬停效果 */
+    box-shadow: 0 0 10px #1fa2ff;
+}
+
+.choose-btn {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 2px solid #1fa2ff;
+    background: transparent; /* 透明背景 */
+    color: #1fa2ff;
+    font-size: 14px;
+    margin-top: 6px;
+    cursor: pointer;
+    transition: 0.25s;
+}
+.choose-btn:hover {
+    background: rgba(31,162,255,0.2); /* 半透明悬停效果 */
+    box-shadow: 0 0 8px #1fa2ff;
+}
+
+.upload-box {
+    border: 1px dashed #1fa2ff;
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 10px;
+    background: transparent; /* 透明背景 */
+}
+
+.photo-preview {
+    width: 100%;
+    margin-top: 8px;
+    border-radius: 10px;
+    display: none;
+}
+
+#interestBox p { margin: 4px 0; }
+
+@media screen and (max-width:480px){
+    .container { width: 95%; padding: 15px; }
+}
+/* ⬅ 充值页 Back 按钮（与 Plan 页面一致） */
+.back-button{
+  position:absolute;
+  left:12px;
+  top:12px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 10px;
+  border-radius:10px;
+  background:rgba(30,144,255,0.15);
+  color:#1e90ff;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  border:1px solid rgba(30,144,255,0.4);
+  text-decoration:none;
+  z-index:9999;
+}
+
+.back-button:hover{
+  background:rgba(30,144,255,0.25);
+}
+
+/* 📱 手机端：再往上一点 */
+@media (max-width: 768px) {
+  .back-button{
+    top: 2px;
   }
+}
 
-  // 生成 2FA 密钥
-  const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
+</style>
+</head>
+<body>
+<a href="javascript:void(0)"
+   class="back-button"
+   onclick="window.open('index.html', '_blank');">
+  ⬅ Back
+</a>
+<div class="container">
+<h2 style="text-align:center;">Loan Application</h2>
 
-  // 使用二维码生成库生成二维码 URL
-  qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
-    if (err) {
-      return res.status(500).json({ ok: false, message: '二维码生成失败' });
+<label>Loan Amount (USDT):</label>
+<select id="loanSelect" onchange="updateInterest()"></select>
+
+<label style="margin-top:15px;">Enter Custom Loan Amount:</label>
+<input type="number" id="loanAmount" placeholder="Enter amount" oninput="updateInterest()">
+
+<div id="interestBox" style="margin-top:15px;">
+    <p><b>Daily Interest (0.16%):</b></p>
+    <p id="interestValue">0.00 USDT / day</p>
+</div>
+
+<div style="margin-top:15px;">
+    <p><b>Real-time USDT:</b> <span id="usdtPrice">Loading…</span></p>
+</div>
+
+<label style="margin-top:15px;">Repayment Period:</label>
+<select id="period">
+    <option value="7">7 Days</option>
+</select>
+
+<h3 style="margin-top:20px;">Upload Required Photos</h3>
+
+<div class="upload-box">
+    <label>ID Card Front:</label>
+    <button type="button" class="choose-btn" onclick="document.getElementById('frontInput').click()">Choose File</button>
+    <input type="file" accept="image/*" id="frontInput" onchange="previewPhoto(event, 'frontPhoto')" style="display:none;">
+    <img id="frontPhoto" class="photo-preview">
+</div>
+
+<div class="upload-box">
+    <label>ID Card Back:</label>
+    <button type="button" class="choose-btn" onclick="document.getElementById('backInput').click()">Choose File</button>
+    <input type="file" accept="image/*" id="backInput" onchange="previewPhoto(event, 'backPhoto')" style="display:none;">
+    <img id="backPhoto" class="photo-preview">
+</div>
+
+<div class="upload-box">
+    <label>Hand-held ID Photo:</label>
+    <button type="button" class="choose-btn" onclick="document.getElementById('handInput').click()">Choose File</button>
+    <input type="file" accept="image/*" id="handInput" onchange="previewPhoto(event, 'handPhoto')" style="display:none;">
+    <img id="handPhoto" class="photo-preview">
+</div>
+
+<button class="btn" id="submitBtn" onclick="submitLoan()">Submit Loan Request</button>
+
+</div>
+
+<script>
+// Populate loan select
+window.onload = () => {
+    let select = document.getElementById("loanSelect");
+    for (let i = 1000; i <= 100000; i += 1000) {
+        select.innerHTML += `<option value="${i}">${i} USDT</option>`;
     }
-
-    // 将密钥存储到数据库，方便后续验证
-    // 示例：await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
-
-    // 返回生成的二维码和密钥
-    res.json({
-      ok: true,
-      qr_code: qr_code,  // 二维码链接
-      secret: secret.base32 // 2FA 密钥
-    });
-  });
-});
-
-// 验证 2FA 验证码
-app.post('/api/admin/verify-2fa', async (req, res) => {
-  const { adminId, code } = req.body;
-
-  if (!adminId || !code) {
-    return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
-  }
-
-  // 从数据库获取管理员的 2FA 密钥（此处为假设，实际使用时需从数据库读取）
-  // 例如：const secret = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
-  const secret = '你的2FA密钥';  // 这里需要替换为从数据库中获取的密钥
-
-  // 使用 speakeasy 库验证验证码
-  const verified = speakeasy.totp.verify({
-    secret: secret,
-    encoding: 'base32',
-    token: code
-  });
-
-  if (verified) {
-    return res.json({ ok: true, message: '2FA 验证成功' });
-  } else {
-    return res.status(400).json({ ok: false, message: '验证码错误' });
-  }
-});
-/* ---------------------------------------------------------
-   Middleware
---------------------------------------------------------- */
-app.use(cors({
-  origin: '*',
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type','x-user-id','x-userid','Authorization','X-User-Id']
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname,'public')));
-
-/* ---------------------------------------------------------
-   Firebase RTDB init (optional)
---------------------------------------------------------- */
-let db = null;
-try {
-  const admin = require('firebase-admin');
-  if (process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_DATABASE_URL) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
-    db = admin.database();
-    console.log('✅ Firebase RTDB connected');
-  } else {
-    console.warn('⚠️ Firebase ENV missing');
-  }
-} catch (e) {
-  console.warn('❌ Firebase init failed:', e.message);
-}
-
-/* ---------------------------------------------------------
-   Helpers
---------------------------------------------------------- */
-function now(){ return Date.now(); }
-function usTime(ts){ return new Date(ts).toLocaleString('en-US',{ timeZone:'America/New_York' }); }
-function genOrderId(prefix){ return `${prefix || 'ORD'}-${now()}-${Math.floor(1000+Math.random()*9000)}`; }
-function safeNumber(v, fallback=0){
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-function isSafeUid(uid){
-  if(!uid || typeof uid !== 'string') return false;
-  if(/[.#$\[\]]/.test(uid)) return false;
-  if(uid.indexOf('{{') !== -1 || uid.indexOf('}}') !== -1) return false;
-  if(uid.length < 2 || uid.length > 512) return false;
-  return true;
-}
-async function ensureUserExists(uid){
-  if(!db) return;
-  if(!isSafeUid(uid)) return;
-
-  const ref = db.ref(`users/${uid}`);
-  const snap = await ref.once('value');
-
-  if(snap.exists()) return;
-
-  const ts = now();
-  await ref.set({
-    userid: uid,
-    created: ts,
-    updated: ts,
-    balance: 0
-  });
-}
-
-// ================================
-// USDT 价格缓存（CoinGecko）
-// ================================
-const PRICE_CACHE = {
-  USDT: 1
+    updateInterest();
+    simulateUSDT();
 };
 
-// CoinGecko 币种映射（常用 + 可无限扩展）
-const COINGECKO_IDS = {
-  BTC: 'bitcoin',
-  ETH: 'ethereum',
-  BNB: 'binancecoin',
-  SOL: 'solana',
-  XRP: 'ripple',
-  ADA: 'cardano',
-  DOGE: 'dogecoin',
-  TRX: 'tron',
-  AVAX: 'avalanche-2',
-  DOT: 'polkadot',
-  MATIC: 'matic-network',
-  LTC: 'litecoin',
-  BCH: 'bitcoin-cash',
-  LINK: 'chainlink',
-  ATOM: 'cosmos',
-  ETC: 'ethereum-classic',
-  FIL: 'filecoin',
-  ICP: 'internet-computer',
-  APT: 'aptos',
-  ARB: 'arbitrum',
-  OP: 'optimism',
-  NEAR: 'near',
-  EOS: 'eos',
-  XTZ: 'tezos',
-  XLM: 'stellar',
-  SAND: 'the-sandbox',
-  MANA: 'decentraland',
-  APE: 'apecoin',
-  AXS: 'axie-infinity',
-  GALA: 'gala',
-  FTM: 'fantom',
-  RUNE: 'thorchain',
-  KAVA: 'kava',
-  CRV: 'curve-dao-token',
-  UNI: 'uniswap',
-  AAVE: 'aave',
-  CAKE: 'pancakeswap-token',
-  DYDX: 'dydx',
-  INJ: 'injective-protocol',
-  SUI: 'sui'
-};
-
-// 拉取 CoinGecko 行情（稳定，不封云）
-async function fetchCoinGeckoPrices(){
-  try{
-    const ids = Object.values(COINGECKO_IDS).join(',');
-    const res = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price',
-      {
-        params: {
-          ids,
-          vs_currencies: 'usd'
-        },
-        timeout: 10000
-      }
-    );
-
-    for(const [symbol, id] of Object.entries(COINGECKO_IDS)){
-      const price = res.data[id]?.usd;
-      if(price && price > 0){
-        PRICE_CACHE[symbol] = price;
-      }
-    }
-
-    PRICE_CACHE.USDT = 1;
-    console.log('[PRICE] CoinGecko updated:', Object.keys(PRICE_CACHE).length);
-
-  }catch(e){
-    console.log('[PRICE] CoinGecko error:', e.message);
-  }
+function updateInterest() {
+    let chosen = Number(document.getElementById("loanSelect").value);
+    let manual = Number(document.getElementById("loanAmount").value);
+    let amount = manual > 0 ? manual : chosen;
+    let dailyInterest = amount * 0.0016;
+    document.getElementById("interestValue").innerText = dailyInterest.toFixed(4) + " USDT / day";
 }
 
-// 启动 & 定时刷新（10 秒一次，后台足够）
-fetchCoinGeckoPrices();
-setInterval(fetchCoinGeckoPrices, 10000);
-
-// ================================
-// USDT 估算工具（统一）
-// ================================
-function getUSDTPrice(coin){
-  if(!coin) return null;
-  return PRICE_CACHE[String(coin).toUpperCase()] || null;
+function previewPhoto(evt, id) {
+    const img = document.getElementById(id);
+    img.src = URL.createObjectURL(evt.target.files[0]);
+    img.style.display = "block";
 }
 
-function calcEstimateUSDT(amount, coin){
-  const p = getUSDTPrice(coin);
-  if(!p) return null;
-  return Number((safeNumber(amount, 0) * p).toFixed(4));
-}
-/* ---------------------------------------------------------
-   SSE utilities
---------------------------------------------------------- */
-global.__sseClients = global.__sseClients || [];
-
-function sendSSE(res, payloadStr, eventName){
-  try {
-    if (res.finished || (res.connection && res.connection.destroyed)) return false;
-    if (eventName) res.write(`event: ${eventName}\n`);
-    res.write(`data: ${payloadStr}\n\n`);
-    return true;
-  } catch(e){
-    return false;
-  }
+function simulateUSDT() {
+    let price = (1 + Math.random() * 0.01).toFixed(4);
+    document.getElementById("usdtPrice").innerText = price;
+    setTimeout(simulateUSDT, 2000);
 }
 
-function broadcastSSE(payloadObj){
-  const payload = JSON.stringify(payloadObj);
-  const toKeep = [];
-  global.__sseClients.forEach(client => {
-    try {
-      const { res, uid } = client;
-      if (!res || (res.finished || (res.connection && res.connection.destroyed))) {
-        return;
-      }
-      const eventName = payloadObj && payloadObj.type ? String(payloadObj.type) : null;
+// Submit action - send all photos in one message with beautified caption
 
-      if (payloadObj && payloadObj.order && payloadObj.order.userId) {
-        if (uid === null || uid === undefined || String(uid) === String(payloadObj.order.userId)) {
-          const ok = sendSSE(res, payload, eventName);
-          if (ok) toKeep.push(client);
-        } else {
-          toKeep.push(client);
-        }
-      } else if (payloadObj && payloadObj.userId) {
-        if (uid === null || uid === undefined || String(uid) === String(payloadObj.userId)) {
-          const ok = sendSSE(res, payload, eventName);
-          if (ok) toKeep.push(client);
-        } else {
-          toKeep.push(client);
-        }
-      } else {
-        const ok = sendSSE(res, payload, eventName);
-        if (ok) toKeep.push(client);
-      }
-    } catch(e){}
-  });
-  global.__sseClients = toKeep;
-}
+async function submitLoan() {
+  const submitBtn = document.getElementById('submitBtn');
+  submitBtn.disabled = true;
 
-function objToSortedArray(objOrNull){
-  if(!objOrNull) return [];
-  try {
-    const arr = Object.values(objOrNull);
-    return arr.sort((a,b)=> (b.timestamp||b.time||0) - (a.timestamp||a.time||0));
-  } catch(e){
-    return [];
-  }
-}
+  // ===== 1. 计算最终金额 =====
+  const chosen = Number(document.getElementById("loanSelect").value);
+  const manual = Number(document.getElementById("loanAmount").value);
+  const finalAmount = manual > 0 ? manual : chosen;
 
-/* ---------------------------------------------------------
-   Root
---------------------------------------------------------- */
-app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
+  // ===== 2. 还款周期 =====
+  const period = document.getElementById("period").value;
 
-/* ---------------------------------------------------------
-   Basic user sync
---------------------------------------------------------- */
-app.post('/api/users/sync', async (req, res) => {
-  try {
-    const { userid, userId } = req.body;
-    const uid = userid || userId;
-    if(!uid) return res.json({ ok:false, message:'no uid' });
-    if(!db) return res.json({ ok:true, message:'no-db' });
+  // ===== 3. 文件对象 =====
+  const frontFile = document.getElementById("frontInput").files[0];
+  const backFile  = document.getElementById("backInput").files[0];
+  const handFile  = document.getElementById("handInput").files[0];
 
-    const userRef = db.ref('users/' + uid);
-    const createdSnap = await userRef.child('created').once('value');
-    const createdVal = createdSnap.exists() ? createdSnap.val() : null;
-    const created = (createdVal !== null && createdVal !== undefined) ? createdVal : now();
-    const balanceSnap = await userRef.child('balance').once('value');
-
-    const balance = safeNumber(balanceSnap.exists() ? balanceSnap.val() : 0, 0);
-
-    await userRef.update({
-      userid: uid,
-      created,
-      updated: now(),
-      balance
-    });
-
-    return res.json({ ok:true });
-  } catch(e){
-    console.error('users sync error', e);
-    return res.json({ ok:false });
-  }
-});
-
-/* ---------------------------------------------------------
-   Balance endpoints
---------------------------------------------------------- */
-app.get('/api/balance/:uid', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    if (!db) return res.json({ ok:true, balance: 0 });
-    await ensureUserExists(uid);
-    const snap = await db.ref(`users/${uid}/balance`).once('value');
-    return res.json({ ok:true, balance: Number(snap.val() || 0) });
-  } catch (e){
-    console.error('balance api error', e);
-    return res.json({ ok:false, balance: 0 });
-  }
-});
-
-app.get('/wallet/:uid/balance', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    if (!db) return res.json({ ok:true, uid, balance: 0 });
-    const snap = await db.ref(`users/${uid}/balance`).once('value');
-    const balance = safeNumber(snap.exists() ? snap.val() : 0, 0);
-    return res.json({ ok:true, uid, balance });
-  } catch (e) {
-    console.error('/wallet/:uid/balance error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-/* ---------------------------------------------------------
-   Wallet internal deduct (PLAN / TRADE 用)
---------------------------------------------------------- */
-app.post('/wallet/:uid/deduct', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
-
-    const uid = String(req.params.uid || '').trim();
-    const amount = Number(req.body.amount || 0);
-
-    if (!isSafeUid(uid))
-      return res.status(400).json({ ok:false, error:'invalid uid' });
-
-    if (amount <= 0)
-      return res.status(400).json({ ok:false, error:'invalid amount' });
-
-    await ensureUserExists(uid);
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const curBal = snap.exists()
-      ? safeNumber(snap.val().balance, 0)
-      : 0;
-
-    if (curBal < amount) {
-      return res.status(400).json({ ok:false, error:'Insufficient balance' });
-    }
-
-    const newBal = curBal - amount;
-
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: now()
-    });
-
-    // 🔔 推送钱包余额（前端 SSE 立刻生效）
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBal,
-        source: 'plan_deduct'
-      });
-    } catch(e){}
-
-    return res.json({ ok:true, balance: newBal });
-
-  } catch (e) {
-    console.error('/wallet/:uid/deduct error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-
-/* ---------------------------------------------------------
-   Admin utility endpoints (set/deduct/boost)
---------------------------------------------------------- */
-app.post('/api/admin/balance', async (req, res) => {
-  try {
-
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok:false });
-
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token))
-      return res.status(403).json({ ok:false });
-
-    // 👇 下面才是 balance 逻辑
-
-    // ===============================
-    // ✅ 后面只写业务逻辑（不要再验 token）
-    // ===============================
-
-    const { user, amount } = req.body;
-    if (user === undefined || amount === undefined)
-      return res.status(400).json({ ok:false, error:'missing user/amount' });
-
-    if (!db) return res.json({ ok:false, message:'no-db' });
-    if (!isSafeUid(user))
-      return res.status(400).json({ ok:false, error:'invalid user id' });
-
-    const ref = db.ref(`users/${user}`);
-    await ref.update({
-      balance: Number(amount),
-      lastUpdate: now(),
-      boost_last: now()
-    });
-
-    // 记录 admin action
-    const actId = genOrderId('ADMIN_ACT');
-    await db.ref(`admin_actions/${actId}`).set({
-      id: actId,
-      type: 'set_balance',
-      user,
-      amount: Number(amount),
-      by: 'admin',
-      time: now()
-    });
-
-    // 记录订单
-    const ordId = genOrderId('ORD');
-    await db.ref(`orders/recharge/${ordId}`).set({
-      orderId: ordId,
-      userId: user,
-      amount: Number(amount),
-      timestamp: now(),
-      time_us: usTime(now()),
-      type: 'admin_set_balance',
-      status: 'completed'
-    });
-
-    try {
-      broadcastSSE({ type:'balance', userId:user, balance:Number(amount) });
-    } catch(e){}
-
-    return res.json({ ok:true, balance:Number(amount) });
-
-  } catch (e) {
-    console.error('[admin/balance]', e);
-    return res.json({ ok:false });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   Save Order (centralized)
-   - ensures coin is preserved, writes user_orders
-   - includes 'processed' flag to prevent double-processing by admin
-   - broadcasts both 'new' and buysell events so admin UI and wallet UI both receive
---------------------------------------------------------- */
-async function saveOrder(type, data){
-  if (!db) return null;
-
-  const ts = now();
-  const allowed = [
-  'userId','user','amount','coin','side','converted','coinQty',
-  'tp','sl','note','meta','orderId','status','deducted','wallet','ip','currency'
-];
-
-
-  const clean = {};
-  Object.keys(data || {}).forEach(k => {
-    if (allowed.includes(k)) clean[k] = data[k];
-  });
-
-  if (!clean.userId && clean.user) clean.userId = clean.user;
-
-  const id = clean.orderId || genOrderId(type.toUpperCase());
-
-  const payload = {
-    ...clean,
-    orderId: id,
-    timestamp: ts,
-    time_us: usTime(ts),
-    status: clean.status || 'processing',
-    type,
-    processed: false,
-    coin: clean.coin || null,
-
-    // 保存钱包地址到用户
-    wallet: clean.wallet || null,
-    estimate:
-  type === 'buysell'
-    ? Number(clean.amount)      // buysell 的 amount 本来就是 USDT
-    : calcEstimateUSDT(clean.amount, clean.coin)
-  };
-
-  await db.ref(`orders/${type}/${id}`).set(payload);
-
-  // user_orders 索引
-  if (payload.userId) {
-    try {
-      await db.ref(`user_orders/${payload.userId}/${id}`).set({
-        orderId: id,
-        type,
-        timestamp: ts
-      });
-
-      // ✅ 保存钱包地址到用户
-      const userRef = db.ref(`users/${payload.userId}`);
-      const userSnap = await userRef.once('value');
-      const user = userSnap.val() || {};
-
-      // 只保留最后一个钱包地址，避免重复记录
-      const wallets = user.wallets || [];
-      if (clean.wallet && !wallets.includes(clean.wallet)) {
-        wallets.push(clean.wallet);
-        await userRef.update({ wallets });
-      }
-
-    } catch(e) {
-      console.warn('user_orders write failed:', e.message);
-    }
+  if (!frontFile || !backFile || !handFile) {
+    alert("Please upload all required photos.");
+    submitBtn.disabled = false;
+    return;
   }
 
-  // SSE 广播
-  try {
-    broadcastSSE({
-      type: 'new',
-      typeName: type,
-      userId: payload.userId,
-      order: payload
-    });
+  // ===== 4. 组装表单 =====
+  const formData = new FormData();
+formData.append("amount", finalAmount);
+formData.append("period", period);
 
-    if (type === 'buysell') {
-      broadcastSSE({
-        type: 'buysell',
-        typeName: type,
-        userId: payload.userId,
-        order: payload
-      });
-    }
-  } catch(e){}
+// ===== 安全获取 Telegram userId（不在 TG 环境也不炸）=====
+let userId = "test_user"; // 本地 / 非 Telegram 环境兜底
 
-  return id;
-}
-
-/* ---------------------------------------------------------
-   BuySell endpoints
-   - /proxy/buysell kept for legacy frontends
-   - both /proxy/buysell and /api/order/buysell share same logic
-   - buy: immediate deduction; sell: create order (admin approval required to credit)
---------------------------------------------------------- */
-async function handleBuySellRequest(req, res){
-  try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-
-    const {
-      userId,
-      user,
-      side,
-      tradeType,   // ✅ 兼容 buysell.html
-      coin,
-      amount,
-      converted,
-      tp,
-      sl,
-      orderId,
-      wallet,
-      ip
-    } = req.body;
-
-    const uid = userId || user;
-    await ensureUserExists(uid);
-    const realSide = side || tradeType;   // ✅ 关键修复
-    const amt = Number(amount || 0);
-
-    if(!uid || !realSide || !coin || amt <= 0){
-      return res.status(400).json({ ok:false, error:'missing fields' });
-    }
-    if(!isSafeUid(uid)){
-      return res.status(400).json({ ok:false, error:'invalid uid' });
-    }
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-
-    const sideLower = String(realSide).toLowerCase();
-
-    // ✅ BUY：立即扣钱
-    if(sideLower === 'buy'){
-      if(balance < amt){
-        return res.status(400).json({ ok:false, error:'余额不足' });
-      }
-      const newBal = balance - amt;
-      await userRef.update({ balance: newBal, lastUpdate: now() });
-      broadcastSSE({ type:'balance', userId: uid, balance: newBal });
-    }
-
-    // ===== 计算币数量（安全版）=====
-let coinQty = 0;
-
-// ① 优先用前端传来的币数量
-if (converted !== undefined && converted !== null && Number(converted) > 0) {
-  coinQty = Number(converted);
-}
-// ② 否则用 USDT / price 计算
-else {
-  const price = getUSDTPrice(coin);
-  if (price && price > 0) {
-    coinQty = Number((amt / price).toFixed(6));
-  }
-}
-
-// ===== 保存订单 =====
-const id = await saveOrder('buysell', {
-  userId: uid,
-  side: sideLower,
-  coin,
-  amount: amt,              // USDT（保持不变）
-  coinQty,                  // ✅ 新增：币数量
-  tp: tp || null,
-  sl: sl || null,
-  orderId,
-  deducted: (sideLower === 'buy'),
-  wallet: wallet || null,
-  ip: ip || null,
-  processed: false
-});
-
-    return res.json({ ok:true, orderId: id });
-  } catch(e){
-    console.error('handleBuySellRequest error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-}
-app.post('/proxy/buysell', handleBuySellRequest);
-app.post('/api/order/buysell', handleBuySellRequest);
-
-/* ---------------------------------------------------------
-   Recharge endpoint
---------------------------------------------------------- */
-app.post('/api/order/recharge', async (req, res) => {
-  try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-    const payload = req.body || {};
-    const userId = payload.userId || payload.user;
-    await ensureUserExists(userId);
-    if(!userId) return res.status(400).json({ ok:false, error:'missing userId' });
-    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    const id = await saveOrder('recharge', payload);
-    return res.json({ ok:true, orderId: id });
-  } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
-});
-/* ---------------------------------------------------------
-   Telegram notify (SAFE - backend only)
---------------------------------------------------------- */
-app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
-  try {
-    const token = process.env.RECHARGE_TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.RECHARGE_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
-    }
-
-    const text = String(req.body.text || '').slice(0, 4096);
-
-    for (const chatId of chats) {
-      try {
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
-
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
-
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
-        }
-      }
-    }
-
-    return res.json({ ok:true });
-  } catch (e) {
-    console.error('[telegram notify recharge error]', e.message);
-    return res.status(500).json({ ok:false });
-  }
-});
-
-/* ---------------------------------------------------------
-   Withdraw endpoint (deduct immediately)
---------------------------------------------------------- */
-app.post('/api/order/withdraw', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
-
-    const payload = req.body || {};
-    const userId = payload.userId || payload.user;
-
-    if (!userId) {
-      return res.status(400).json({ ok:false, error:'missing userId' });
-    }
-    if (!isSafeUid(userId)) {
-      return res.status(400).json({ ok:false, error:'invalid uid' });
-    }
-
-    await ensureUserExists(userId);
-
-    // ===== 关键字段 =====
-    const amountCoin = Number(payload.amount || 0);        // 币数量（只记录）
-    const estimateUSDT = Number(payload.estimate || 0);    // ✅ USDT（扣款用）
-
-    if (!amountCoin || amountCoin <= 0) {
-      return res.status(400).json({ ok:false, error:'invalid amount' });
-    }
-
-    if (!estimateUSDT || estimateUSDT <= 0) {
-      return res.status(400).json({ ok:false, error:'invalid estimate' });
-    }
-
-    const userRef = db.ref(`users/${userId}`);
-    const snap = await userRef.once('value');
-    const curBal = snap.exists()
-      ? safeNumber(snap.val().balance, 0)
-      : 0;
-
-    // ✅ 用 USDT 校验余额
-    if (curBal < estimateUSDT) {
-      return res.status(400).json({ ok:false, error:'余额不足' });
-    }
-
-    // ✅ 用 USDT 扣款
-    const newBal = curBal - estimateUSDT;
-
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: now(),
-      boost_last: now()
-    });
-
-    // 推送余额更新
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId,
-        balance: newBal,
-        source: 'withdraw_submit'
-      });
-    } catch(e){}
-
-    // 保存提款订单（币数量 + USDT 都保留）
-    const orderId = await saveOrder('withdraw', {
-      ...payload,
-      userId,
-      amount: amountCoin,          // 币数量
-      estimate: estimateUSDT,       // USDT
-      status: 'pending',
-      deducted: true,
-      processed: false
-    });
-
-    return res.json({ ok:true, orderId });
-
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-// ===== 工具函数：按时间倒序 =====
-function sortByTimeDesc(arr) {
-  return (arr || []).sort(
-    (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
-  );
-}
-app.post('/api/telegram/withdraw', upload.single('photo'), async (req, res) => {
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
-    }
-
-    const text = String(req.body.text || '').slice(0, 4096);
-
-    for (const chatId of chats) {
-      try {
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
-
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
-
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
-        }
-      }
-    }
-
-    return res.json({ ok:true });
-  } catch (e) {
-    console.error('[telegram notify withdraw error]', e.message);
-    return res.status(500).json({ ok:false });
-  }
-});
-// Trade Telegram 通知
-app.post('/api/telegram/trade', upload.single('photo'), async (req, res) => {
-  try {
-    const token = process.env.TRADE_BOT_TOKEN;
-    const chats = (process.env.TRADE_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
-    }
-
-    const text = String(req.body.text || '').slice(0, 4096);
-
-    for (const chatId of chats) {
-      try {
-        // 发送文字消息
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
-
-      // 如果有图片，发送图片
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
-
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
-        }
-      }
-    }
-
-    return res.json({ ok:true });
-  } catch (e) {
-    console.error('[telegram notify trade error]', e.message);
-    return res.status(500).json({ ok:false });
-  }
-});
-app.post('/api/telegram/plan', async (req, res) => {
-  try {
-    // 🔥 1️⃣ 确认接口是否被命中
-    console.log('🔥 [/api/telegram/plan] HIT');
-    console.log('BODY:', req.body);
-
-    const token = process.env.PLAN_TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '')
-      .split(',')
-      .map(c => c.trim())        // ✅ 2️⃣ 关键：去掉空格
-      .filter(Boolean);
-
-    // 🔥 3️⃣ 打印 ENV 实际值（非常重要）
-    console.log('[PLAN] TOKEN:', token);
-    console.log('[PLAN] CHATS:', chats);
-
-    if (!token || chats.length === 0) {
-      console.error('[PLAN] telegram not configured');
-      return res.status(500).json({ ok: false, error: 'telegram not configured' });
-    }
-
-    const text = String(req.body.text || '').slice(0, 4096);
-    console.log('[PLAN] TEXT:', text);
-
-    for (const chatId of chats) {
-      try {
-        console.log('[PLAN] sending to chat:', chatId);
-
-        const r = await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          {
-            chat_id: chatId,
-            text
-          },
-          { timeout: 10000 }
-        );
-
-        console.log('[PLAN] sent ok:', r.data);
-      } catch (err) {
-        console.error(
-          `[PLAN] send failed chat=${chatId}`,
-          err.response?.data || err.message
-        );
-      }
-    }
-
-    return res.json({ ok: true });
-
-  } catch (e) {
-    console.error('[telegram notify plan error]', e);
-    return res.status(500).json({ ok: false });
-  }
-});
-app.get('/api/test-plan', async (req,res)=>{
-  try{
-    const token = process.env.PLAN_TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-    const text = "🔥 TEST PLAN MESSAGE 🔥";
-
-    console.log('TOKEN:', token, 'CHATS:', chats);
-
-    for(const chatId of chats){
-      const r = await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {chat_id: chatId, text});
-      console.log('Sent to', chatId, r.data);
-    }
-
-    res.json({ok:true});
-  }catch(e){
-    console.error('TEST PLAN ERROR', e.response?.data || e.message);
-    res.status(500).json({ok:false});
-  }
-});
-
-/* ---------------------------------------------------------
-   Get transactions for admin UI
---------------------------------------------------------- */
-app.get('/api/transactions', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok:false });
-
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token))
-      return res.status(403).json({ ok:false });
-
-    if (!db) {
-      return res.json({
-        ok:true,
-        recharge: [],
-        withdraw: [],
-        buysell: [],
-        users: {},
-        stats: {}
-      });
-    }
-
-    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] =
-      await Promise.all([
-        db.ref('orders/recharge').once('value'),
-        db.ref('orders/withdraw').once('value'),
-        db.ref('orders/buysell').once('value'),
-        db.ref('users').once('value')
-      ]);
-
-    return res.json({
-      ok: true,
-      recharge: sortByTimeDesc(Object.values(rechargeSnap.val() || {})),
-      withdraw: sortByTimeDesc(Object.values(withdrawSnap.val() || {})),
-      buysell:  sortByTimeDesc(Object.values(buysellSnap.val() || {})),
-      users: usersSnap.val() || {}
-    });
-
-  } catch (e) {
-    console.error('transactions error', e);
-    return res.status(500).json({ ok:false });
-  }
-});
-/* ---------------------------------------------------------
-   Admin token helpers
---------------------------------------------------------- */
-async function isValidAdminToken(token){
-  if (!db || !token) return false;
-  try {
-    const snap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (!snap.exists()) return false;
-    const rec = snap.val();
-    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30); // 30天有效期
-    const ageMs = now() - (rec.created || 0);
-    if (ageMs > ttlDays * 24 * 60 * 60 * 1000) { 
-      try { 
-        await db.ref(`admins_by_token/${token}`).remove(); 
-      } catch (e) {} 
-      return false; 
-    }
-    return true;
-  } catch(e) { return false; }
-}
-
-
-
-/* ---------------------------------------------------------
-   Admin create/login (kept)
---------------------------------------------------------- */
-app.post('/api/admin/create', async (req, res) => {
-  try {
-    const { id, password, createToken } = req.body;
-    if (!id || !password) {
-      return res.status(400).json({ ok: false, error: 'missing id/password' });
-    }
-
-    // 验证创建 Token 是否正确
-    if (process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
-      // 如果是引导令牌，允许创建
-    } else {
-      const auth = req.headers.authorization || '';
-      if (!auth.startsWith('Bearer '))
-        return res.status(403).json({ ok: false, error: 'forbidden' });
-
-      const adminToken = auth.slice(7);
-      if (!await isValidAdminToken(adminToken)) {
-        return res.status(403).json({ ok: false, error: 'forbidden' });
-      }
-    }
-
-    // 哈希化密码
-    const hashed = await bcrypt.hash(password, 10);
-    const token = uuidv4();  // 生成管理员 token
-    const created = now();   // 获取当前时间戳
-
-    // 保存管理员信息到 Firebase 数据库
-    await db.ref(`admins/${id}`).set({
-      id,
-      hashed,
-      created,
-      isSuper: false   // 设置为普通管理员，修改为 true 则为超级管理员
-    });
-
-    // 生成管理员 token
-    await db.ref(`admins_by_token/${token}`).set({
-      id,
-      created
-    });
-
-    return res.json({ ok: true, id, token });  // 返回管理员信息和 token
-
-  } catch (e) {
-    console.error('admin create error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-/* --------------------------------------------------
-   Utils
--------------------------------------------------- */
-app.post('/api/admin/login', async (req, res) => {
-  try {
-    const { id, password } = req.body;
-    if (!id || !password)
-      return res.status(400).json({ ok: false, error: 'missing id/password' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-
-    const admin = snap.val();
-    const passOk = await bcrypt.compare(password, admin.hashed);  // 比较密码
-    if (!passOk)
-      return res.status(401).json({ ok: false, error: 'incorrect password' });
-
-    const token = uuidv4();  // 生成新 token
-    await db.ref(`admins_by_token/${token}`).set({
-      id,
-      created: now()  // 保存 token 和创建时间
-    });
-
-    return res.json({ ok: true, token });  // 返回登录成功的 token
-
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-/* ---------------------------------------------------------
-   Admin: approve/decline transactions (idempotent)
-   - prevents double-processing by checking 'processed' flag
---------------------------------------------------------- */
-app.post('/api/transaction/update', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
-
-const auth = req.headers.authorization || '';
-if (!auth.startsWith('Bearer '))
-  return res.status(403).json({ ok:false });
-
-const token = auth.slice(7);
-if (!await isValidAdminToken(token))
-  return res.status(403).json({ ok:false });
-
-
-    const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
-    const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
-
-    const { type, orderId, status, note } = req.body;
-    if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
-
-    const ref = db.ref(`orders/${type}/${orderId}`);
-    const snap = await ref.once('value');
-    if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
-
-    const order = snap.val();
-
-    // prevent double-processing
-    if (order.processed === true) {
-      // still record admin action but don't apply balance changes again
-      const actIdSkip = uuidv4();
-      await db.ref(`admin_actions/${actIdSkip}`).set({ id: actIdSkip, admin: adminId, type, orderId, status, note, time: now(), skipped:true });
-      return res.json({ ok:true, message:'already processed' });
-    }
-
-    // update order status and mark processed after applying business logic
-    const actId = uuidv4();
-    await db.ref(`admin_actions/${actId}`).set({ id: actId, admin: adminId, type, orderId, status, note, time: now() });
-
-    // handle balance effects
-    const userId = order && order.userId ? order.userId : null;
-    if (userId) {
-      const userRef = db.ref(`users/${userId}`);
-      const uSnap = await userRef.once('value');
-      let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
-      const amt = Number(order.estimate || 0);
-// 1️⃣ 先更新状态（不 processed）
-await ref.update({
-  status,
-  note: note || null,
-  updated: now()
-});
-
-// 2️⃣ 统一计算状态
-const statusNorm = String(status || '').toLowerCase();
-
-// ✅ 统一批准
-const isApproved = (
-  statusNorm === 'success' ||
-  statusNorm === 'approved' ||
-  statusNorm === 'pass' ||
-  statusNorm === '通过'
-);
-
-// ✅ 统一拒绝 / 取消（补全中文 & 常见值）
-const isRejected = (
-  statusNorm === 'failed' ||
-  statusNorm === 'reject' ||
-  statusNorm === 'rejected' ||
-  statusNorm === 'cancel' ||
-  statusNorm === 'canceled' ||
-  statusNorm === 'decline' ||
-  statusNorm === 'deny' ||
-  statusNorm === '拒绝' ||
-  statusNorm === '取消'
-);
-
-if (isApproved) {
-  if (type === 'recharge') {
-    curBal += amt;
-    await userRef.update({
-      balance: curBal,
-      lastUpdate: now(),
-      boost_last: now()
-    });
-
-    broadcastSSE({
-      type: 'balance',
-      userId,
-      balance: curBal,
-      source: 'recharge_approved'
-    });
-  }
- }
-
-// ===== 所有余额业务逻辑 =====
-// ===== withdraw 拒绝 → 退回 USDT（estimate）=====
 if (
-  type === 'withdraw' &&
-  isRejected &&
-  order.deducted === true &&
-  order.refunded !== true
+  window.Telegram &&
+  Telegram.WebApp &&
+  Telegram.WebApp.initDataUnsafe &&
+  Telegram.WebApp.initDataUnsafe.user &&
+  Telegram.WebApp.initDataUnsafe.user.id
 ) {
-  const refundUSDT = Number(order.estimate || 0); // ✅ USDT
-
-  if (refundUSDT > 0) {
-    curBal += refundUSDT;
-
-    await userRef.update({
-      balance: curBal,
-      lastUpdate: now(),
-      boost_last: now()
-    });
-
-    await ref.update({ refunded: true });
-
-    broadcastSSE({
-      type: 'balance',
-      userId,
-      balance: curBal,
-      source: 'withdraw_refund'
-    });
-  }
+  userId = Telegram.WebApp.initDataUnsafe.user.id;
 }
 
-// ===== buysell sell 通过 → 加钱（保持原样）=====
-else if (
-  type === 'buysell' &&
-  isApproved &&
-  String(order.side || '').toLowerCase() === 'sell'
-) {
-  curBal += amt; // amt 在 buysell 里本来就是 USDT
-  await userRef.update({
-    balance: curBal,
-    lastUpdate: now(),
-    boost_last: now()
+formData.append("userId", userId);
+
+// ===== 文件上传 =====
+formData.append("front", frontFile);
+formData.append("back", backFile);
+formData.append("hand", handFile);
+
+  // ===== 5. 发送请求 =====
+  const res = await fetch("/api/order/loan", {
+    method: "POST",
+    body: formData
   });
 
-  broadcastSSE({
-    type: 'balance',
-    userId,
-    balance: curBal
-  });
-}
-// ===== ✅【最终正确】统一写回最终状态 + processed =====
-let finalStatus = null;
+  const data = await res.json();
 
-if (isApproved) finalStatus = "approved";
-if (isRejected) finalStatus = "rejected";
-
-if (finalStatus) {
-  await ref.update({
-    status: finalStatus,
-    processed: true,
-    updated: now()
-  });
+  // ===== 6. 处理返回 =====
+  if (!data.success) {
+  alert(data.message || "Submit failed");
+  submitBtn.disabled = false;
+  return;
 }
 
-// ===== 再广播订单更新 =====
-const newSnap = await ref.once('value');
-const latestOrder = { ...newSnap.val(), orderId };
-
-broadcastSSE({
-  type: 'update',
-  typeName: type,
-  userId: latestOrder.userId,
-  order: latestOrder,
-  action: { admin: adminId, status, note }
-});
+  alert("✅ Loan Request Submitted Successfully!");
+  console.log("Loan Order ID:", data.orderId);
 }
-return res.json({ ok: true });
-
-} catch (e) {
-  console.error('transaction.update err', e);
-  return res.status(500).json({ ok:false, error: e.message });
-}
-});
-
-/* ---------------------------------------------------------
-   SSE endpoints
---------------------------------------------------------- */
-app.get('/api/orders/stream', async (req, res) => {
-  res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
-  res.flushHeaders();
-  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
-  global.__sseClients.push({ res, uid: null, ka });
-  req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
-});
-
-app.get('/wallet/:uid/sse', async (req, res) => {
-  const uid = String(req.params.uid || '').trim();
-  await ensureUserExists(uid);
-  res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
-  res.flushHeaders();
-  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
-  global.__sseClients.push({ res, uid, ka });
-  try {
-    if (!db) sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: 0 }), 'balance');
-    else {
-      const snap = await db.ref(`users/${uid}/balance`).once('value');
-      const bal = safeNumber(snap.exists() ? snap.val() : 0, 0);
-      sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: bal }), 'balance');
-    }
-  } catch(e){}
-  req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
-});
-
-/* ---------------------------------------------------------
-   Firebase watchers
---------------------------------------------------------- */
-try {
-  if (db) {
-    const ordersRef = db.ref('orders');
-    ordersRef.on('child_changed', (snap) => {
-      try {
-        const kind = snap.key;
-        const val = snap.val() || {};
-        Object.values(val).forEach(ord => { try { broadcastSSE({ type:'update', typeName: kind, order:ord }); } catch(e){} });
-      } catch(e){}
-    });
-    ordersRef.on('child_added', (snap) => {
-      try {
-        const kind = snap.key;
-        const val = snap.val() || {};
-        Object.values(val).forEach(ord => { try { broadcastSSE({ type: (kind === 'buysell' ? 'buysell' : 'new'), typeName: kind, order:ord }); } catch(e){} });
-      } catch(e){}
-    });
-
-    const usersRef = db.ref('users');
-    usersRef.on('child_changed', (snap) => {
-      try {
-        const uid = snap.key;
-        const data = snap.val() || {};
-   
-      } catch(e){}
-    });
-  }
-} catch(e){ console.warn('SSE firebase watch failed', e.message); }
-
-/* ---------------------------------------------------------
-   Ensure default admin (bootstrap)
---------------------------------------------------------- */
-async function ensureDefaultAdmin() {
-  if (!db) return;
-
-  const snap = await db.ref('admins/admin').once('value');
-  if (snap.exists()) return;
-
-  const hashed = await bcrypt.hash('970611', 10);
-  const token = uuidv4();
-  const created = now();
-
-  await db.ref('admins/admin').set({
-    id: 'admin',
-    hashed,
-    created,
-    isSuper: true
-  });
-
-  await db.ref(`admins_by_token/${token}`).set({
-    id: 'admin',
-    created
-  });
-
-  console.log('✅ Default admin created');
-}
-ensureDefaultAdmin();
-
-
-/* ---------------------------------------------------------
-   Start server
---------------------------------------------------------- */
-
-app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
+</script>
+</body>
+</html>
