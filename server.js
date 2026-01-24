@@ -456,52 +456,27 @@ app.post('/wallet/:uid/deduct', async (req, res) => {
       lastUpdate: now()
     });
 
-// 🔔 推送钱包余额（前端 SSE 立刻生效）
-try {
-  broadcastSSE({
-    type: 'balance',
-    userId: uid,
-    balance: newBal,
-    source: 'plan_deduct'
-  });
-} catch(e){}
-
-// ===============================
-// ✅ PLAN 数据强制校验（关键）
-// ===============================
-const {
-  plan,
-  rateMin,
-  rateMax,
-  days
-} = req.body;
-
-if (
-  !plan ||
-  !Number.isFinite(Number(rateMin)) ||
-  !Number.isFinite(Number(rateMax)) ||
-  !Number.isFinite(Number(days)) ||
-  Number(days) <= 0
-) {
-  return res.status(400).json({
-    ok: false,
-    error: 'Invalid PLAN data (plan / rate / days missing)'
-  });
-}
-
-// ===============================
-// ✅ 保存 PLAN 订单
-// ===============================
+    // 🔔 推送钱包余额（前端 SSE 立刻生效）
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId: uid,
+        balance: newBal,
+        source: 'plan_deduct'
+      });
+    } catch(e){}
+    // ✅ 保存 PLAN 订单
 const planOrder = {
   userId: uid,
   orderId: genOrderId('PLAN'),
   amount: Number(amount),
   currency: req.body.currency || 'USDT',
 
-  plan,
-  rateMin: Number(rateMin),
-  rateMax: Number(rateMax),
-  days: Number(days),
+  // ✅ 必须补齐
+  plan: req.body.plan,
+  rateMin: Number(req.body.rateMin),
+  rateMax: Number(req.body.rateMax),
+  days: Number(req.body.days),
 
   timestamp: now()
 };
