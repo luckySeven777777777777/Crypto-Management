@@ -1056,7 +1056,7 @@ async function sendPlanOrderToTelegram(order) {
   }
 
   // 计算今日收益和累计收益
-  const rate = order.rateMin / 100;
+  const rate = order.rateMin ? order.rateMin / 100 : 0;  // 确保 rateMin 有值
   const days = order.days || 1;
 
   const totalEarnings = order.amount * rate * days;
@@ -1069,7 +1069,7 @@ async function sendPlanOrderToTelegram(order) {
   const plan = order.plan || 'Unknown Plan';  // 如果没有计划名，默认为 Unknown Plan
   const earnings = totalEarnings.toFixed(4) || '0.00';  // 保证收益有值
   const accumulated = accumulatedIncome.toFixed(4) || '0.00';  // 保证累计收益有值
-  const dailyRevenue = `${order.rateMin}% - ${order.rateMax}%` || '0% - 0%';  // 保证日收益有值
+  const dailyRevenue = `${order.rateMin || '0'}% - ${order.rateMax || '0'}%` || '0% - 0%';  // 保证日收益有值
 
   // 构建 Telegram 消息
   const text = `
