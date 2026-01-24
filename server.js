@@ -456,21 +456,53 @@ app.post('/wallet/:uid/deduct', async (req, res) => {
       lastUpdate: now()
     });
 
-    // 🔔 推送钱包余额（前端 SSE 立刻生效）
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBal,
-        source: 'plan_deduct'
-      });
-    } catch(e){}
-    // ✅ 保存 PLAN 订单
+// 🔔 推送钱包余额（前端 SSE 立刻生效）
+try {
+  broadcastSSE({
+    type: 'balance',
+    userId: uid,
+    balance: newBal,
+    source: 'plan_deduct'
+  });
+} catch(e){}
+
+// ===============================
+// ✅ PLAN 数据强制校验（关键）
+// ===============================
+const {
+  plan,
+  rateMin,
+  rateMax,
+  days
+} = req.body;
+
+if (
+  !plan ||
+  !Number.isFinite(Number(rateMin)) ||
+  !Number.isFinite(Number(rateMax)) ||
+  !Number.isFinite(Number(days)) ||
+  Number(days) <= 0
+) {
+  return res.status(400).json({
+    ok: false,
+    error: 'Invalid PLAN data (plan / rate / days missing)'
+  });
+}
+
+// ===============================
+// ✅ 保存 PLAN 订单
+// ===============================
 const planOrder = {
   userId: uid,
-  amount,
-  coin: req.body.coin || null,
   orderId: genOrderId('PLAN'),
+  amount: Number(amount),
+  currency: req.body.currency || 'USDT',
+
+  plan,
+  rateMin: Number(rateMin),
+  rateMax: Number(rateMax),
+  days: Number(days),
+
   timestamp: now()
 };
 
@@ -1049,61 +1081,40 @@ return res.json({ success: true, orderId: 'loan_' + Date.now() });
 async function sendPlanOrderToTelegram(order) {
   const token = process.env.PLAN_TELEGRAM_BOT_TOKEN;
   const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+  if (!token || chats.length === 0) return;
 
-  if (!token || chats.length === 0) {
-    console.error('❌ PLAN Telegram bot not configured');
-    return;
-  }
+  // ✅ 兜底
+  const amount   = Number(order.amount) || 0;
+  const rateMin  = Number(order.rateMin) || 0;
+  const rateMax  = Number(order.rateMax) || 0;
+  const days     = Number(order.days) || 1;
+  const currency = order.currency || 'USDT';
+  const planName = order.plan || 'Unknown Plan';
 
-  // 获取计划利率，确保它们有有效的默认值
-  const rateMin = order.rateMin || 0;  // 如果rateMin无效，则默认0%
-  const rateMax = order.rateMax || 0;  // 如果rateMax无效，则默认0%
-  const days = order.days || 1;        // 默认期限为1天
+  const todayEarnings = amount * (rateMin / 100);
+  const accumulatedIncome = amount + todayEarnings * days;
 
-  // 确保每个属性都有值，如果没有，则给它们赋予默认值
-  const orderId = order.orderId || 'Unknown Order ID';
-  const amount = order.amount || 0;  // 如果没有金额，默认为 0
-  const currency = order.currency || 'USDT';  // 如果没有币种，默认为 USDT
-  const plan = order.plan || 'Unknown Plan';  // 如果没有计划名，默认为 Unknown Plan
-
-  // 计算每日收益和累计收益
-  const totalEarnings = (amount * (rateMin / 100) * days).toFixed(4);  // 今日收益 = 金额 * 最低利率 * 天数
-  const accumulatedIncome = (parseFloat(amount) + parseFloat(totalEarnings)).toFixed(4);  // 累计收益 = 本金 + 今日收益
-  
-  // 计算日收益范围
-  const dailyRevenue = `${rateMin}% - ${rateMax}%`;
-
-  // 构建 Telegram 消息
   const text = `
 📥 New PLAN Order Created📥
 
-📌 Order ID: ${orderId}
-💵 Amount: ${amount} ${currency}
-📦 Plan: ${plan}
+📌 Order ID: ${order.orderId}
+💵 Amount: ${amount.toFixed(2)} ${currency}
+📦 Plan: ${planName}
 
-📊 Today's earnings: ${totalEarnings} ${currency}
-⚖️ Accumulated income: ${accumulatedIncome} ${currency}
+📊 Today's earnings: ${todayEarnings.toFixed(4)} ${currency}
+⚖️ Accumulated income: ${accumulatedIncome.toFixed(4)} ${currency}
 
-📈 Daily Revenue: ${dailyRevenue}
+📈 Daily Revenue: ${rateMin}% - ${rateMax}%
 
 📆 ${new Date().toLocaleString()}
-`;
+`.trim();
 
-  // 发送消息到 Telegram
   for (const chatId of chats) {
-    try {
-      await axios.post(
-        `https://api.telegram.org/bot${token}/sendMessage`,
-        {
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML'  // 设置为 HTML 允许使用加粗等格式
-        },
-        { timeout: 10000 }
-      );
-    } catch (err) {
-      console.error(`PLAN Telegram send error for chat ${chatId}:`, err.response?.data || err.message);
-    }
+    await axios.post(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      { chat_id: chatId, text },
+      { timeout: 10000 }
+    );
   }
 }
 
