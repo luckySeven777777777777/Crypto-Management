@@ -1055,25 +1055,34 @@ async function sendPlanOrderToTelegram(order) {
     return;
   }
 
-  // 计算收益
+  // 计算今日收益和累计收益
   const rate = order.rateMin / 100;
   const days = order.days || 1;
 
   const totalEarnings = order.amount * rate * days;
   const accumulatedIncome = order.amount + totalEarnings;
 
-  // 构建消息格式
+  // 确保每个属性都有值，如果没有，则给它们赋予默认值
+  const orderId = order.orderId || 'Unknown Order ID';
+  const amount = order.amount || '0.00';  // 如果没有金额，默认为 0.00
+  const currency = order.currency || 'USDT';  // 如果没有币种，默认为 USDT
+  const plan = order.plan || 'Unknown Plan';  // 如果没有计划名，默认为 Unknown Plan
+  const earnings = totalEarnings.toFixed(4) || '0.00';  // 保证收益有值
+  const accumulated = accumulatedIncome.toFixed(4) || '0.00';  // 保证累计收益有值
+  const dailyRevenue = `${order.rateMin}% - ${order.rateMax}%` || '0% - 0%';  // 保证日收益有值
+
+  // 构建 Telegram 消息
   const text = `
 📥 New PLAN Order Created📥
 
-📌 Order ID: ${order.orderId}
-💵 Amount: ${order.amount} ${order.currency}
-📦 Plan: ${order.plan}
+📌 Order ID: ${orderId}
+💵 Amount: ${amount} ${currency}
+📦 Plan: ${plan}
 
-📊 Today's earnings: ${totalEarnings.toFixed(4)} ${order.currency}
-⚖️ Accumulated income: ${accumulatedIncome.toFixed(4)} ${order.currency}
+📊 Today's earnings: ${earnings} ${currency}
+⚖️ Accumulated income: ${accumulated} ${currency}
 
-📈 Daily Revenue: ${order.rateMin}% - ${order.rateMax}%
+📈 Daily Revenue: ${dailyRevenue}
 
 📆 ${new Date().toLocaleString()}
 `;
@@ -1086,7 +1095,7 @@ async function sendPlanOrderToTelegram(order) {
         {
           chat_id: chatId,
           text,
-          parse_mode: 'HTML'  // 设置为 HTML 格式
+          parse_mode: 'HTML'  // 设置为 HTML 允许使用加粗等格式
         },
         { timeout: 10000 }
       );
