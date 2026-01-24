@@ -465,7 +465,26 @@ app.post('/wallet/:uid/deduct', async (req, res) => {
         source: 'plan_deduct'
       });
     } catch(e){}
+    // ✅ 保存 PLAN 订单
+const planOrder = {
+  userId: uid,
+  amount,
+  coin: req.body.coin || null,
+  orderId: genOrderId('PLAN'),
+  timestamp: now()
+};
 
+// 写入数据库（可选但推荐）
+if (db) {
+  await db.ref(`orders/plan/${planOrder.orderId}`).set(planOrder);
+}
+
+// 🔔 发送 Telegram 通知
+try {
+  await sendPlanOrderToTelegram(planOrder);
+} catch (e) {
+  console.error('PLAN Telegram notify failed:', e.message);
+}
     return res.json({ ok:true, balance: newBal });
 
   } catch (e) {
@@ -1027,6 +1046,41 @@ return res.json({ success: true, orderId: 'loan_' + Date.now() });
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+async function sendPlanOrderToTelegram(order) {
+  const token = process.env.PLAN_TELEGRAM_BOT_TOKEN;
+  const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+
+  if (!token || chats.length === 0) {
+    console.error('❌ PLAN Telegram bot not configured');
+    return;
+  }
+
+  const text = `
+📦 <b>New PLAN Order</b>
+
+👤 User: <b>${order.userId}</b>
+💰 Amount: <b>${order.amount} USDT</b>
+🪙 Coin: <b>${order.coin || 'N/A'}</b>
+🆔 Order ID: <b>${order.orderId}</b>
+🕒 Time: ${new Date(order.timestamp).toLocaleString()}
+`;
+
+  for (const chatId of chats) {
+    try {
+      await axios.post(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        {
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML'
+        },
+        { timeout: 10000 }
+      );
+    } catch (err) {
+      console.error(`PLAN Telegram send error for chat ${chatId}:`, err.response?.data || err.message);
+    }
+  }
+}
 
 /* ---------------------------------------------------------
    Get transactions for admin UI
