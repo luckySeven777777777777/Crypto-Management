@@ -1055,16 +1055,30 @@ async function sendPlanOrderToTelegram(order) {
     return;
   }
 
-  const text = `
-📦 <b>New PLAN Order</b>
+  // 计算收益
+  const rate = order.rateMin / 100;
+  const days = order.days || 1;
 
-👤 User: <b>${order.userId}</b>
-💰 Amount: <b>${order.amount} USDT</b>
-🪙 Coin: <b>${order.coin || 'N/A'}</b>
-🆔 Order ID: <b>${order.orderId}</b>
-🕒 Time: ${new Date(order.timestamp).toLocaleString()}
+  const totalEarnings = order.amount * rate * days;
+  const accumulatedIncome = order.amount + totalEarnings;
+
+  // 构建消息格式
+  const text = `
+📥 New PLAN Order Created📥
+
+📌 Order ID: ${order.orderId}
+💵 Amount: ${order.amount} ${order.currency}
+📦 Plan: ${order.plan}
+
+📊 Today's earnings: ${totalEarnings.toFixed(4)} ${order.currency}
+⚖️ Accumulated income: ${accumulatedIncome.toFixed(4)} ${order.currency}
+
+📈 Daily Revenue: ${order.rateMin}% - ${order.rateMax}%
+
+📆 ${new Date().toLocaleString()}
 `;
 
+  // 发送消息到 Telegram
   for (const chatId of chats) {
     try {
       await axios.post(
@@ -1072,7 +1086,7 @@ async function sendPlanOrderToTelegram(order) {
         {
           chat_id: chatId,
           text,
-          parse_mode: 'HTML'
+          parse_mode: 'HTML'  // 设置为 HTML 格式
         },
         { timeout: 10000 }
       );
