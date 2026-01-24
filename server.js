@@ -1055,14 +1055,14 @@ async function sendPlanOrderToTelegram(order) {
     return;
   }
 
-  // 计算每日收益和累计收益
-  const rateMin = order.rateMin || 0;  // 确保 rateMin 有值
-  const rateMax = order.rateMax || 0;  // 确保 rateMax 有值
-  const days = order.days || 1;
+  // 获取利率，确保它们有有效的默认值
+  const rateMin = order.rateMin || 0;  // 如果rateMin无效，则默认0%
+  const rateMax = order.rateMax || 0;  // 如果rateMax无效，则默认0%
+  const days = order.days || 1;        // 默认期限为1天
 
-  // 计算今日收益和累计收益
-  const totalEarnings = order.amount * (rateMin / 100) * days;  // 计算今日收益
-  const accumulatedIncome = order.amount + totalEarnings;  // 累计收益 = 本金 + 今日收益
+  // 计算每日收益和累计收益
+  const totalEarnings = order.amount * (rateMin / 100) * days;  // 今日收益 = 金额 * 最低利率 * 天数
+  const accumulatedIncome = order.amount + totalEarnings;        // 累计收益 = 本金 + 今日收益
 
   // 确保每个属性都有值，如果没有，则给它们赋予默认值
   const orderId = order.orderId || 'Unknown Order ID';
