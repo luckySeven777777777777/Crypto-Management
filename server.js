@@ -1055,7 +1055,7 @@ async function sendPlanOrderToTelegram(order) {
     return;
   }
 
-  // 获取利率，确保它们有有效的默认值
+  // 获取计划利率，确保它们有有效的默认值
   const rateMin = order.rateMin || 0;  // 如果rateMin无效，则默认0%
   const rateMax = order.rateMax || 0;  // 如果rateMax无效，则默认0%
   const days = order.days || 1;        // 默认期限为1天
