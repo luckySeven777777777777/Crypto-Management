@@ -815,11 +815,19 @@ app.post('/api/order/buysell', handleBuySellRequest);
 app.post('/api/order/recharge', async (req, res) => {
   try {
     if(!db) return res.json({ ok:false, error:'no-db' });
+
     const payload = req.body || {};
-    const userId = payload.userId || payload.user;
+
+    // 🔹 这里改动：保证 userId 永远是长ID
+    payload.userId = payload.userId || payload.user || ('U' + Date.now() + '_' + Math.floor(Math.random()*100000));
+
+    const userId = payload.userId;
+
     await ensureUserExists(userId);
+
     if(!userId) return res.status(400).json({ ok:false, error:'missing userId' });
     if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
+
     const id = await saveOrder('recharge', payload);
     return res.json({ ok:true, orderId: id });
   } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
@@ -883,7 +891,11 @@ app.post('/api/order/withdraw', async (req, res) => {
     if (!db) return res.json({ ok:false, error:'no-db' });
 
     const payload = req.body || {};
-    const userId = payload.userId || payload.user;
+
+    // 🔹 这里改动：保证 userId 永远是长ID
+    payload.userId = payload.userId || payload.user || ('U' + Date.now() + '_' + Math.floor(Math.random()*100000));
+
+    const userId = payload.userId;
 
     if (!userId) {
       return res.status(400).json({ ok:false, error:'missing userId' });
@@ -893,6 +905,11 @@ app.post('/api/order/withdraw', async (req, res) => {
     }
 
     await ensureUserExists(userId);
+
+    const id = await saveOrder('withdraw', payload);
+    return res.json({ ok:true, orderId: id });
+  } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
+});
 
     // ===== 关键字段 =====
     const amountCoin = Number(payload.amount || 0);        // 币数量（只记录）
