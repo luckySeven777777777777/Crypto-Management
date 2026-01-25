@@ -422,6 +422,58 @@ app.get('/wallet/:uid/balance', async (req, res) => {
   }
 });
 /* ---------------------------------------------------------
+   Wallet credit (Convert → USDT 即时到账)
+--------------------------------------------------------- */
+app.post('/wallet/:uid/credit', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+    const uid = String(req.params.uid || '').trim();
+    const amount = Number(req.body.amount || 0);
+    const reason = String(req.body.reason || 'convert');
+
+    if (!isSafeUid(uid))
+      return res.status(400).json({ ok:false, error:'invalid uid' });
+
+    if (amount <= 0)
+      return res.status(400).json({ ok:false, error:'invalid amount' });
+
+    await ensureUserExists(uid);
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    const curBal = snap.exists()
+      ? safeNumber(snap.val().balance, 0)
+      : 0;
+
+    const newBal = curBal + amount;
+
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    // 🔔 关键：推送 SSE，前端钱包立即同步
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId: uid,
+        balance: newBal,
+        source: reason
+      });
+    } catch(e){}
+
+    return res.json({ ok:true, balance: newBal });
+
+  } catch (e) {
+    console.error('/wallet/:uid/credit error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/* ---------------------------------------------------------
    Wallet internal deduct (PLAN / TRADE 用)
 --------------------------------------------------------- */
 app.post('/wallet/:uid/deduct', async (req, res) => {
