@@ -552,6 +552,7 @@ button {
           <tr>
             <th>订单/会员/钱包</th>
             <th>时间 (US/Eastern)</th>
+            <th>用户ID</th>
             <th>类型</th>
             <th>货币数量</th>
             <th>币种</th>
@@ -602,7 +603,7 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></tr></thead>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></tr></thead>
         <tbody id="r_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
@@ -640,7 +641,7 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></thead>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></thead>
         <tbody id="w_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
@@ -1443,16 +1444,25 @@ function renderBuySellRow(o) {
 
   // ✅ 核心：只用下单时的数据，不做任何计算
   const coinQty = Number(o.coinQty || 0);
-  const usdtAmt = Number(o.amount || 0);     // 前端下单的 USDT
+  const usdtAmt = Number(o.amount || 0); // 前端下单的 USDT
 
   return `
 <tr>
+  <!-- 订单号（只留订单号） -->
   <td>
     <div class="order-id">${o.orderId || ''}</div>
-    <div class="small">${o.userId || ''}</div>
   </td>
 
+  <!-- 时间 -->
   <td>${o.time_us || '--'}</td>
+
+  <!-- ✅ 新增：用户ID（就在时间旁边） -->
+  <td>
+    <span style="font-weight:600;color:#1976d2">
+      ${o.userId || '--'}
+    </span>
+  </td>
+
   <td>${side || '--'}</td>
 
   <!-- 货币数量（下单币数量） -->
@@ -1521,120 +1531,157 @@ function calcSummary(list, type){
 
   return result;
 }
-function renderRechargeRow(o){
+// ===== 充值行 =====
+function renderRechargeRow(o) {
   return `
 <tr>
-  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
-  <td>${o.time_us || '--'}</td>
-  <td>充值</td>
-  <td>${o.amount}</td>
-  <td>${o.coin || '--'}</td>
-  <td>${o.estimate ?? '--'}</td>
-  <td>${o.wallet || '--'}</td>
-  <td>${o.ip || '--'}</td>
-  <td><span class="badge">${displayStatus(o.status)}</span></td>
-  <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
+  <!-- 订单ID + 用户ID -->
   <td>
-${
-  o.note
-  ? (() => {
-      const remarkData = btoa(
-        unescape(
-          encodeURIComponent(
-            JSON.stringify({
-              // 基本
-              orderId: o.orderId,
-              type: 'recharge',
-              time: o.time_us || '',
+    <div class="order-id">${o.orderId || '--'}</div>
+    <div class="small" style="color:#1976d2; font-weight:600">${o.userId || '--'}</div>
+  </td>
 
-              // 🔥 订单核心信息
-              side: o.side,
-              amount: o.amount,
-              coin: o.coin,
-              estimate: o.estimate,
-              tp: o.tp,
-              sl: o.sl,
-              wallet: o.wallet,
-              ip: o.ip,
-              status: o.status,
+  <!-- 时间 -->
+  <td>${o.time_us || '--'}</td>
 
-              // 备注
-              note: o.note
-            })
-          )
-        )
-      );
+  <!-- 类型 -->
+  <td>充值</td>
 
-      return `
-        <span
-          style="color:#1976d2;cursor:pointer"
-          data-remark="${remarkData}"
-          onclick="openRemarkFromRow(this)"
-        >查看</span>
-      `;
-    })()
-  : '--'
-}
-</td>
+  <!-- 金额 -->
+  <td>${o.amount != null ? o.amount : '--'}</td>
 
+  <!-- 币种 -->
+  <td>${o.coin || '--'}</td>
+
+  <!-- 预估 -->
+  <td>${o.estimate ?? '--'}</td>
+
+  <!-- 钱包 -->
+  <td>${o.wallet || '--'}</td>
+
+  <!-- IP -->
+  <td>${o.ip || '--'}</td>
+
+  <!-- 状态 -->
+  <td><span class="badge">${displayStatus(o.status)}</span></td>
+
+  <!-- 操作按钮 -->
+  <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
+
+  <!-- 备注 -->
+  <td>
+    ${
+      o.note
+        ? (() => {
+            const remarkData = btoa(
+              unescape(
+                encodeURIComponent(
+                  JSON.stringify({
+                    orderId: o.orderId,
+                    type: 'recharge',
+                    time: o.time_us || '',
+                    side: o.side,
+                    amount: o.amount,
+                    coin: o.coin,
+                    estimate: o.estimate,
+                    tp: o.tp,
+                    sl: o.sl,
+                    wallet: o.wallet,
+                    ip: o.ip,
+                    status: o.status,
+                    note: o.note
+                  })
+                )
+              )
+            );
+            return `
+              <span
+                style="color:#1976d2;cursor:pointer"
+                data-remark="${remarkData}"
+                onclick="openRemarkFromRow(this)"
+              >查看</span>
+            `;
+          })()
+        : '--'
+    }
+  </td>
 </tr>`;
 }
-function renderWithdrawRow(o){
+
+// ===== 提款行 =====
+function renderWithdrawRow(o) {
   return `
 <tr>
-  <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
+  <!-- 订单ID + 用户ID -->
+  <td>
+    <div class="order-id">${o.orderId || '--'}</div>
+    <div class="small" style="color:#1976d2; font-weight:600">${o.userId || '--'}</div>
+  </td>
+
+  <!-- 时间 -->
   <td>${o.time_us || '--'}</td>
+
+  <!-- 类型 -->
   <td>提款</td>
-  <td>${o.amount}</td>
+
+  <!-- 金额 -->
+  <td>${o.amount != null ? o.amount : '--'}</td>
+
+  <!-- 币种 -->
   <td>${o.coin || '--'}</td>
+
+  <!-- 预估 -->
   <td>${o.estimate ?? '--'}</td>
+
+  <!-- 钱包 -->
   <td>${o.wallet || '--'}</td>
+
+  <!-- IP -->
   <td>${o.ip || '--'}</td>
+
+  <!-- 状态 -->
   <td><span class="badge">${displayStatus(o.status)}</span></td>
+
+  <!-- 操作按钮 -->
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
- <td>
-${
-  o.note
-  ? (() => {
-      const remarkData = btoa(
-        unescape(
-          encodeURIComponent(
-            JSON.stringify({
-              // 基本
-              orderId: o.orderId,
-              type: 'withdraw',
-              time: o.time_us || '',
 
-              // 🔥 订单核心信息
-              side: o.side,
-              amount: o.amount,
-              coin: o.coin,
-              estimate: o.estimate,
-              tp: o.tp,
-              sl: o.sl,
-              wallet: o.wallet,
-              ip: o.ip,
-              status: o.status,
-
-              // 备注
-              note: o.note
-            })
-          )
-        )
-      );
-
-      return `
-        <span
-          style="color:#1976d2;cursor:pointer"
-          data-remark="${remarkData}"
-          onclick="openRemarkFromRow(this)"
-        >查看</span>
-      `;
-    })()
-  : '--'
-}
-</td>
-
+  <!-- 备注 -->
+  <td>
+    ${
+      o.note
+        ? (() => {
+            const remarkData = btoa(
+              unescape(
+                encodeURIComponent(
+                  JSON.stringify({
+                    orderId: o.orderId,
+                    type: 'withdraw',
+                    time: o.time_us || '',
+                    side: o.side,
+                    amount: o.amount,
+                    coin: o.coin,
+                    estimate: o.estimate,
+                    tp: o.tp,
+                    sl: o.sl,
+                    wallet: o.wallet,
+                    ip: o.ip,
+                    status: o.status,
+                    note: o.note
+                  })
+                )
+              )
+            );
+            return `
+              <span
+                style="color:#1976d2;cursor:pointer"
+                data-remark="${remarkData}"
+                onclick="openRemarkFromRow(this)"
+              >查看</span>
+            `;
+          })()
+        : '--'
+    }
+  </td>
 </tr>`;
 }
 /* -----------------------------
