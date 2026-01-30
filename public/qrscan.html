@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NEXBIT SAFE | Scan</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  min-height:100vh;
+  background:radial-gradient(circle at top,#0b1b2d,#050b13 60%);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;
+  color:#e6f1ff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.scan-card{
+  width:360px;
+  background:#0b1624;
+  border-radius:16px;
+  box-shadow:0 0 40px rgba(0,140,255,.25);
+  padding:24px;
+  text-align:center;
+}
+.logo{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  margin-bottom:16px;
+}
+.logo img{width:36px}
+.logo span{
+  font-size:18px;
+  font-weight:700;
+}
+.tip{
+  font-size:13px;
+  opacity:.75;
+  margin-bottom:14px;
+}
+#reader{
+  width:260px;
+  height:260px;
+  margin:0 auto 16px;
+  border-radius:12px;
+  overflow:hidden;
+  background:#000;
+}
+.status{
+  font-size:13px;
+  color:#00d084;
+  display:none;
+}
+.error{
+  font-size:13px;
+  color:#ff6b6b;
+  display:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="scan-card">
+  <div class="logo">
+    <img src="https://custom-images.strikinglycdn.com/res/hrscywv4p/image/upload/c_limit,fl_lossy,h_300,w_300,f_auto,q_auto/13252794/625023_897386.png">
+    <span>NEXBIT SAFE</span>
+  </div>
+
+  <div class="tip">Scan the QR code on your computer</div>
+
+  <div id="reader"></div>
+
+  <div class="status" id="ok">✔ Connected</div>
+  <div class="error" id="err">Invalid QR</div>
+</div>
+
+<script>
+/* ===============================
+   扫码服务域名（关键）
+================================ */
+const QR_API = "https://nexbitsafeloginscan-production.up.railway.app";  // 如果二维码生成服务和扫码服务仍然分开，这里保持不变
+
+/* ===============================
+   主业务服务器（非常重要）
+================================ */
+const MAIN_API = "https://crypto-management-production-5e04.up.railway.app";  // 修改为主服务器地址
+
+/* ===============================
+   无登录：生成 / 读取 uid
+================================ */
+let uid = localStorage.getItem("uid") 
+       || localStorage.getItem("nexbit_uid");
+
+if (!uid) {
+  uid = "U" + Date.now() + "_" + Math.floor(Math.random()*999999);
+}
+
+// ⭐ 关键：双写（不破坏你原系统）
+localStorage.setItem("uid", uid);
+localStorage.setItem("nexbit_uid", uid);
+
+/* ===============================
+   扫码逻辑
+================================ */
+const params = new URLSearchParams(location.search);
+let fixedToken = params.get('token');
+let locked = false;
+
+const reader = new Html5Qrcode("reader");
+
+async function onScan(text){
+  if(locked) return;
+  locked = true;
+
+  let token = fixedToken;
+  if(!token){
+    try{
+      token = new URL(text).searchParams.get('token');
+    }catch{}
+  }
+
+  if(!token){
+    document.getElementById('err').style.display='block';
+    return;
+  }
+
+  // 修改为主业务服务器的确认请求
+  const res = await fetch(`${MAIN_API}/api/qr/confirm`, {  // 修改为主服务器处理扫码确认的接口
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, uid })
+  });
+
+  const data = await res.json();
+
+  if (data && data.ok) {
+    document.getElementById('ok').style.display = 'block';
+    reader.stop();
+  } else {
+    alert('❌ 登录确认失败，请重新扫描');
+  }
+}
+
+Html5Qrcode.getCameras().then(()=>{
+  reader.start(
+    {facingMode:'environment'},
+    {fps:10, qrbox:220},
+    onScan
+  );
+});
+</script>
+
+</body>
+</html>

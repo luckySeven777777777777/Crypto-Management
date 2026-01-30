@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NEXBIT SAFE | QR Login</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  height:100vh;
+  background:radial-gradient(circle at top,#0b1b2d,#050b13 60%);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;
+  color:#e6f1ff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.login-card{
+  position:relative;
+  width:420px;
+  background:#0b1624;
+  border-radius:16px;
+  box-shadow:0 0 40px rgba(0,140,255,.25);
+  padding:28px;
+}
+.scan-btn{
+  position:absolute;
+  top:18px;
+  right:18px;
+  padding:6px 12px;
+  border:1px solid #00aaff;
+  border-radius:6px;
+  font-size:12px;
+  color:#00aaff;
+  cursor:pointer;
+}
+.scan-btn:hover{
+  background:#00aaff;
+  color:#000;
+}
+.logo{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:22px;
+}
+.logo img{width:42px}
+.logo span{
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:1px;
+}
+.title{
+  text-align:center;
+  font-size:16px;
+  margin-bottom:18px;
+}
+.qr-box{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+.qr{
+  width:220px;
+  height:220px;
+  background:#08101c;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin-bottom:14px;
+}
+.qr img{
+  width:180px;
+  height:180px;
+}
+.tip{
+  font-size:13px;
+  opacity:.75;
+  text-align:center;
+  line-height:1.5;
+}
+.status{
+  margin-top:12px;
+  font-size:13px;
+  color:#00d084;
+  display:none;
+}
+.footer{
+  margin-top:22px;
+  font-size:12px;
+  opacity:.6;
+  text-align:center;
+}
+</style>
+</head>
+
+<body>
+
+<div class="login-card">
+  <div class="scan-btn" onclick="openScan()">Scan</div>
+
+  <div class="logo">
+    <img src="https://custom-images.strikinglycdn.com/res/hrscywv4p/image/upload/c_limit,fl_lossy,h_300,w_300,f_auto,q_auto/13252794/625023_897386.png">
+    <span>NEXBIT SAFE</span>
+  </div>
+
+  <div class="title">Scan QR Code to Log In</div>
+
+  <div class="qr-box">
+    <div class="qr">
+      <img id="qrImg" src="">
+    </div>
+
+    <div class="tip">
+      Open NEXBIT App<br>
+      Scan this QR code to log in
+    </div>
+
+    <div class="status" id="status">✔ Connected</div>
+  </div>
+
+  <div class="footer">
+    Secure login powered by NEXBIT SAFE
+  </div>
+</div>
+
+<script>
+/* ===============================
+   主业务服务器（非常重要）
+================================ */
+const MAIN_API =  "https://crypto-management-production-5e04.up.railway.app";  // 修改为主服务器地址
+
+/* ===============================
+   扫码服务域名（关键）
+================================ */
+const QR_API = "https://nexbitsafeloginscan-production.up.railway.app";  // 保持为二维码生成和扫描服务的地址
+
+/* ===============================
+   无登录：生成 / 读取 uid
+================================ */
+let uid = localStorage.getItem("uid")
+       || localStorage.getItem("nexbit_uid");
+
+if (!uid) {
+  uid = "U" + Date.now() + "_" + Math.floor(Math.random()*999999);
+}
+
+// ⭐ 同步写入钱包 UID
+localStorage.setItem("uid", uid);
+localStorage.setItem("nexbit_uid", uid);
+
+/* ===============================
+   打开手机扫码页
+================================ */
+function openScan(){
+  if (!token) return alert("QR not ready yet"); // 确保 token 已经生成
+  window.location.href = `${QR_API}/scan.html?token=${token}`;  // 扫码页面的链接
+}
+
+/* ===============================
+   创建二维码
+================================ */
+async function createQR(){
+  const res = await fetch(`${QR_API}/api/qr/create`);  // 请求二维码生成的 API 地址
+  const data = await res.json();
+  token = data.token;
+  document.getElementById('qrImg').src = data.qr;
+  startPoll();
+}
+
+/* ===============================
+   轮询扫码状态
+================================ */
+function startPoll(){
+  timer = setInterval(async ()=>{
+    if(!token) return;
+
+    const res = await fetch(
+      `${QR_API}/api/qr/status?token=${token}&_=${Date.now()}`,  // 请求扫码状态的 API 地址
+      { cache: "no-store" }
+    );
+    const data = await res.json();
+
+    if (data.status === 'success' && data.uid) {
+      clearInterval(timer);
+      uid = data.uid;
+
+      // 登录成功后处理
+      localStorage.setItem("uid", uid);
+      localStorage.setItem("nexbit_uid", uid);
+
+      // 跳转到主站
+      window.location.href = `https://www.nexbitsafe.com/?uid=${uid}`;
+
+      // 同步用户到主业务
+      await fetch(`${MAIN_API}/api/users/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: uid })
+      });
+
+      // 获取余额（可选）
+      fetch(`${MAIN_API}/api/balance/${uid}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) {
+            console.log('💰 当前余额:', d.balance);
+          }
+        });
+
+      // 开始 SSE
+      startBalanceSSE(uid);
+    }
+  },3000); // 延长轮询间隔，避免过于频繁
+}
+
+createQR();
+
+/* ===============================
+   余额 / 订单 SSE
+================================ */
+let balanceES = null;
+
+function startBalanceSSE(uid) {
+  if (balanceES) balanceES.close();
+
+  balanceES = new EventSource(`${MAIN_API}/wallet/${uid}/sse`);  // 请求 SSE 余额更新的 API 地址
+
+  balanceES.addEventListener('balance', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      console.log('🔄 SSE 余额更新:', data.balance);
+
+      // 👉 这里实时更新余额 UI
+    } catch (err) {
+      console.error("SSE 错误:", err);
+    }
+  });
+
+  balanceES.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      console.log('📦 SSE 消息:', data);
+    } catch (err) {
+      console.error("SSE 消息处理失败:", err);
+    }
+  };
+
+  balanceES.onerror = () => {
+    console.warn('⚠️ SSE 断开，5 秒后重连');
+    balanceES.close();
+    setTimeout(() => startBalanceSSE(uid), 5000);
+  };
+}
+</script>
+
+</body>
+</html>
