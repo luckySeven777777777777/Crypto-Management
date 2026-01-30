@@ -358,6 +358,41 @@ function objToSortedArray(objOrNull){
    Root
 --------------------------------------------------------- */
 app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
+// 内存存储 QR 登录状态
+const qrSessions = new Map();
+
+// 查询扫码状态
+app.get('/api/qr/status', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ ok:false });
+
+  const session = qrSessions.get(token);
+  if (!session) return res.json({ ok:true, status:'expired' });
+
+  res.json({ ok:true, status: session.status, uid: session.uid || null });
+});
+
+// 创建二维码
+app.post('/api/qr/create', (req, res) => {
+  const token = uuidv4();
+  qrSessions.set(token, { status:'pending', uid:null });
+
+  qrcode.toDataURL(`nexbit:${token}`, (err, qr) => {
+    if (err) return res.status(500).json({ ok:false });
+    res.json({ ok:true, token, qr });
+  });
+});
+
+// 扫码确认
+app.post('/api/qr/confirm', (req, res) => {
+  const { token, uid } = req.body;
+  const session = qrSessions.get(token);
+  if (!session) return res.status(400).json({ ok:false });
+
+  session.status = 'success';
+  session.uid = uid;
+  res.json({ ok:true });
+});
 
 /* ---------------------------------------------------------
    Basic user sync
