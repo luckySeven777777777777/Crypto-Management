@@ -390,6 +390,52 @@ app.post('/api/users/sync', async (req, res) => {
     return res.json({ ok:false });
   }
 });
+// 同步订单记录接口
+app.post('/api/orders/sync', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ ok: false, message: 'no userId' });
+
+    if (!db) return res.status(500).json({ ok: false, message: 'Database not connected' });
+
+    // 确保用户存在
+    await ensureUserExists(userId);
+
+    // 拉取用户的订单记录
+    const ordersRef = db.ref(`user_orders/${userId}`);
+    const ordersSnap = await ordersRef.once('value');
+    const orders = ordersSnap.exists() ? ordersSnap.val() : [];
+
+    // 返回订单记录
+    res.json({ ok: true, orders });
+  } catch (e) {
+    console.error('Orders sync error:', e);
+    res.status(500).json({ ok: false, message: 'Failed to sync orders' });
+  }
+});
+// 同步币种持有接口
+app.post('/api/currency/sync', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ ok: false, message: 'no userId' });
+
+    if (!db) return res.status(500).json({ ok: false, message: 'Database not connected' });
+
+    // 确保用户存在
+    await ensureUserExists(userId);
+
+    // 拉取用户的币种持有记录
+    const balanceRef = db.ref(`users/${userId}/balance`);
+    const balanceSnap = await balanceRef.once('value');
+    const balance = balanceSnap.exists() ? balanceSnap.val() : 0;
+
+    // 返回币种持有信息
+    res.json({ ok: true, balance });
+  } catch (e) {
+    console.error('Currency sync error:', e);
+    res.status(500).json({ ok: false, message: 'Failed to sync currency' });
+  }
+});
 
 /* ---------------------------------------------------------
    Balance endpoints
