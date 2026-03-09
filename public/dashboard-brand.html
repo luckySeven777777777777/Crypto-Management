@@ -654,7 +654,15 @@ button {
         <button onclick="loadMembers()">搜索</button>
       </div>
       <table class="table">
-        <thead><tr><th>会员ID</th><th>wallet</th><th>最近活动</th></tr></thead>
+       <thead>
+<tr>
+<th>会员ID</th>
+<th>wallet</th>
+<th>注册时间</th>
+<th>上线时间</th>
+<th>最后在线时间</th>
+</tr>
+</thead>
         <tbody id="m_table"><tr><td colspan="3" class="small">暂无数据</td></tr></tbody>
       </table>
     </div>
@@ -2083,8 +2091,35 @@ postRenderDecorate();
    Members & Dashboard
 ------------------------------ */
 async function loadMembers(){
-  const tbody = $('#m_table'); tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
-  try{ const all = await fetchAll(); const users = all.users || {}; if(!Object.keys(users).length){ tbody.innerHTML = `<tr><td colspan="12">暂无数据</td></tr>`; return; } tbody.innerHTML = Object.keys(users).map(uid=>`<tr><td>${uid}</td><td>${users[uid].wallet||'--'}</td><td>${users[uid].updated||'--'}</td></tr>`).join(''); }catch(e){ tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`; }
+  const tbody = $('#m_table');
+  tbody.innerHTML = `<tr><td colspan="6">加载中...</td></tr>`;
+
+  try{
+    const all = await fetchAll();
+    const users = all.users || {};
+
+    if(!Object.keys(users).length){
+      tbody.innerHTML = `<tr><td colspan="6">暂无数据</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = Object.keys(users).map(uid=>{
+      const u = users[uid];
+
+      return `
+      <tr>
+        <td>${uid}</td>
+        <td>${u.wallet || '--'}</td>
+        <td>${u.createdAt || '--'}</td>
+        <td>${u.onlineAt || '--'}</td>
+        <td>${u.lastSeen || u.updated || '--'}</td>
+      </tr>
+      `;
+    }).join('');
+
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="6">加载失败</td></tr>`;
+  }
 }
 // ✅【就插在这里】—— loadDashboard 上面
 function isOrderApproved(o){
