@@ -189,11 +189,16 @@ async function ensureUserExists(uid){
 
   const ts = now();
   await ref.set({
-    userid: uid,
-    created: ts,
-    updated: ts,
-    balance: 0
-  });
+  userid: uid,
+  wallet: "",
+  balance: 0,
+
+  created: ts,        // 注册时间
+  loginTime: ts,      // 上线时间
+  lastOnline: ts,     // 最后在线
+
+  updated: ts
+ });
 }
 
 // ================================
@@ -378,11 +383,14 @@ app.post('/api/users/sync', async (req, res) => {
     const balance = safeNumber(balanceSnap.exists() ? balanceSnap.val() : 0, 0);
 
     await userRef.update({
-      userid: uid,
-      created,
-      updated: now(),
-      balance
-    });
+     userid: uid,
+     created,
+     updated: now(),
+     balance,
+
+     loginTime: now(),
+     lastOnline: now()
+   });
 
     return res.json({ ok:true });
   } catch(e){
@@ -390,24 +398,54 @@ app.post('/api/users/sync', async (req, res) => {
     return res.json({ ok:false });
   }
 });
+app.post('/api/users/online', async (req,res)=>{
+  try{
+
+    const { userid, userId } = req.body;
+    const uid = userid || userId;
+
+    if(!uid){
+      return res.json({ok:false,message:'no uid'});
+    }
+
+    if(!db){
+      return res.json({ok:true,message:'no-db'});
+    }
+
+    const ref = db.ref('users/' + uid);
+
+    await ref.update({
+      lastOnline: now()
+    });
+
+    res.json({ok:true});
+
+  }catch(e){
+    console.error('online error',e);
+    res.json({ok:false});
+  }
+});
 // 同步订单记录接口
 app.post('/api/orders/sync', async (req, res) => {
   try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ ok: false, message: 'no userId' });
 
-    if (!db) return res.status(500).json({ ok: false, message: 'Database not connected' });
+    const { userid, userId } = req.body;
+    const uid = userid || userId;
 
-    // 确保用户存在
-    await ensureUserExists(userId);
+    if (!uid)
+      return res.status(400).json({ ok: false, message: 'no userId' });
 
-    // 拉取用户的订单记录
-    const ordersRef = db.ref(`user_orders/${userId}`);
+    if (!db)
+      return res.status(500).json({ ok: false, message: 'Database not connected' });
+
+    await ensureUserExists(uid);
+
+    const ordersRef = db.ref(`user_orders/${uid}`);
     const ordersSnap = await ordersRef.once('value');
     const orders = ordersSnap.exists() ? ordersSnap.val() : [];
 
-    // 返回订单记录
     res.json({ ok: true, orders });
+
   } catch (e) {
     console.error('Orders sync error:', e);
     res.status(500).json({ ok: false, message: 'Failed to sync orders' });
@@ -416,21 +454,24 @@ app.post('/api/orders/sync', async (req, res) => {
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
   try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ ok: false, message: 'no userId' });
 
-    if (!db) return res.status(500).json({ ok: false, message: 'Database not connected' });
+    const { userid, userId } = req.body;
+    const uid = userid || userId;
 
-    // 确保用户存在
-    await ensureUserExists(userId);
+    if (!uid)
+      return res.status(400).json({ ok: false, message: 'no userId' });
 
-    // 拉取用户的币种持有记录
-    const balanceRef = db.ref(`users/${userId}/balance`);
+    if (!db)
+      return res.status(500).json({ ok: false, message: 'Database not connected' });
+
+    await ensureUserExists(uid);
+
+    const balanceRef = db.ref(`users/${uid}/balance`);
     const balanceSnap = await balanceRef.once('value');
     const balance = balanceSnap.exists() ? balanceSnap.val() : 0;
 
-    // 返回币种持有信息
     res.json({ ok: true, balance });
+
   } catch (e) {
     console.error('Currency sync error:', e);
     res.status(500).json({ ok: false, message: 'Failed to sync currency' });
