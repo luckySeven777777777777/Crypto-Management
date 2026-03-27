@@ -638,7 +638,81 @@ try {
     return res.status(500).json({ ok:false, error: e.message });
   }
 });
+/* ---------------------------------------------------------
+   Investment Plan Settlement (项目到期自动结算)
+   逻辑：由前端触发，后端校验订单唯一性并增加余额
+--------------------------------------------------------- */
+app.post('/api/plan/settle', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok: false, error: '数据库未连接' });
 
+    const { uid, orderId, amount, profit } = req.body;
+
+    // 1. 参数基础校验
+    if (!uid || !orderId || amount === undefined || profit === undefined) {
+      return res.status(400).json({ ok: false, error: '缺少结算必要参数' });
+    }
+
+    if (!isSafeUid(uid)) {
+      return res.status(400).json({ ok: false, error: '无效的用户ID' });
+    }
+
+    // 2. 防止重复结算：检查该订单是否已处理
+    const settleCheckRef = db.ref(`settled_plans/${orderId}`);
+    const settleSnap = await settleCheckRef.once('value');
+    
+    if (settleSnap.exists()) {
+      return res.status(400).json({ ok: false, error: '该订单已结算，请勿重复提交' });
+    }
+
+    // 3. 获取用户信息
+    const userRef = db.ref(`users/${uid}`);
+    const userSnap = await userRef.once('value');
+    if (!userSnap.exists()) {
+      return res.status(404).json({ ok: false, error: '找不到该用户' });
+    }
+
+    // 4. 计算新余额 (本金 + 利润)
+    const currentBalance = safeNumber(userSnap.val().balance, 0);
+    const totalReturn = Number(amount) + Number(profit); 
+    const newBalance = Number((currentBalance + totalReturn).toFixed(4));
+
+    // 5. 执行更新：增加余额
+    await userRef.update({
+      balance: newBalance,
+      lastUpdate: now()
+    });
+
+    // 6. 记录结算状态（防止二次领取）
+    await settleCheckRef.set({
+      uid,
+      refOrderId: orderId,
+      amount: Number(amount),
+      profit: Number(profit),
+      totalReturn,
+      settleTime: now(),
+      time_us: usTime(now()),
+      status: 'completed'
+    });
+
+    // 7. 🔔 发送 SSE 广播，使前端余额即时刷新
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId: uid,
+        balance: newBalance,
+        source: 'plan_settled'
+      });
+    } catch(e){}
+
+    console.log(`[SETTLE] 成功: 订单 ${orderId} 为用户 ${uid} 增加余额 ${totalReturn}`);
+    return res.json({ ok: true, balance: newBalance });
+
+  } catch (e) {
+    console.error('Settlement Route Error:', e);
+    return res.status(500).json({ ok: false, error: '服务器内部错误' });
+  }
+});
 /* ---------------------------------------------------------
    Admin utility endpoints (set/deduct/boost)
 --------------------------------------------------------- */
@@ -1652,7 +1726,88 @@ async function ensureDefaultAdmin() {
 }
 ensureDefaultAdmin();
 
+/* ---------------------------------------------------------
+   【新增】自动结算定时任务 (每分钟检查一次)
+   作用：即便用户不在线，服务器也会自动检查到期的 PLAN 并打钱
+--------------------------------------------------------- */
+setInterval(async () => {
+  if (!db) return; // 如果数据库没连接，跳过
+  
+  try {
+    const nowTs = Date.now();
+    // 1. 获取所有正在进行的 PLAN 订单
+    const plansSnap = await db.ref('orders/plan').once('value');
+    if (!plansSnap.exists()) return;
 
+    const allPlans = plansSnap.val();
+
+    for (const orderId in allPlans) {
+      const order = allPlans[orderId];
+
+      // 2. 筛选条件：状态是 processing 且 当前时间 > 结束时间
+      // 结束时间 = 开始时间 + (天数 * 24小时 * 60分 * 60秒 * 1000毫秒)
+      const endTime = order.timestamp + (Number(order.days) * 24 * 60 * 60 * 1000);
+
+      if (order.status === 'processing' && nowTs >= endTime) {
+        
+        // 3. 防止重复结算：检查 settled_plans 是否已存在
+        const settleCheck = await db.ref(`settled_plans/${orderId}`).once('value');
+        if (settleCheck.exists()) {
+          // 如果已经结算过了，把订单状态改掉，防止下次再扫到
+          await db.ref(`orders/plan/${orderId}`).update({ status: 'completed' });
+          continue;
+        }
+
+        const uid = order.userId;
+        const amount = Number(order.amount || 0);
+        // 计算利润 (取最低利率 rateMin)
+        const profit = Number((amount * (order.rateMin / 100)).toFixed(4));
+        const totalReturn = amount + profit;
+
+        // 4. 更新用户余额
+        const userRef = db.ref(`users/${uid}`);
+        const userSnap = await userRef.once('value');
+        
+        if (userSnap.exists()) {
+          const currentBal = Number(userSnap.val().balance || 0);
+          const newBal = Number((currentBal + totalReturn).toFixed(4));
+
+          await userRef.update({
+            balance: newBal,
+            lastUpdate: nowTs
+          });
+
+          // 5. 记录结算历史
+          await db.ref(`settled_plans/${orderId}`).set({
+            uid,
+            refOrderId: orderId,
+            amount,
+            profit,
+            totalReturn,
+            settleTime: nowTs,
+            status: 'completed',
+            auto: true // 标记为系统自动结算
+          });
+
+          // 6. 修改原订单状态为已完成
+          await db.ref(`orders/plan/${orderId}`).update({ status: 'completed' });
+
+          // 7. 推送 SSE 让前端实时看到余额变动
+          broadcastSSE({
+            type: 'balance',
+            userId: uid,
+            balance: newBal,
+            source: 'auto_plan_settle'
+          });
+
+          console.log(`[自动结算] 成功：订单 ${orderId} 已到期，已为用户 ${uid} 增加 ${totalReturn} USDT`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[自动结算任务出错]:', err.message);
+  }
+}, 60000); // 60000 毫秒 = 1 分钟检查一次
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
