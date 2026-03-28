@@ -1730,41 +1730,48 @@ ensureDefaultAdmin();
    【新增】自动结算定时任务 (每分钟检查一次)
    作用：即便用户不在线，服务器也会自动检查到期的 PLAN 并打钱
 --------------------------------------------------------- */
+// ✅ 修改后的代码（直接替换 server.js 最末尾的 setInterval 部分）
 setInterval(async () => {
-  if (!db) return; // 如果数据库没连接，跳过
-  
+  if (!db) return;
   try {
     const nowTs = Date.now();
-    // 1. 获取所有正在进行的 PLAN 订单
-    const plansSnap = await db.ref('orders/plan').once('value');
-    if (!plansSnap.exists()) return;
+    const ordersSnap = await db.ref('orders/plan').once('value');
+    if (!ordersSnap.exists()) return;
 
-    const allPlans = plansSnap.val();
+    const orders = ordersSnap.val();
 
-    for (const orderId in allPlans) {
-      const order = allPlans[orderId];
+    for (const orderId in orders) {
+      const order = orders[orderId];
+      // 这里的 uid 兼容性处理：优先取 userId，没有就取 uid
+      const uid = order.userId || order.uid;
+      const { amount, rateMin, days, timestamp, status } = order;
 
-      // 2. 筛选条件：状态是 processing 且 当前时间 > 结束时间
-      // 结束时间 = 开始时间 + (天数 * 24小时 * 60分 * 60秒 * 1000毫秒)
-      const endTime = order.timestamp + (Number(order.days) * 24 * 60 * 60 * 1000);
+      // --- 修改点 1: 放宽状态检查 ---
+      // 只要不是已经完成(completed)的，都纳入检查范围
+      if (status === 'completed' || status === 'settled') continue;
 
-      if (order.status === 'processing' && nowTs >= endTime) {
-        
-        // 3. 防止重复结算：检查 settled_plans 是否已存在
+      // --- 修改点 2: 时间计算兼容 ---
+      // 自动识别 timestamp 是秒(10位)还是毫秒(13位)
+      let startTs = Number(timestamp);
+      if (startTs < 10000000000) startTs *= 1000; 
+      
+      const duration = Number(days || 1) * 86400000;
+      const endTime = startTs + duration;
+
+      // 打印日志到控制台，方便你观察（上线后可删除）
+      console.log(`[检查订单] ${orderId}: 状态=${status}, 剩余时间=${Math.round((endTime - nowTs)/1000)}秒`);
+
+      if (nowTs >= endTime) {
+        // --- 修改点 3: 防止重复结算 ---
         const settleCheck = await db.ref(`settled_plans/${orderId}`).once('value');
         if (settleCheck.exists()) {
-          // 如果已经结算过了，把订单状态改掉，防止下次再扫到
           await db.ref(`orders/plan/${orderId}`).update({ status: 'completed' });
           continue;
         }
 
-        const uid = order.userId;
-        const amount = Number(order.amount || 0);
-        // 计算利润 (取最低利率 rateMin)
-        const profit = Number((amount * (order.rateMin / 100)).toFixed(4));
-        const totalReturn = amount + profit;
+        const profit = Number(amount) * (Number(rateMin) / 100);
+        const totalReturn = Number(amount) + profit;
 
-        // 4. 更新用户余额
         const userRef = db.ref(`users/${uid}`);
         const userSnap = await userRef.once('value');
         
@@ -1772,27 +1779,28 @@ setInterval(async () => {
           const currentBal = Number(userSnap.val().balance || 0);
           const newBal = Number((currentBal + totalReturn).toFixed(4));
 
+          // 更新余额
           await userRef.update({
             balance: newBal,
             lastUpdate: nowTs
           });
 
-          // 5. 记录结算历史
+          // 记录结算
           await db.ref(`settled_plans/${orderId}`).set({
             uid,
             refOrderId: orderId,
-            amount,
+            amount: Number(amount),
             profit,
             totalReturn,
             settleTime: nowTs,
             status: 'completed',
-            auto: true // 标记为系统自动结算
+            auto: true
           });
 
-          // 6. 修改原订单状态为已完成
+          // 修改订单状态
           await db.ref(`orders/plan/${orderId}`).update({ status: 'completed' });
 
-          // 7. 推送 SSE 让前端实时看到余额变动
+          // 推送通知
           broadcastSSE({
             type: 'balance',
             userId: uid,
@@ -1800,14 +1808,15 @@ setInterval(async () => {
             source: 'auto_plan_settle'
           });
 
-          console.log(`[自动结算] 成功：订单 ${orderId} 已到期，已为用户 ${uid} 增加 ${totalReturn} USDT`);
+          console.log(`✅ [自动结算成功] 订单:${orderId}, 用户:${uid}, 金额:${totalReturn}`);
         }
       }
     }
   } catch (err) {
     console.error('[自动结算任务出错]:', err.message);
   }
-}, 60000); // 60000 毫秒 = 1 分钟检查一次
+}, 60000);
+
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
