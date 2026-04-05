@@ -508,6 +508,53 @@ app.get('/wallet/:uid/balance', async (req, res) => {
     return res.status(500).json({ ok:false, error: e.message });
   }
 });
+// === 最终修正版：后台点击确认 -> 存入Firebase -> 前端实时跳动 ===
+app.post('/admin/confirm-deposit', async (req, res) => {
+  try {
+    const { uid, amount } = req.body;
+    const numAmount = Number(amount);
+
+    // 1. 检查数据库 (必须使用你代码里的 db 变量)
+    if (!db) return res.status(500).json({ ok: false, error: 'Database not connected' });
+    if (!uid || isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ ok: false, error: 'Invalid UID or Amount' });
+    }
+
+    // 2. 从 Firebase 获取当前余额并累加
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+    
+    // 如果用户不存在，默认余额为 0
+    const currentBal = snap.exists() ? Number(snap.val().balance || 0) : 0;
+    const newBal = Number((currentBal + numAmount).toFixed(4));
+
+    // 3. 写入数据库 (这才是永久增加金额)
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    console.log(`[后台充值] 成功! UID: ${uid}, 增加了: ${numAmount}, 当前新余额: ${newBal}`);
+
+    // 4. 【核心关键】调用你代码里原有的 broadcastSSE 函数，前端才会自动跳数字
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId: uid,
+        balance: newBal,
+        source: 'admin_deposit'
+      });
+    } catch (sseErr) {
+      console.error('SSE Broadcast failed:', sseErr);
+    }
+
+    return res.json({ ok: true, balance: newBal, msg: "Deposit confirmed and synced" });
+
+  } catch (e) {
+    console.error('Admin deposit sync error:', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
 /* ---------------------------------------------------------
    Wallet credit (Convert → USDT 即时到账)
 --------------------------------------------------------- */
@@ -1823,6 +1870,49 @@ setInterval(async () => {
     console.error('[自动结算任务出错]:', err.message);
   }
 }, 60000);
+/* =========================================================
+   新平台专属：后台管理逻辑 (不影响旧平台)
+========================================================= */
+
+// 1. 后台确认充值：金额直接入账并同步
+app.post('/admin/confirm-deposit', async (req, res) => {
+  try {
+    const { uid, amount } = req.body;
+    const numAmount = Number(amount);
+    if (!db || isNaN(numAmount)) return res.status(400).json({ ok: false });
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+    const newBal = Number(((snap.exists() ? snap.val().balance : 0) + numAmount).toFixed(4));
+
+    await userRef.update({ balance: newBal, lastUpdate: Date.now() });
+
+    // 实时推送
+    broadcastSSE({ type: 'balance', userId: uid, balance: newBal, source: 'admin_deposit' });
+    return res.json({ ok: true, balance: newBal });
+  } catch (e) { return res.status(500).json({ ok: false }); }
+});
+
+// 2. 后台拒绝提款：金额原路退回并同步
+app.post('/admin/reject-withdraw', async (req, res) => {
+  try {
+    const { uid, amount, orderId } = req.body;
+    const refundAmount = Number(amount);
+    if (!db || isNaN(refundAmount)) return res.status(400).json({ ok: false });
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+    const newBal = Number(((snap.exists() ? snap.val().balance : 0) + refundAmount).toFixed(4));
+
+    // 退钱并修改订单状态
+    await userRef.update({ balance: newBal });
+    await db.ref(`orders/withdraw/${orderId}`).update({ status: 'rejected' });
+
+    // 实时推送
+    broadcastSSE({ type: 'balance', userId: uid, balance: newBal, source: 'withdraw_rejected' });
+    return res.json({ ok: true, balance: newBal });
+  } catch (e) { return res.status(500).json({ ok: false }); }
+});
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
