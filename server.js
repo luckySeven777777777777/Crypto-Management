@@ -1913,6 +1913,293 @@ app.post('/admin/reject-withdraw', async (req, res) => {
     return res.json({ ok: true, balance: newBal });
   } catch (e) { return res.status(500).json({ ok: false }); }
 });
+/* =========================================================
+   Esport 下注逻辑：检测余额并直接扣除
+========================================================= */
+app.post('/admin/esport-bet', async (req, res) => {
+  try {
+    const { uid, amount, gameInfo } = req.body;
+    const betAmount = Number(amount);
+
+    if (!db) return res.status(500).json({ ok: false, error: '数据库未连接' });
+    if (isNaN(betAmount) || betAmount <= 0) return res.status(400).json({ ok: false, error: '金额无效' });
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    if (!snap.exists()) return res.status(404).json({ ok: false, error: '用户不存在' });
+
+    const currentBal = Number(snap.val().balance || 0);
+
+    // --- 第一步：检测余额是否足够 ---
+    if (currentBal < betAmount) {
+      return res.status(400).json({ ok: false, error: '余额不足，无法下注' });
+    }
+
+    // --- 第二步：直接扣钱 ---
+    const newBal = Number((currentBal - betAmount).toFixed(4));
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    // --- 第三步：记录订单 (写入 Firebase) ---
+    const betId = 'BET' + Date.now();
+    await db.ref(`orders/esport/${betId}`).set({
+      uid,
+      amount: betAmount,
+      gameInfo,
+      status: 'pending',
+      time: Date.now()
+    });
+
+    // --- 第四步：实时同步前端余额 ---
+    broadcastSSE({
+      type: 'balance',
+      userId: uid,
+      balance: newBal,
+      source: 'esport_bet'
+    });
+
+    console.log(`[Esport下注] 用户 ${uid} 下注成功，扣除: ${betAmount}, 剩余: ${newBal}`);
+    
+    return res.json({ ok: true, balance: newBal, betId });
+
+  } catch (e) {
+    console.error('Esport bet error:', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+/* ---------------------------------------------------------
+   Lucky Bonus Endpoint (新添加)
+--------------------------------------------------------- */
+app.post('/api/claim-bonus', async (req, res) => {
+  try {
+    const { uid, bonusAmount } = req.body;
+    const amount = parseFloat(bonusAmount);
+
+    // 安全校验：防止非法金额或缺失UID
+    if (!uid || isNaN(amount) || amount <= 0 || amount > 100) {
+      return res.status(400).json({ success: false, message: 'Invalid request' });
+    }
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    if (!snap.exists()) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const currentBal = Number(snap.val().balance || 0);
+    const newBal = Number((currentBal + amount).toFixed(4));
+
+    // 更新 Firebase 中的余额
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    // 记录奖金日志（可选，建议加上以便对账）
+    const bonusId = 'BN-' + Date.now();
+    await db.ref(`orders/bonus/${bonusId}`).set({
+      uid,
+      amount: amount,
+      type: 'lucky_wheel',
+      time: Date.now()
+    });
+
+    // 关键：通过 SSE 实时通知前端刷新余额
+    broadcastSSE({
+      type: 'balance',
+      userId: uid,
+      balance: newBal,
+      source: 'lucky_bonus'
+    });
+
+    return res.json({ success: true, balance: newBal });
+  } catch (e) {
+    console.error('Bonus claim error:', e);
+    return res.status(500).json({ success: false });
+  }
+});
+/* =========================================================
+   UFC/NBA 下注逻辑：检测余额并扣除 (逻辑同 esport)
+========================================================= */
+app.post('/api/bet/ufcnba', async (req, res) => {
+  try {
+    const { uid, amount, projectName, name, result } = req.body;
+    const betAmount = Number(amount);
+
+    if (!db) return res.status(500).json({ success: false, message: '数据库连接失败' });
+    if (isNaN(betAmount) || betAmount <= 0) return res.status(400).json({ success: false, message: '无效金额' });
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    if (!snap.exists()) return res.status(404).json({ success: false, message: '用户不存在' });
+
+    const currentBal = Number(snap.val().balance || 0);
+
+    // --- 步骤 1：余额检测 ---
+    if (currentBal < betAmount) {
+      return res.status(400).json({ success: false, message: '余额不足，请先充值' });
+    }
+
+    // --- 步骤 2：执行扣款 ---
+    const newBal = Number((currentBal - betAmount).toFixed(4));
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    // --- 步骤 3：记录订单 ---
+    const orderId = 'UFC-' + Date.now();
+    await db.ref(`orders/ufcnba/${orderId}`).set({
+      uid,
+      projectName,
+      teamName: name,
+      betResult: result,
+      amount: betAmount,
+      status: 'pending',
+      orderTime: Date.now()
+    });
+
+    // --- 步骤 4：实时推送 ---
+    broadcastSSE({
+      type: 'balance',
+      userId: uid,
+      balance: newBal,
+      source: 'ufcnba_bet'
+    });
+
+    return res.json({ success: true, balance: newBal });
+
+  } catch (e) {
+    console.error('UFC/NBA bet error:', e);
+    return res.status(500).json({ success: false, message: '系统错误' });
+  }
+});
+/* =========================================================
+   2-3D 彩票下注逻辑：检测余额并扣除
+========================================================= */
+app.post('/api/bet/2-3d', async (req, res) => {
+  try {
+    const { uid, amount, numbers, type, date, time } = req.body;
+    const betAmount = Number(amount);
+
+    if (!db) return res.status(500).json({ success: false, message: '数据库连接失败' });
+    if (isNaN(betAmount) || betAmount <= 0) return res.status(400).json({ success: false, message: '无效金额' });
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    if (!snap.exists()) return res.status(404).json({ success: false, message: '用户不存在' });
+
+    const currentBal = Number(snap.val().balance || 0);
+
+    // --- 步骤 1：余额检测 ---
+    if (currentBal < betAmount) {
+      return res.status(400).json({ success: false, message: '余额不足，无法下注' });
+    }
+
+    // --- 步骤 2：执行扣款 ---
+    const newBal = Number((currentBal - betAmount).toFixed(4));
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    // --- 步骤 3：记录订单 (存入 2-3d 专用路径) ---
+    const orderId = 'LOT-' + Date.now();
+    await db.ref(`orders/lottery_23d/${orderId}`).set({
+      uid,
+      betNumbers: numbers,
+      betType: type,
+      amount: betAmount,
+      selectedDate: date,
+      selectedTime: time,
+      status: 'pending',
+      createTime: Date.now()
+    });
+
+    // --- 步骤 4：实时推送余额更新 ---
+    broadcastSSE({
+      type: 'balance',
+      userId: uid,
+      balance: newBal,
+      source: '2-3d_bet'
+    });
+
+    console.log(`[2-3D下注] 用户 ${uid} 成功, 扣除: ${betAmount}, 剩余: ${newBal}`);
+
+    return res.json({ success: true, balance: newBal, orderId });
+
+  } catch (e) {
+    console.error('2-3D bet error:', e);
+    return res.status(500).json({ success: false, message: '系统繁忙' });
+  }
+});
+/* =========================================================
+   Sport (体育/足球) 下注逻辑：检测余额并扣除
+========================================================= */
+app.post('/api/bet/sport', async (req, res) => {
+  try {
+    const { uid, amount, projectName, name, result, date, time } = req.body;
+    const betAmount = Number(amount);
+
+    if (!db) return res.status(500).json({ success: false, message: '数据库连接失败' });
+    if (isNaN(betAmount) || betAmount <= 0) return res.status(400).json({ success: false, message: '无效下注金额' });
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    if (!snap.exists()) return res.status(404).json({ success: false, message: '用户不存在' });
+
+    const currentBal = Number(snap.val().balance || 0);
+
+    // --- 步骤 1：余额安全检测 ---
+    if (currentBal < betAmount) {
+      return res.status(400).json({ success: false, message: '余额不足，请充值后再下注' });
+    }
+
+    // --- 步骤 2：执行扣款 ---
+    const newBal = Number((currentBal - betAmount).toFixed(4));
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    // --- 步骤 3：记录体育订单 ---
+    const orderId = 'SP-' + Date.now();
+    await db.ref(`orders/sport/${orderId}`).set({
+      uid,
+      projectName, // 比赛名称/联赛
+      teamName: name, // 下注的对象
+      betSide: result, // 下注的方向 (如：主胜/客胜/大球)
+      amount: betAmount,
+      matchDate: date,
+      matchTime: time,
+      status: 'pending',
+      createTime: Date.now()
+    });
+
+    // --- 步骤 4：实时同步前端余额 ---
+    broadcastSSE({
+      type: 'balance',
+      userId: uid,
+      balance: newBal,
+      source: 'sport_bet'
+    });
+
+    console.log(`[Sport下注] 用户 ${uid} 成功, 扣除: ${betAmount}, 剩余: ${newBal}`);
+
+    return res.json({ success: true, balance: newBal, orderId });
+
+  } catch (e) {
+    console.error('Sport bet error:', e);
+    return res.status(500).json({ success: false, message: '服务器异常' });
+  }
+});
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
