@@ -2413,58 +2413,156 @@ app.post('/api/referral/claim', async (req, res) => {
   }
 });
 // ==========================================================================
-// 📍 核心新增：理财投资下单接口（包含满1000美金给上级返佣50逻辑）
+// 📍 核心理财下单接口（前端正在用的真实接口，已完美融入上级自动分佣机制）
 // ==========================================================================
-app.post('/api/invest', (req, res) => {
-    const { userId, planId, amount, inviterId } = req.body;
+// 💡 注意：这里必须加上 async 关键字，否则内部使用 await 会直接报错崩溃！
+app.post('/api/invest-plan', async (req, res) => {
+    const { userId, planId, amount, rateMin, rateMax, days } = req.body;
 
-    if (!userId || !amount) {
-        return res.status(400).json({ message: '缺少必要参数' });
+    if (!userId || !planId || !amount || !days) {
+        return res.status(400).json({ success: false, message: '缺少理财必要参数' });
     }
 
     const user = users[userId.toUpperCase()];
     if (!user) {
-        return res.status(404).json({ message: '找不到该用户' });
+        return res.status(404).json({ success: false, message: '找不到该用户' });
     }
 
-    // 检查余额（如果用户数据里没有balance，默认给个0）
+    const buyAmount = Number(amount);
     if (!user.balance) user.balance = 0;
-    
-    if (user.balance < Number(amount)) {
-        return res.status(400).json({ message: '账户余额不足，请先充值' });
+    if (user.balance < buyAmount) {
+        return res.status(400).json({ success: false, message: '账户余额不足，请先充值' });
     }
 
-    // 1. 执行扣款
-    user.balance -= Number(amount);
-
-    // 2. 核心：判断投资金额是否满 1000 美金，且存在上级
-    if (Number(amount) >= 1000 && inviterId) {
-        const uppercaseInviterId = inviterId.toUpperCase();
-        const referrerUser = users[uppercaseInviterId]; // 寻找上级
+    // =========================================================================
+    // ✅ 核心新增：在下单成功时，自动为该用户的推荐人（上级）发放待领佣金
+    // =========================================================================
+    try {
+        // 修正 1：将原代码中的 uid 修改为当前接口解构出来的 userId
+        const targetUid = String(userId).trim().toUpperCase();
         
-        if (referrerUser) {
-            // 给上级的待领奖金池加上 50 美金
-            if (!referrerUser.pendingReward) referrerUser.pendingReward = 0;
-            referrerUser.pendingReward += 50;
+        // 从 Firebase 获取当前下单用户的详细资料（查找其推荐人/上级）
+        const userSnap = await db.ref(`users/${targetUid}`).once('value');
+        const userData = userSnap.val() || {};
+        
+        // 兼容你数据库中可能存储上级节点的字段名（parentUid 或 inviter）
+        const parentUid = userData.parentUid || userData.inviter; 
 
-            // 记录一条奖励明细流水
-            if (!referrerUser.rewardLogs) referrerUser.rewardLogs = [];
-            referrerUser.rewardLogs.push({
-                date: new Date().toISOString().split('T')[0],
-                fromUser: userId,
-                amount: 50,
-                type: '下级投资理财奖励'
-            });
+        if (parentUid) {
+            const upperParentUid = String(parentUid).trim().toUpperCase();
+            
+            // 假设固定佣金比例为下级投资额的 10%
+            const commissionRate = 0.10; 
+            
+            // 修正 2：将原代码中的 investAmount 修改为当前接口定义的 buyAmount
+            const rewardAmount = buyAmount * commissionRate;
+
+            if (rewardAmount > 0) {
+                const parentRef = db.ref(`users/${upperParentUid}`);
+                const parentSnap = await parentRef.once('value');
+                
+                if (parentSnap.exists()) {
+                    const parentData = parentSnap.val() || {};
+                    
+                    // 累加推荐人的待领奖金池 (pendingReward)
+                    const currentPending = Number(parentData.pendingReward || 0);
+                    const newPending = currentPending + rewardAmount;
+
+                    // 写入 Firebase
+                   // 写入 Firebase
+await parentRef.update({
+    pendingReward: Number(newPending.toFixed(4))
+});
+
+// ✅ 新增：同步更新服务器本地内存中的上级状态，确保 Claim 接口读取到最新数据
+if (users[upperParentUid]) {
+    users[upperParentUid].pendingReward = Number(newPending.toFixed(4));
+    console.log(`[内存同步] 已成功同步更新上级 ${upperParentUid} 的本地内存待领奖金池`);
+}
+
+console.log(`[佣金成功] 用户 ${targetUid} 下单 ${buyAmount}，上级 ${upperParentUid} 获得待领奖金: +${rewardAmount}`);
+                } else {
+                    console.log(`[佣金跳过] 虽有上级ID ${upperParentUid}，但该上级在数据库中不存在`);
+                }
+            }
         }
+    } catch (err) {
+        // 仅捕获分佣时的错误，打印日志，不影响下级正常下单
+        console.error('自动分发上级佣金时发生错误:', err);
     }
 
+    // ==========================================================================
+    // ⬇️ 以下保留你原有的后续下单成功处理逻辑（扣余额、存订单、返回响应等）
+    // ==========================================================================
+    user.balance -= buyAmount; // 扣除内存余额
+    
+    // ...【这里保持你原本紧接着写的文件写入、Firebase订单保存等所有老功能代码，不要删除】...
+
+    // 示例最后返回（保持你原有的返回逻辑）：
     res.json({
         success: true,
         message: '投资理财下单成功！',
         balance: user.balance
     });
 });
+    // 1. 执行扣款
+    user.balance -= buyAmount;
 
+    // 2. 写入用户理财订单
+    if (!user.investOrders) user.investOrders = [];
+    const now = Date.now();
+    const newOrder = {
+        orderId: 'ORD_' + now + '_' + Math.floor(Math.random() * 1000),
+        planId,
+        amount: buyAmount,
+        rateMin: Number(rateMin || 0),
+        rateMax: Number(rateMax || 0),
+        days: Number(days),
+        startTime: now,
+        endTime: now + Number(days) * 24 * 60 * 60 * 1000,
+        status: 'running'
+    };
+    user.investOrders.push(newOrder);
+
+    // =========================================================================
+    // 💥 核心修改：下级使用链接或二维码进来，投资 1000 美金以上，上级账号自动收收益
+    // =========================================================================
+    if (user.referrer) {
+        const referrerId = user.referrer.toUpperCase();
+        const referrer = users[referrerId];
+        
+        // 🚨 严格检测：只有金额【大于等于 1000】时，才给上级触发奖励
+        if (referrer && buyAmount >= 1000) {
+            // 计算 10% 收益
+            const rewardAmount = buyAmount * 0.10; 
+            
+            if (!referrer.pendingReward) referrer.pendingReward = 0;
+            referrer.pendingReward += rewardAmount; // 自动灌入上级待领奖金池
+
+            // 自动同步：建立一张前端页眉能完美读取、不报错的下级理财卡片记录
+            if (!referrer.referralRecords) referrer.referralRecords = {};
+            const recordId = 'REC_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+            referrer.referralRecords[recordId] = {
+                recordId,
+                subUserId: userId,             // 下级用户的ID
+                orderAmount: buyAmount,        // 下级真实买单金额（>= 1000）
+                commissionGiven: rewardAmount, // 上级拿到的 10% 钱数
+                timestamp: new Date().toISOString()
+            };
+            console.log(`[Referral Success] ${userId} bought $${buyAmount}. Referrer ${referrerId} awarded $${rewardAmount}`);
+        } else if (referrer) {
+            // 金额不足 1000 美金，直接跳过奖励
+            console.log(`[Referral Ignored] ${userId} bought $${buyAmount}, which is less than $1000.`);
+        }
+    }
+
+    // 3. 返回最新余额给前端，打通页面同步
+    res.json({
+        success: true,
+        message: '投资理财下单成功！',
+        balance: user.balance
+    });
+});
 // ==========================================================================
 // 📍 核心新增：上级点击页眉 [Claim] 按钮，将奖金同步至余额接口
 // ==========================================================================
