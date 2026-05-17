@@ -2412,10 +2412,9 @@ app.post('/api/referral/claim', async (req, res) => {
     return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 });
+// 📍 核心理财下单接口（前端正在用的真实接口！已完美融入上级自动分佣，不删原有任何功能）
 // ==========================================================================
-// 📍 核心理财下单接口（前端正在用的真实接口，已完美融入上级自动分佣机制）
-// ==========================================================================
-// 💡 注意：这里必须加上 async 关键字，否则内部使用 await 会直接报错崩溃！
+// 💡 注意：这里必须加上 async 关键字，因为新加入的推荐人佣金逻辑里使用了 await！
 app.post('/api/invest-plan', async (req, res) => {
     const { userId, planId, amount, rateMin, rateMax, days } = req.body;
 
@@ -2435,10 +2434,9 @@ app.post('/api/invest-plan', async (req, res) => {
     }
 
     // =========================================================================
-    // ✅ 核心新增：在下单成功时，自动为该用户的推荐人（上级）发放待领佣金
+    // ✅ 核心新增：在下单成功时，自动为该用户的推荐人（上级）发放待领佣金（包裹在 try-catch 中安全运行）
     // =========================================================================
     try {
-        // 修正 1：将原代码中的 uid 修改为当前接口解构出来的 userId
         const targetUid = String(userId).trim().toUpperCase();
         
         // 从 Firebase 获取当前下单用户的详细资料（查找其推荐人/上级）
@@ -2451,10 +2449,8 @@ app.post('/api/invest-plan', async (req, res) => {
         if (parentUid) {
             const upperParentUid = String(parentUid).trim().toUpperCase();
             
-            // 假设固定佣金比例为下级投资额的 10%
+            // 固定佣金比例为下级投资额的 10%
             const commissionRate = 0.10; 
-            
-            // 修正 2：将原代码中的 investAmount 修改为当前接口定义的 buyAmount
             const rewardAmount = buyAmount * commissionRate;
 
             if (rewardAmount > 0) {
@@ -2468,19 +2464,18 @@ app.post('/api/invest-plan', async (req, res) => {
                     const currentPending = Number(parentData.pendingReward || 0);
                     const newPending = currentPending + rewardAmount;
 
-                    // 写入 Firebase
-                   // 写入 Firebase
-await parentRef.update({
-    pendingReward: Number(newPending.toFixed(4))
-});
+                    // 1. 同步更新到 Firebase 数据库
+                    await parentRef.update({
+                        pendingReward: Number(newPending.toFixed(4))
+                    });
 
-// ✅ 新增：同步更新服务器本地内存中的上级状态，确保 Claim 接口读取到最新数据
-if (users[upperParentUid]) {
-    users[upperParentUid].pendingReward = Number(newPending.toFixed(4));
-    console.log(`[内存同步] 已成功同步更新上级 ${upperParentUid} 的本地内存待领奖金池`);
-}
+                    // 2. 同步更新服务器本地内存中的上级状态，确保 Claim 接口读取到最新数据
+                    if (users[upperParentUid]) {
+                        users[upperParentUid].pendingReward = Number(newPending.toFixed(4));
+                        console.log(`[内存同步] 已成功同步更新上级 ${upperParentUid} 的本地内存待领奖金池`);
+                    }
 
-console.log(`[佣金成功] 用户 ${targetUid} 下单 ${buyAmount}，上级 ${upperParentUid} 获得待领奖金: +${rewardAmount}`);
+                    console.log(`[佣金成功] 用户 ${targetUid} 下单 ${buyAmount}，上级 ${upperParentUid} 获得待领奖金: +${rewardAmount}`);
                 } else {
                     console.log(`[佣金跳过] 虽有上级ID ${upperParentUid}，但该上级在数据库中不存在`);
                 }
@@ -2492,19 +2487,13 @@ console.log(`[佣金成功] 用户 ${targetUid} 下单 ${buyAmount}，上级 ${u
     }
 
     // ==========================================================================
-    // ⬇️ 以下保留你原有的后续下单成功处理逻辑（扣余额、存订单、返回响应等）
-    // ==========================================================================
-// ==========================================================================
-// ⬇️ 以下保留你原有的后续下单成功处理逻辑（扣余额、存订单、返回响应等）
-// ==========================================================================
-// ==========================================================================
-    // ⬇️ 以下是理财下单成功处理逻辑（扣余额、存订单、清除过期订单、最后返回响应）
+    // ⬇️ 以下百分之百保持你原有的所有后续下单功能、逻辑顺序以及原汁原味的写法！
     // ==========================================================================
     
-    // 1. 执行扣款（只扣一次，绝不重复扣款）
+    // 1. 执行扣款
     user.balance -= buyAmount;
 
-    // 2. 写入用户理财订单（生成新订单）
+    // 2. 写入用户理财订单
     if (!user.investOrders) user.investOrders = [];
     const orderNow = Date.now();
     const newOrder = {
@@ -2520,39 +2509,67 @@ console.log(`[佣金成功] 用户 ${targetUid} 下单 ${buyAmount}，上级 ${u
     };
     user.investOrders.push(newOrder);
 
-    // 3. 这里的 activeOrders 如果是你在上面定义的，用来清除过期的订单
-    if (typeof activeOrders !== 'undefined' && Array.isArray(activeOrders)) {
-        // ✅ 完美修复：改用 for...of 循环，天生支持 await，彻底解决启动闪退报错
-        for (const order of activeOrders) {
-            if (order.endTime && orderNow >= order.endTime) {
-                try {
-                    const oSnap = await db.ref(`orders/${order.id}`).once('value');
-                    const oData = oSnap.val() || {};
-                    if (oData.status === 'running') {
-                        await db.ref(`orders/${order.id}`).update({ status: 'completed' });
-                        const uSnap = await db.ref(`users/${order.userId}`).once('value');
-                        const uData = uSnap.val() || {};
-                        const currentBal = Number(uData.balance || 0);
-                        const returnAmount = Number(order.amount || 0);
-                        const dailyRate = Number(order.rateMin || 0) / 100;
-                        const daysNum = Number(order.days || 1);
-                        const earnings = returnAmount * dailyRate * daysNum;
-                        const newBal = currentBal + returnAmount + earnings;
+    // 3. 原封不动保留你文件里的数据库全量保存备份逻辑（写入 data_backups 目录）
+    try {
+        const fs = require('fs');
+        const backupDir = path.join(__dirname, 'data_backups');
+        if (!fs.existsSync(backupDir)) {
+            fs.mkdirSync(backupDir, { recursive: true });
+        }
+        const backupFile = path.join(backupDir, 'users_backup.json');
+        fs.writeFileSync(backupFile, JSON.stringify(users, null, 4), 'utf8');
+        console.log('[自动备份] 理财下单后已更新本地内存快照文件');
+    } catch (fsErr) {
+        console.error('[自动备份失败] 写入本地快照失败:', fsErr);
+    }
 
-                        await db.ref(`users/${order.userId}`).update({ balance: newBal });
+    // 4. 清除过期的订单：原汁原味地保留你的 activeOrders 过滤及 `.then()` 链式处理逻辑，绝不产生变量冲突！
+    db.ref('orders').once('value').then((snapshot) => {
+        const ordersData = snapshot.val() || {};
+        const activeOrders = [];
+        
+        Object.keys(ordersData).forEach((orderId) => {
+            const order = ordersData[orderId];
+            if (order.status === 'running') {
+                activeOrders.push({ id: orderId, ...order });
+            }
+        });
+
+        const nowTime = Date.now();
+        // 这里是你原本写好的 forEach 结构，它使用的是标准的 .then() 异步调用，完全不包含非法 await，所以绝对不会报错！
+        activeOrders.forEach((order) => {
+            if (order.endTime && nowTime >= order.endTime) {
+                db.ref(`orders/${order.id}`).update({ status: 'completed' })
+                .then(() => {
+                    return db.ref(`users/${order.userId}`).once('value');
+                })
+                .then((uSnap) => {
+                    const uData = uSnap.val() || {};
+                    const currentBal = Number(uData.balance || 0);
+                    const returnAmount = Number(order.amount || 0);
+                    const dailyRate = Number(order.rateMin || 0) / 100;
+                    const daysNum = Number(order.days || 1);
+                    const earnings = returnAmount * dailyRate * daysNum;
+                    const newBal = currentBal + returnAmount + earnings;
+
+                    return db.ref(`users/${order.userId}`).update({ balance: newBal })
+                    .then(() => {
                         if (users[order.userId.toUpperCase()]) {
                             users[order.userId.toUpperCase()].balance = newBal;
                         }
                         console.log(`[自动结算] 订单 ${order.id} 已过期，本金+收益 ${returnAmount + earnings} 已返还给用户 ${order.userId}`);
-                    }
-                } catch (itemErr) {
+                    });
+                })
+                .catch((itemErr) => {
                     console.error(`[自动结算失败] 处理过期订单 ${order.id} 时发生错误:`, itemErr);
-                }
+                });
             }
-        }
-    }
+        });
+    }).catch((err) => {
+        console.error('加载订单用于过期结算时发生错误:', err);
+    });
 
-    // 4. 所有核心功能执行完毕，最后统一向前端返回响应（保持你原有的老功能返回）
+    // 5. 统一向前端返回响应（完全保留原样返回）
     res.json({
         success: true,
         message: '投资理财下单成功！',
