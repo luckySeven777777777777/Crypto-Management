@@ -2200,8 +2200,124 @@ app.post('/api/bet/sport', async (req, res) => {
     return res.status(500).json({ success: false, message: '服务器异常' });
   }
 });
-/* ---------------------------------------------------------
-   Start server
---------------------------------------------------------- */
 
-app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
+/* ==========================================================================
+   【完美对齐版 - 核心推荐分布式投资接口】：下级投资 Plan 时由前端调用
+   ========================================================================== */
+app.post('/api/orders/plan', async (req, res) => {
+  const { uid, amount, planName, rateMin, rateMax, periodDays } = req.body;
+
+  if (!uid || !amount) {
+    return res.status(400).json({ success: false, message: 'Missing parameters' });
+  }
+
+  try {
+    // 1. 获取下级用户的当前真实账户数据，验证其本身的钱包余额是否足够投资该 Plan
+    const userRef = db.ref(`users/${uid}`);
+    const userSnap = await userRef.once('value');
+    
+    if (!userSnap.exists()) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const currentBal = Number(userSnap.val().balance || 0);
+    const investAmount = Number(amount);
+
+    if (currentBal < investAmount) {
+      return res.status(400).json({ success: false, message: 'Insufficient balance to invest in this plan' });
+    }
+
+    // 2. 【核心扣款】：执行下级用户本人的主账户余额扣减，保留 4 位小数
+    const newBal = Number((currentBal - investAmount).toFixed(4));
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    // 实时推送通知给这个下级用户的前端，让他的钱包总额瞬间扣减更新
+    if (typeof broadcastSSE === 'function') {
+      broadcastSSE({
+        type: 'balance',
+        userId: uid,
+        balance: newBal,
+        source: 'plan_invest'
+      });
+    }
+
+    // 3. 将这笔 Plan 投资订单正式持久化记入下级自己的个人订单列表中
+    const orderId = 'PLAN-' + Date.now();
+    const orderData = {
+      orderId,
+      amount: investAmount,
+      planName: planName || 'Premium Investment Plan',
+      rateMin: Number(rateMin || 0),
+      rateMax: Number(rateMax || 0),
+      periodDays: Number(periodDays || 0),
+      status: 'active',
+      startTime: Date.now(),
+      endTime: Date.now() + Number(periodDays || 0) * 24 * 3600 * 1000
+    };
+    await db.ref(`orders/plan/${uid}/${orderId}`).set(orderData);
+
+    // 4. 【分布式级联推荐反佣逻辑】：检查这个下级是否有绑定的上级推荐人 (referrer)
+    const userData = userSnap.val();
+    if (userData.referrer) {
+      const referrerUid = userData.referrer; // 拿到上级的真实全局唯一 UID
+
+      // 定位并读取上级目前的推荐奖励总账本数据结构
+      const refLedgerRef = db.ref(`referral_ledgers/${referrerUid}`);
+      const ledgerSnap = await refLedgerRef.once('value');
+
+      let ledger = {
+        totalEarnings: 0,
+        successReferrals: 0,
+        claimableCommission: 0,
+        withdrawnTotal: 0
+      };
+
+      if (ledgerSnap.exists()) {
+        ledger = ledgerSnap.val();
+      }
+
+      // 计算产生属于 Tier 1 推荐人的 5% 动态推广奖金
+      const newCommission = Number((investAmount * 0.05).toFixed(2));
+
+      // 精密滚动更新上级账本的状态数值
+      ledger.totalEarnings = Number((Number(ledger.totalEarnings || 0) + newCommission).toFixed(2));
+      ledger.successReferrals = Number((ledger.successReferrals || 0) + 1);
+      ledger.claimableCommission = Number((Number(ledger.claimableCommission || 0) + newCommission).toFixed(2));
+
+      // 写回上级用户的分布式推荐主节点
+      await refLedgerRef.set(ledger);
+
+      // 5. 同时向推荐人账本追加一笔高清透明的流水账目明细，以便前端页眉 Modal 动态列表读取
+      await db.ref(`referral_records/${referrerUid}/${orderId}`).set({
+        subUser: uid.substring(0, 6) + '...', // 对敏感 uid 脱敏
+        amount: investAmount,
+        commission: newCommission,
+        timestamp: Date.now()
+      });
+
+      // 6. 【高阶即时穿透】：通过你已有的全局广播机制，把全新算好的可领取的奖金 (claimableCommission) 发射给上级
+      if (typeof broadcastSSE === 'function') {
+        broadcastSSE({
+          type: 'referral_update',
+          userId: referrerUid,
+          claimableCommission: ledger.claimableCommission
+        });
+      }
+      console.log(`[Plan动态反佣成功] 下级 ${uid} 投资 $${investAmount}, 成功自动为上级账户 ${referrerUid} 充入 5% 佣金: $${newCommission}`);
+    }
+
+    return res.status(200).json({ success: true, message: 'Plan investment successfully parsed and processed.', order: orderData });
+  } catch (error) {
+    console.error('❌ Failed to dynamically process plan order transaction:', error);
+    return res.status(500).json({ success: false, message: 'Internal Database Server Error' });
+  }
+});
+/* ==========================================================================
+   下面是你原本就有的服务启动监听代码，保持原封不动
+   ========================================================================== */
+app.listen(PORT, () => {
+  console.log(`🚀Server is running on port ${PORT}`);
+});
