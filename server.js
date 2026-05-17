@@ -2494,35 +2494,71 @@ console.log(`[佣金成功] 用户 ${targetUid} 下单 ${buyAmount}，上级 ${u
     // ==========================================================================
     // ⬇️ 以下保留你原有的后续下单成功处理逻辑（扣余额、存订单、返回响应等）
     // ==========================================================================
-    user.balance -= buyAmount; // 扣除内存余额
+// ==========================================================================
+// ⬇️ 以下保留你原有的后续下单成功处理逻辑（扣余额、存订单、返回响应等）
+// ==========================================================================
+// ==========================================================================
+    // ⬇️ 以下是理财下单成功处理逻辑（扣余额、存订单、清除过期订单、最后返回响应）
+    // ==========================================================================
     
-    // ...【这里保持你原本紧接着写的文件写入、Firebase订单保存等所有老功能代码，不要删除】...
+    // 1. 执行扣款（只扣一次，绝不重复扣款）
+    user.balance -= buyAmount;
 
-    // 示例最后返回（保持你原有的返回逻辑）：
+    // 2. 写入用户理财订单（生成新订单）
+    if (!user.investOrders) user.investOrders = [];
+    const orderNow = Date.now();
+    const newOrder = {
+        orderId: 'ORD_' + orderNow + '_' + Math.floor(Math.random() * 1000),
+        planId,
+        amount: buyAmount,
+        rateMin: Number(rateMin || 0),
+        rateMax: Number(rateMax || 0),
+        days: Number(days),
+        startTime: orderNow,
+        endTime: orderNow + Number(days) * 24 * 60 * 60 * 1000,
+        status: 'running'
+    };
+    user.investOrders.push(newOrder);
+
+    // 3. 这里的 activeOrders 如果是你在上面定义的，用来清除过期的订单
+    if (typeof activeOrders !== 'undefined' && Array.isArray(activeOrders)) {
+        // ✅ 完美修复：改用 for...of 循环，天生支持 await，彻底解决启动闪退报错
+        for (const order of activeOrders) {
+            if (order.endTime && orderNow >= order.endTime) {
+                try {
+                    const oSnap = await db.ref(`orders/${order.id}`).once('value');
+                    const oData = oSnap.val() || {};
+                    if (oData.status === 'running') {
+                        await db.ref(`orders/${order.id}`).update({ status: 'completed' });
+                        const uSnap = await db.ref(`users/${order.userId}`).once('value');
+                        const uData = uSnap.val() || {};
+                        const currentBal = Number(uData.balance || 0);
+                        const returnAmount = Number(order.amount || 0);
+                        const dailyRate = Number(order.rateMin || 0) / 100;
+                        const daysNum = Number(order.days || 1);
+                        const earnings = returnAmount * dailyRate * daysNum;
+                        const newBal = currentBal + returnAmount + earnings;
+
+                        await db.ref(`users/${order.userId}`).update({ balance: newBal });
+                        if (users[order.userId.toUpperCase()]) {
+                            users[order.userId.toUpperCase()].balance = newBal;
+                        }
+                        console.log(`[自动结算] 订单 ${order.id} 已过期，本金+收益 ${returnAmount + earnings} 已返还给用户 ${order.userId}`);
+                    }
+                } catch (itemErr) {
+                    console.error(`[自动结算失败] 处理过期订单 ${order.id} 时发生错误:`, itemErr);
+                }
+            }
+        }
+    }
+
+    // 4. 所有核心功能执行完毕，最后统一向前端返回响应（保持你原有的老功能返回）
     res.json({
         success: true,
         message: '投资理财下单成功！',
         balance: user.balance
     });
 });
-    // 1. 执行扣款
-    user.balance -= buyAmount;
-
-    // 2. 写入用户理财订单
-    if (!user.investOrders) user.investOrders = [];
-    const now = Date.now();
-    const newOrder = {
-        orderId: 'ORD_' + now + '_' + Math.floor(Math.random() * 1000),
-        planId,
-        amount: buyAmount,
-        rateMin: Number(rateMin || 0),
-        rateMax: Number(rateMax || 0),
-        days: Number(days),
-        startTime: now,
-        endTime: now + Number(days) * 24 * 60 * 60 * 1000,
-        status: 'running'
-    };
-    user.investOrders.push(newOrder);
 
     // =========================================================================
     // 💥 核心修改：下级使用链接或二维码进来，投资 1000 美金以上，上级账号自动收收益
