@@ -610,6 +610,9 @@ app.post('/wallet/:uid/credit', async (req, res) => {
 /* ---------------------------------------------------------
    Wallet internal deduct (PLAN / TRADE 用)
 --------------------------------------------------------- */
+/* ---------------------------------------------------------
+   Wallet internal deduct (PLAN / TRADE 用) - 【已补全动态反佣逻辑】
+--------------------------------------------------------- */
 app.post('/wallet/:uid/deduct', async (req, res) => {
   try {
     if (!db) return res.json({ ok:false, error:'no-db' });
@@ -651,33 +654,97 @@ app.post('/wallet/:uid/deduct', async (req, res) => {
         source: 'plan_deduct'
       });
     } catch(e){}
+
     // ✅ 保存 PLAN 订单
-const planOrder = {
-  userId: uid,
-  orderId: genOrderId('PLAN'),
-  amount: Number(amount),
-  currency: req.body.currency || 'USDT',
+    const planOrderId = genOrderId('PLAN');
+    const planOrder = {
+      userId: uid,
+      orderId: planOrderId,
+      amount: Number(amount),
+      currency: req.body.currency || 'USDT',
+      plan: req.body.plan,
+      rateMin: Number(req.body.rateMin),
+      rateMax: Number(req.body.rateMax),
+      days: Number(req.body.days),
+      timestamp: now()
+    };
 
-  // ✅ 必须补齐
-  plan: req.body.plan,
-  rateMin: Number(req.body.rateMin),
-  rateMax: Number(req.body.rateMax),
-  days: Number(req.body.days),
+    // 写入数据库
+    if (db) {
+      await db.ref(`orders/plan/${planOrder.orderId}`).set(planOrder);
+      // 同时写入用户本身的订单索引中
+      await db.ref(`user_orders/${uid}/${planOrder.orderId}`).set({
+        orderId: planOrderId,
+        type: 'plan',
+        timestamp: now()
+      });
+    }
 
-  timestamp: now()
-};
+    // ========================================================
+    // 🎁 【核心新增】：检测上下级推荐关系，执行 5% 自动反佣
+    // ========================================================
+    try {
+      // 优先看前端有没有送上级 UID，没有就去用户数据库节点查找
+// 优先看前端有没有送上级 UID，没有就去用户数据库节点查找
+      let referrerUid = req.body.referrerUid;
+      if (!referrerUid && snap.exists()) {
+        referrerUid = snap.val().referrerUid || snap.val().inviter || null;
+      }
 
-// 写入数据库（可选但推荐）
-if (db) {
-  await db.ref(`orders/plan/${planOrder.orderId}`).set(planOrder);
-}
+      if (referrerUid && referrerUid !== uid && isSafeUid(referrerUid)) {
+        const refLedgerRef = db.ref(`referral_ledgers/${referrerUid}`);
+        const ledgerSnap = await refLedgerRef.once('value');
+        let ledger = ledgerSnap.val() || { totalReferrals: 0, totalCommission: 0, claimableCommission: 0 };
 
-// 🔔 发送 Telegram 通知
-try {
-  await sendPlanOrderToTelegram(planOrder);
-} catch (e) {
-  console.error('PLAN Telegram notify failed:', e.message);
-}
+        // =================================================================
+        // 🟢 【核心替换】：不再按 5% 计算，死卡满 1000 固定给 50 逻辑
+        // =================================================================
+        let newCommission = 0;
+        if (Number(amount) >= 1000) {
+            newCommission = 50;
+        }
+
+        // 只有产生了佣金奖励（满1000元），才去更新上级账本
+        if (newCommission > 0) {
+            ledger.totalCommission = Number((Number(ledger.totalCommission || 0) + newCommission).toFixed(2));
+            ledger.claimableCommission = Number((Number(ledger.claimableCommission || 0) + newCommission).toFixed(2));
+        } else {
+            console.log(`[Plan反佣跳过] 下级投资金额 $${amount} 未满 $1000，不满足返佣条件。`);
+        }
+        // =================================================================
+
+        await refLedgerRef.set(ledger);
+
+        // 写入详细的反佣流水明细
+        await db.ref(`referral_records/${referrerUid}/${planOrderId}`).set({
+          subUser: uid.substring(0, 6) + '...', 
+          amount: amount,
+          commission: newCommission,
+          timestamp: now()
+        });
+
+        // 通过系统的 SSE 推送机制实时通知上级：佣金到账了
+        broadcastSSE({
+          type: 'referral_update',
+          userId: referrerUid,
+          claimableCommission: ledger.claimableCommission
+        });
+
+        console.log(`[上下级反佣成功] 下级 ${uid} 购买 Plan $${amount}, 成功为上级 ${referrerUid} 增加佣金 $${newCommission}`);
+      }
+    } catch (refErr) {
+      console.error('❌ 反佣链条执行失败:', refErr.message);
+    }
+
+    // 🔔 发送 Telegram 通知
+    try {
+      if (typeof sendPlanOrderToTelegram === 'function') {
+        await sendPlanOrderToTelegram(planOrder);
+      }
+    } catch (e) {
+      console.error('PLAN Telegram notify failed:', e.message);
+    }
+
     return res.json({ ok:true, balance: newBal });
 
   } catch (e) {
@@ -2201,104 +2268,82 @@ app.post('/api/bet/sport', async (req, res) => {
   }
 });
 
-/* ==========================================================================
-   【完美对齐版 - 核心推荐分布式投资接口】：下级投资 Plan 时由前端调用
-   ========================================================================== */
+// ==========================================================================
+// 🎁 【核心补全】：处理前端 Plan 投资同步以及执行上级 5% 自动返佣的独立接口
+// ==========================================================================
 app.post('/api/orders/plan', async (req, res) => {
-  const { uid, amount, planName, rateMin, rateMax, periodDays } = req.body;
-
-  if (!uid || !amount) {
-    return res.status(400).json({ success: false, message: 'Missing parameters' });
-  }
-
   try {
-    // 1. 获取下级用户的当前真实账户数据，验证其本身的钱包余额是否足够投资该 Plan
-    const userRef = db.ref(`users/${uid}`);
-    const userSnap = await userRef.once('value');
-    
-    if (!userSnap.exists()) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    if (!admin.apps.length) return res.json({ success: false, message: 'Firebase not initialized' });
+    const db = admin.database();
+
+    const { uid, amount, planName, rateMin, rateMax, periodDays } = req.body;
+    const investAmount = Number(amount || 0);
+
+    if (!uid || investAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid payload elements' });
     }
 
-    const currentBal = Number(userSnap.val().balance || 0);
-    const investAmount = Number(amount);
+    // 1. 生成一个用于数据库的随机 Plan 订单号
+    const orderId = 'PLN_' + Math.random().toString(36).substring(2, 10).toUpperCase();
 
-    if (currentBal < investAmount) {
-      return res.status(400).json({ success: false, message: 'Insufficient balance to invest in this plan' });
-    }
-
-    // 2. 【核心扣款】：执行下级用户本人的主账户余额扣减，保留 4 位小数
-    const newBal = Number((currentBal - investAmount).toFixed(4));
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: Date.now()
-    });
-
-    // 实时推送通知给这个下级用户的前端，让他的钱包总额瞬间扣减更新
-    if (typeof broadcastSSE === 'function') {
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBal,
-        source: 'plan_invest'
-      });
-    }
-
-    // 3. 将这笔 Plan 投资订单正式持久化记入下级自己的个人订单列表中
-    const orderId = 'PLAN-' + Date.now();
     const orderData = {
       orderId,
+      userId: uid,
       amount: investAmount,
-      planName: planName || 'Premium Investment Plan',
+      plan: planName,
       rateMin: Number(rateMin || 0),
       rateMax: Number(rateMax || 0),
-      periodDays: Number(periodDays || 0),
-      status: 'active',
-      startTime: Date.now(),
-      endTime: Date.now() + Number(periodDays || 0) * 24 * 3600 * 1000
+      days: Number(periodDays || 1),
+      timestamp: Date.now(),
+      status: 'active'
     };
-    await db.ref(`orders/plan/${uid}/${orderId}`).set(orderData);
 
-    // 4. 【分布式级联推荐反佣逻辑】：检查这个下级是否有绑定的上级推荐人 (referrer)
-    const userData = userSnap.val();
-    if (userData.referrer) {
-      const referrerUid = userData.referrer; // 拿到上级的真实全局唯一 UID
+    // 写入全局订单库与用户个人订单索引中
+    await db.ref(`orders/plan/${orderId}`).set(orderData);
+    await db.ref(`user_orders/${uid}/${orderId}`).set({ orderId, type: 'plan', timestamp: Date.now() });
 
-      // 定位并读取上级目前的推荐奖励总账本数据结构
-      const refLedgerRef = db.ref(`referral_ledgers/${referrerUid}`);
-      const ledgerSnap = await refLedgerRef.once('value');
-
-      let ledger = {
-        totalEarnings: 0,
-        successReferrals: 0,
-        claimableCommission: 0,
-        withdrawnTotal: 0
-      };
-
-      if (ledgerSnap.exists()) {
-        ledger = ledgerSnap.val();
+    // 2. 开始执行动态反佣逻辑
+    let referrerUid = req.body.referrerUid;
+    
+    // 如果前端此时没拿到，去 Firebase users 用户节点里反查该用户的上级推荐人
+    if (!referrerUid) {
+      const userSnap = await db.ref(`users/${uid}`).once('value');
+      if (userSnap.exists()) {
+        referrerUid = userSnap.val().referrerUid || userSnap.val().inviter || null;
       }
+    }
 
-      // 计算产生属于 Tier 1 推荐人的 5% 动态推广奖金
-      const newCommission = Number((investAmount * 0.05).toFixed(2));
+// 3. 如果判定有合法的上级推荐人，则清算佣金
+  if (referrerUid && referrerUid !== uid) {
+    const refLedgerRef = db.ref(`referral_ledgers/${referrerUid}`);
+    const ledgerSnap = await refLedgerRef.once('value');
+    let ledger = ledgerSnap.val() || { totalReferrals: 0, totalCommission: 0, claimableCommission: 0 };
 
-      // 精密滚动更新上级账本的状态数值
-      ledger.totalEarnings = Number((Number(ledger.totalEarnings || 0) + newCommission).toFixed(2));
-      ledger.successReferrals = Number((ledger.successReferrals || 0) + 1);
-      ledger.claimableCommission = Number((Number(ledger.claimableCommission || 0) + newCommission).toFixed(2));
+    // 🟢 修改为：只要投满 1000 美金，固定给上级奖励 50 美金，不满 1000 则不给奖励
+    let newCommission = 0;
+    if (Number(amount) >= 1000) { // 🔹 这里的 investAmount 必须改成 amount
+        newCommission = 50;
+    }
 
-      // 写回上级用户的分布式推荐主节点
-      await refLedgerRef.set(ledger);
+    if (newCommission > 0) {
+        ledger.totalCommission = Number((Number(ledger.totalCommission || 0) + newCommission).toFixed(2));
+        ledger.claimableCommission = Number((Number(ledger.claimableCommission || 0) + newCommission).toFixed(2));
+    } else {
+        console.log(`[Plan反佣说明] 下级投资金额 $${amount} 未满 $1000，不满足返佣条件。`); // 🔹 改成 amount
+    }
 
-      // 5. 同时向推荐人账本追加一笔高清透明的流水账目明细，以便前端页眉 Modal 动态列表读取
-      await db.ref(`referral_records/${referrerUid}/${orderId}`).set({
-        subUser: uid.substring(0, 6) + '...', // 对敏感 uid 脱敏
-        amount: investAmount,
-        commission: newCommission,
-        timestamp: Date.now()
-      });
+    // 算好后写回上级推荐人资产总节点
+    await refLedgerRef.set(ledger);
 
-      // 6. 【高阶即时穿透】：通过你已有的全局广播机制，把全新算好的可领取的奖金 (claimableCommission) 发射给上级
+    // 写入高清详细的反佣账目流水，供页眉小组件弹窗提取展示
+    await db.ref(`referral_records/${referrerUid}/${planOrderId}`).set({ // 🔹 这里的 orderId 必须改成 planOrderId
+      subUser: uid.substring(0, 6) + '...', 
+      amount: amount, // 🔹 改成 amount
+      commission: newCommission,
+      timestamp: Date.now()
+    });
+
+      // 通过系统实时 SSE 穿透机制，通知上级前端页眉数字刷新
       if (typeof broadcastSSE === 'function') {
         broadcastSSE({
           type: 'referral_update',
@@ -2306,14 +2351,156 @@ app.post('/api/orders/plan', async (req, res) => {
           claimableCommission: ledger.claimableCommission
         });
       }
-      console.log(`[Plan动态反佣成功] 下级 ${uid} 投资 $${investAmount}, 成功自动为上级账户 ${referrerUid} 充入 5% 佣金: $${newCommission}`);
+      console.log(`[🎉 Plan反佣大成功] 下级 ${uid} 成功投资 $${investAmount}, 上级推荐人 ${referrerUid} 喜提 5% 佣金 $${newCommission}`);
+    } else {
+      console.log(`[Plan反佣跳过] 用户 ${uid} 属于直客或未绑定有效的上级推荐人。`);
     }
 
-    return res.status(200).json({ success: true, message: 'Plan investment successfully parsed and processed.', order: orderData });
+    return res.status(200).json({ success: true, message: 'Backend order and referral processed successfully.' });
   } catch (error) {
-    console.error('❌ Failed to dynamically process plan order transaction:', error);
-    return res.status(500).json({ success: false, message: 'Internal Database Server Error' });
+    console.error('❌ 处理 /api/orders/plan 接口产生严重内部错误:', error);
+    return res.status(500).json({ success: false, message: error.message });
   }
+});
+                                 // ==========================================================================
+// 📍 全新补全：上级点击页眉里的 Claim(领取) 按钮，将动态奖金池真正同步至账号可用余额
+// ==========================================================================
+app.post('/api/referral/claim', async (req, res) => {
+  const { uid } = req.body; // 拿到当前点击领奖的上级用户UID
+  if (!uid) {
+    return res.status(400).json({ success: false, message: 'Missing uid' });
+  }
+
+  try {
+    const db = admin.database();
+    
+    // 1. 获取上级的佣金账本节点
+    const refLedgerRef = db.ref(`referral_ledgers/${uid}`);
+    const ledgerSnapshot = await refLedgerRef.once('value');
+    const ledger = ledgerSnapshot.val() || {};
+
+    // 2. 获取当前可领取的佣金
+    const claimable = Number(ledger.claimableCommission || 0);
+    if (claimable <= 0) {
+      return res.status(400).json({ success: false, message: '没有可领取的佣金奖金' });
+    }
+
+    // 3. 读取该用户的真实资产/余额节点 (根据你系统底层的实际余额路径更新，这里假设在 users/uid/balance)
+    const userBalanceRef = db.ref(`users/${uid}/balance`);
+    const balanceSnapshot = await userBalanceRef.once('value');
+    let currentBalance = Number(balanceSnapshot.val() || 0);
+
+    // 4. 核心同步：余额加上去，可领取的奖金池清零
+    currentBalance = Number((currentBalance + claimable).toFixed(2));
+    ledger.claimableCommission = 0; // 清零
+
+    // 5. 将更新后的数据成对写回数据库
+    await userBalanceRef.set(currentBalance);
+    await refLedgerRef.set(ledger);
+
+    console.log(`[💰 奖金同步成功] 上级 ${uid} 成功领取 $${claimable} 佣金并已同步至可用余额。最新余额: $${currentBalance}`);
+
+    return res.status(200).json({
+      success: true,
+      message: '奖金领取成功，已同步至您的账户余额！',
+      balance: currentBalance,
+      claimableCommission: 0
+    });
+
+  } catch (error) {
+    console.error('❌ 领取奖金同步余额失败:', error);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+});
+// ==========================================================================
+// 📍 核心新增：理财投资下单接口（包含满1000美金给上级返佣50逻辑）
+// ==========================================================================
+app.post('/api/invest', (req, res) => {
+    const { userId, planId, amount, inviterId } = req.body;
+
+    if (!userId || !amount) {
+        return res.status(400).json({ message: '缺少必要参数' });
+    }
+
+    const user = users[userId.toUpperCase()];
+    if (!user) {
+        return res.status(404).json({ message: '找不到该用户' });
+    }
+
+    // 检查余额（如果用户数据里没有balance，默认给个0）
+    if (!user.balance) user.balance = 0;
+    
+    if (user.balance < Number(amount)) {
+        return res.status(400).json({ message: '账户余额不足，请先充值' });
+    }
+
+    // 1. 执行扣款
+    user.balance -= Number(amount);
+
+    // 2. 核心：判断投资金额是否满 1000 美金，且存在上级
+    if (Number(amount) >= 1000 && inviterId) {
+        const uppercaseInviterId = inviterId.toUpperCase();
+        const referrerUser = users[uppercaseInviterId]; // 寻找上级
+        
+        if (referrerUser) {
+            // 给上级的待领奖金池加上 50 美金
+            if (!referrerUser.pendingReward) referrerUser.pendingReward = 0;
+            referrerUser.pendingReward += 50;
+
+            // 记录一条奖励明细流水
+            if (!referrerUser.rewardLogs) referrerUser.rewardLogs = [];
+            referrerUser.rewardLogs.push({
+                date: new Date().toISOString().split('T')[0],
+                fromUser: userId,
+                amount: 50,
+                type: '下级投资理财奖励'
+            });
+        }
+    }
+
+    res.json({
+        success: true,
+        message: '投资理财下单成功！',
+        balance: user.balance
+    });
+});
+
+// ==========================================================================
+// 📍 核心新增：上级点击页眉 [Claim] 按钮，将奖金同步至余额接口
+// ==========================================================================
+app.post('/api/claim-reward', (req, res) => {
+    const { userId } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ message: '缺少用户ID' });
+    }
+
+    const user = users[userId.toUpperCase()];
+    if (!user) {
+        return res.status(404).json({ message: '找不到该用户' });
+    }
+
+    // 获取当前待领取的奖金
+    const reward = user.pendingReward || 0;
+    if (reward <= 0) {
+        return res.status(400).json({ message: '当前没有可领取的佣金奖励' });
+    }
+
+    // 核心同步逻辑：将待领奖金加进用户余额，随后将奖金池清零
+    if (!user.balance) user.balance = 0;
+    user.balance += reward;
+    
+    if (!user.totalRewarded) user.totalRewarded = 0;
+    user.totalRewarded += reward; // 记录累计已领金额
+    user.pendingReward = 0;        // 待领奖金池清零
+
+    res.json({
+        success: true,
+        message: '奖金领取成功，已同步至您的账户余额！',
+        balance: user.balance,
+        pendingReward: user.pendingReward,
+        totalRewarded: user.totalRewarded
+    });
 });
 /* ==========================================================================
    下面是你原本就有的服务启动监听代码，保持原封不动
