@@ -463,11 +463,11 @@ app.post('/api/orders/sync', async (req, res) => {
     res.status(500).json({ ok: false, message: 'Failed to sync orders' });
   }
 });
-  // ==========================================
-// 🌟 位置 2：Plan 投资接口，当下级投资时自动返 5% 给上级
 // ==========================================
-// 假设这里是你的购买 Plan 路由内部：
-const investAmount = Number(payload.amount); // 用户的投资金额
+// 🌟 位置 2：Plan 投资接口修正版
+// ==========================================
+const investAmount = Number(amount); // 改为 amount
+const userId = uid;                  // 确保 userId 映射到接口的 uid
 
 // 1. 查出当前下单投资的下级档案
 const subUserSnap = await db.ref(`users/${userId}`).once('value');
