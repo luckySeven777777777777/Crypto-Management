@@ -606,7 +606,147 @@ app.post('/wallet/:uid/credit', async (req, res) => {
     return res.status(500).json({ ok:false, error: e.message });
   }
 });
+/* ---------------------------------------------------------
+   🔔 接口 1：PLAN 投资触发 —— 钱只进上级的 Commission 钱包
+   路由路径：POST /wallet/commission
+--------------------------------------------------------- */
+app.post('/wallet/commission', async (req, res) => {
+  const { referrerUid, subordinateUid, investmentAmount, commission, planName } = req.body;
 
+  if (!referrerUid || !subordinateUid || !investmentAmount || !commission) {
+    return res.status(400).json({ ok: false, message: '缺少必要的佣金参数' });
+  }
+
+  try {
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+
+    const referrerRef = db.ref(`users/${referrerUid}`);
+    const snap = await referrerRef.once('value');
+
+    if (!snap.exists()) {
+      return res.status(404).json({ ok: false, message: '上级推荐人不存在' });
+    }
+
+    // 🌟 核心改动：获取当前的 Commission Wallet 余额（而不是主余额）
+    const currentCommissionBal = Number(snap.val().commission_balance || 0);
+    const commissionNum = Number(commission);
+
+    // 计算新的佣金钱包总额
+    const newCommissionBal = Number((currentCommissionBal + commissionNum).toFixed(4));
+    
+    // 🌟 写入数据库：只更新 commission_balance
+    await referrerRef.update({
+      commission_balance: newCommissionBal,
+      lastUpdate: Date.now()
+    });
+
+    // 记录真实的佣金待领取日志
+    const logId = 'COM-' + Date.now();
+    await db.ref(`logs/commission/${logId}`).set({
+      logId,
+      referrerUid,
+      subordinateUid,
+      investmentAmount: Number(investmentAmount),
+      commissionAmount: commissionNum,
+      planName,
+      status: 'unclaimed', // 标记为待领取
+      createTime: Date.now()
+    });
+
+    // 🌟 通过 SSE 实时把最新的【佣金钱包数字】推给上级前端，界面立刻刷新
+    if (typeof broadcastSSE === 'function') {
+      broadcastSSE({
+        type: 'commission_balance',
+        userId: referrerUid,
+        commissionBalance: newCommissionBal
+      });
+    }
+
+    console.log(`[佣金到账] 下级 ${subordinateUid} 投资, 上级 ${referrerUid} 佣金钱包增加: ${commissionNum} USDT (当前等待 Claim: ${newCommissionBal})`);
+    return res.json({ ok: true, message: '佣金已存入佣金钱包' });
+
+  } catch (error) {
+    console.error('❌ 佣金存入失败:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/* ---------------------------------------------------------
+   🔔 接口：上级点击 Claim Commissions 触发 —— 真正的资产转移（融合优化版）
+   路由路径：POST /wallet/claim-commission
+--------------------------------------------------------- */
+app.post('/wallet/claim-commission', async (req, res) => {
+  const { uid } = req.body; // 当前点击 Claim 的用户 UID
+
+  if (!uid) {
+    return res.status(400).json({ ok: false, message: '用户UID不能为空' });
+  }
+
+  try {
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    if (!snap.exists()) {
+      return res.status(404).json({ ok: false, message: '用户不存在' });
+    }
+
+    const userData = snap.val();
+    
+    // 🌟 【注意】这里读取的是 commission_balance，如果您的数据库是 commissionWallet，请将其修改
+    const commissionBal = Number(userData.commission_balance || 0);
+    const currentBalance = Number(userData.balance || 0);
+
+    // 🌟 安全检查：如果佣金钱包里压根没真钱，拒绝领取
+    if (commissionBal <= 0) {
+      return res.json({ ok: false, message: 'Your Commission Wallet is empty!' });
+    }
+
+    // 🌟 真实对账：主余额增加，佣金钱包清空
+    const newBalance = Number((currentBalance + commissionBal).toFixed(4));
+    const newCommissionBal = 0;
+
+    await userRef.update({
+      balance: newBalance,
+      commission_balance: newCommissionBal, // 对应清零
+      lastUpdate: Date.now()
+    });
+
+    // 记录一笔真实的划转提现日志
+    const claimLogId = 'CLAIM-' + Date.now();
+    await db.ref(`logs/claims/${claimLogId}`).set({
+      claimLogId,
+      uid,
+      amount: commissionBal,
+      createTime: Date.now()
+    });
+
+    // 🌟 实时同步更新前端两个钱包的真实数字
+    if (typeof broadcastSSE === 'function') {
+      // 广播更新主资产数字
+      broadcastSSE({
+        type: 'balance',
+        userId: uid,
+        balance: newBalance,
+        source: 'claim_commission'
+      });
+      // 广播清空佣金资产数字
+      broadcastSSE({
+        type: 'commission_balance',
+        userId: uid,
+        commissionBalance: newCommissionBal
+      });
+    }
+
+    console.log(`[佣金Claim成功] 用户 ${uid} 成功将 ${commissionBal} USDT 提取到主余额，新主余额: ${newBalance}`);
+    return res.json({ ok: true, message: 'Successfully claimed to main balance!', newBalance });
+
+  } catch (error) {
+    console.error('❌ Claim 系统故障:', error);
+    return res.status(500).json({ ok: false, message: 'Internal server error', error: error.message });
+  }
+});
 /* ---------------------------------------------------------
    Wallet internal deduct (PLAN / TRADE 用)
 --------------------------------------------------------- */
