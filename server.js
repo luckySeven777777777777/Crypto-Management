@@ -606,74 +606,59 @@ app.post('/wallet/:uid/credit', async (req, res) => {
     return res.status(500).json({ ok:false, error: e.message });
   }
 });
-/* ---------------------------------------------------------
-   🔔 接口 1：PLAN 投资触发 —— 钱只进上级的 Commission 钱包
-   路由路径：POST /wallet/commission
-/* ---------------------------------------------------------
-   🔔 接口 1：PLAN 投资触发 —— 佣金存入 commissionBalance
-   路由路径：POST /wallet/commission
---------------------------------------------------------- */
+
+// ==========================================
+// 🌟 修正版：处理 PLAN 投资时上级佣金发放的接口
+// ==========================================
 app.post('/wallet/commission', async (req, res) => {
-  const { referrerUid, subordinateUid, investmentAmount, commission, planName } = req.body;
-
-  if (!referrerUid || !subordinateUid || !investmentAmount || !commission) {
-    return res.status(400).json({ ok: false, message: '缺少必要的佣金参数' });
-  }
-
   try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
+    // 🌟 修正1：直接从 req.body 中同时兼容 uid 和 subordinateUid，防止前端参数名对不上
+    const { referrerUid, uid, subordinateUid, investmentAmount, commission, planName } = req.body;
+    const finalSubordinateUid = uid || subordinateUid;
 
-    const referrerRef = db.ref(`users/${referrerUid}`);
-    const snap = await referrerRef.once('value');
-
-    if (!snap.exists()) {
-      return res.status(404).json({ ok: false, message: '上级推荐人不存在' });
+    if (!referrerUid || !finalSubordinateUid) {
+      return res.status(200).json({ success: false, message: '缺少必要的UID参数' });
     }
 
-    // 统一读取 commissionBalance
-    const currentCommissionBal = Number(snap.val().commissionBalance || 0);
-    const commissionNum = Number(commission);
+    console.log(`[佣金触发] 下级:${finalSubordinateUid} 投资${planName}金额:${investmentAmount}, 上级:${referrerUid} 应得佣金:${commission}`);
 
-    // 计算新的佣金余额
-    const newCommissionBal = Number((currentCommissionBal + commissionNum).toFixed(4));
-    
-    // 统一写入 commissionBalance
-    await referrerRef.update({
-      commissionBalance: newCommissionBal,
+    // 获取 Firebase 数据库中上级的钱包引用
+    const referrerWalletRef = admin.database().ref(`wallets/${referrerUid}`);
+    const snap = await referrerWalletRef.once('value');
+
+    let currentCommissionBalance = 0;
+    if (snap.exists()) {
+      // 🌟 修正2：对照【页面测试3.txt】，确保累加的是正确的钱包字段
+      currentCommissionBalance = Number(snap.val().commission_balance || snap.val().balance || 0);
+    }
+
+    // 计算加上新佣金后的总额
+    const newCommissionBalance = Number((currentCommissionBalance + Number(commission)).toFixed(4));
+
+    // 更新上级在 Firebase 中的佣金余额
+    await referrerWalletRef.update({
+      commission_balance: newCommissionBalance,
       lastUpdate: Date.now()
     });
 
-    // 记录日志
-    const logId = 'COM-' + Date.now();
-    await db.ref(`logs/commission/${logId}`).set({
-      logId,
-      referrerUid,
-      subordinateUid,
-      investmentAmount: Number(investmentAmount),
-      commissionAmount: commissionNum,
-      planName,
-      status: 'unclaimed',
+    // 记录流水明细
+    const logId = 'COMM-' + Date.now();
+    await admin.database().ref(`commission_logs/${referrerUid}/${logId}`).set({
+      fromSubordinate: finalSubordinateUid,
+      investmentAmount: investmentAmount,
+      commissionAmount: commission,
+      planName: planName,
       createTime: Date.now()
     });
 
-    // 实时推送给前端
-    if (typeof broadcastSSE === 'function') {
-      broadcastSSE({
-        type: 'commission_balance',
-        userId: referrerUid,
-        commissionBalance: newCommissionBal
-      });
-    }
-
-    console.log(`[佣金到账] 上级 ${referrerUid} 获得: ${commissionNum}, 当前待领: ${newCommissionBal}`);
-    return res.json({ ok: true, message: '佣金已存入钱包' });
+    // 🌟 修正3：将 ok: true 改为 success: true，完美对齐前端 if(data.success) 的判断条件！
+    return res.status(200).json({ success: true, message: '佣金发放成功' });
 
   } catch (error) {
-    console.error('❌ 佣金存入失败:', error);
-    return res.status(500).json({ ok: false, error: error.message });
+    console.error('发放佣金后端报错:', error);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 });
-
 /* ---------------------------------------------------------
    🔔 接口 2：用户手动领取 —— 佣金划入主余额
    路由路径：POST /api/commission/claim
@@ -2362,6 +2347,158 @@ app.post('/api/bet/sport', async (req, res) => {
   } catch (e) {
     console.error('Sport bet error:', e);
     return res.status(500).json({ success: false, message: '服务器异常' });
+  }
+});
+    // =========================================================================
+// 🌟【全新新增功能一】新用户注册后，独立调用此接口：生成专属邀请码并绑定上下级关系
+// =========================================================================
+app.post('/api/users/bind-invite', async (req, res) => {
+  try {
+    const { uid, inviteCode } = req.body; // uid: 当前注册的新用户ID, inviteCode: 他填写的上级邀请码
+    if (!uid) {
+      return res.json({ success: false, message: '参数缺失: uid' });
+    }
+
+    const userRef = db.ref(`users/${uid}`);
+    const userSnap = await userRef.once('value');
+    if (!userSnap.exists()) {
+      return res.json({ success: false, message: '用户不存在' });
+    }
+
+    // 1. 生成属于新用户自己的、全网唯一的随机 6 位专属邀请码（解决链接一样的问题）
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let myOwnInviteCode = '';
+    for (let i = 0; i < 6; i++) {
+      myOwnInviteCode += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    // 2. 准备更新的数据
+    let updateData = {
+      inviteCode: myOwnInviteCode,
+      commissionBalance: 0, // 初始化独立佣金钱包
+      lastUpdate: Date.now()
+    };
+
+    // 3. 核心绑定：如果传了上级的邀请码，去反查上级的 UID
+    let parentUid = '';
+    if (inviteCode && inviteCode.trim() !== '') {
+      const usersSnap = await db.ref('users').orderByChild('inviteCode').equalTo(inviteCode).once('value');
+      if (usersSnap.exists()) {
+        parentUid = Object.keys(usersSnap.val())[0]; // 拿到上级的真实 UID
+        updateData.referredBy = parentUid;           // 永久记录上级是谁
+      }
+    }
+
+    // 4. 将新生成的邀请码和上级关系写入该用户节点，不覆盖原有字段
+    await userRef.update(updateData);
+
+    console.log(`[新增接口-关系绑定成功] 用户: ${uid}, 独立邀请码: ${myOwnInviteCode}, 上级: ${parentUid || '无'}`);
+    
+    return res.json({
+      success: true,
+      message: '邀请码生成及上级绑定成功',
+      data: {
+        inviteCode: myOwnInviteCode,
+        referredBy: parentUid || null
+      }
+    });
+  } catch (err) {
+    console.error('新增 bind-invite 接口错误:', err);
+    return res.json({ success: false, message: '服务器内部错误' });
+  }
+});
+
+
+// =========================================================================
+// 🌟【全新新增功能二】下级扣款买 Plan 成功后，前端立即独立调用此接口：触发给上级发 5% 佣金
+// =========================================================================
+app.post('/api/wallet/distribute-commission', async (req, res) => {
+  try {
+    const { uid, amount } = req.body; // uid: 购买Plan的下级用户ID, amount: 投资金额（如 1000）
+    if (!uid || !amount) {
+      return res.json({ success: false, message: '参数缺失' });
+    }
+
+    const investAmount = Number(amount);
+    if (isNaN(investAmount) || investAmount <= 0) {
+      return res.json({ success: false, message: '金额不合法' });
+    }
+
+    // 1. 读取购买者(下级)的完整资料，拿到他的 referredBy (上级UID)
+    const buyerSnap = await db.ref(`users/${uid}`).once('value');
+    if (!buyerSnap.exists()) {
+      return res.json({ success: false, message: '下级用户不存在' });
+    }
+
+    const buyerData = buyerSnap.val();
+    const parentUid = buyerData.referredBy; // 拿到绑定的上级 UID
+
+    // 2. 如果不存在上级，则直接结束，不需要发钱
+    if (!parentUid) {
+      return res.json({ success: true, message: '该用户没有上级，无需发放佣金' });
+    }
+
+    // 3. 计算 5% 佣金（1000 * 0.05 = 50 美金）
+    const commissionRate = 0.05;
+    const commissionAmount = Number((investAmount * commissionRate).toFixed(4));
+
+    if (commissionAmount <= 0) {
+      return res.json({ success: true, message: '佣金金额过小，忽略发放' });
+    }
+
+    const parentRef = db.ref(`users/${parentUid}`);
+    const parentSnap = await parentRef.once('value');
+
+    if (!parentSnap.exists()) {
+      return res.json({ success: false, message: '对应的上级用户在数据库中不存在' });
+    }
+
+    // 4. 累加到上级的 commissionBalance 中
+    const currentParentComm = Number(parentSnap.val().commissionBalance || 0);
+    const newParentComm = Number((currentParentComm + commissionAmount).toFixed(4));
+
+    // 更新上级数据库的佣金余额
+    await parentRef.update({
+      commissionBalance: newParentComm,
+      lastUpdate: Date.now()
+    });
+
+    // 5. 写入一条单独的佣金明细账单，方便上级在后台和明细里对账
+    const rewardLogId = 'REW-' + Date.now();
+    await db.ref(`logs/commission/${rewardLogId}`).set({
+      uid: parentUid,                      // 谁拿到了钱（上级UID）
+      subordinateUid: uid,                 // 谁贡献的（下级UID）
+      subordinateName: buyerData.username || 'Unknown', // 下级用户名
+      purchaseAmount: investAmount,         // 下级投资了多少（1000）
+      commission: commissionAmount,        // 拿到了多少（50）
+      type: 'hosting_commission',
+      createTime: Date.now()
+    });
+
+    // 6. 实时把新余额通过您原有的 SSE 推送功能发给上级前端，让页面秒更新
+    if (typeof broadcastSSE === 'function') {
+      broadcastSSE({
+        type: 'commission_balance',
+        userId: parentUid,
+        balance: newParentComm,
+        source: 'subordinate_buy'
+      });
+    }
+
+    console.log(`[新增接口-🎉 分佣成功] 下级 ${uid} 投资 ${investAmount}，上级 ${parentUid} 获得 5% 佣金: ${commissionAmount}`);
+
+    return res.json({
+      success: true,
+      message: '佣金分发成功',
+      data: {
+        parentUid,
+        commission: commissionAmount
+      }
+    });
+
+  } catch (err) {
+    console.error('新增 distribute-commission 接口错误:', err);
+    return res.json({ success: false, message: '服务器内部错误' });
   }
 });
 /* ---------------------------------------------------------
