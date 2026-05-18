@@ -671,80 +671,57 @@ app.post('/wallet/commission', async (req, res) => {
   }
 });
 
-/* ---------------------------------------------------------
-   🔔 接口：上级点击 Claim Commissions 触发 —— 真正的资产转移（融合优化版）
-   路由路径：POST /wallet/claim-commission
---------------------------------------------------------- */
+// ====== 【新增功能】处理上级领取佣金的路由接口 ======
 app.post('/wallet/claim-commission', async (req, res) => {
-  const { uid } = req.body; // 当前点击 Claim 的用户 UID
-
-  if (!uid) {
-    return res.status(400).json({ ok: false, message: '用户UID不能为空' });
-  }
-
   try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
+    const { uid } = req.body;
+    if (!uid) {
+      return res.status(400).json({ ok: false, message: 'User ID is required.' });
+    }
 
-    const userRef = db.ref(`users/${uid}`);
+    // 1. 获取 Firebase 数据库引用
+    const userRef = admin.database().ref(`users/${uid}`);
     const snap = await userRef.once('value');
 
     if (!snap.exists()) {
-      return res.status(404).json({ ok: false, message: '用户不存在' });
+      return res.status(404).json({ ok: false, message: 'User not found.' });
     }
 
     const userData = snap.val();
-    
-    // 🌟 【注意】这里读取的是 commission_balance，如果您的数据库是 commissionWallet，请将其修改
-    const commissionBal = Number(userData.commission_balance || 0);
-    const currentBalance = Number(userData.balance || 0);
+    // 假设你的佣金存在 commission_balance 字段中
+    const commissionBal = Number(userData.commission_balance || 0); 
+    const currentBal = Number(userData.balance || 0);
 
-    // 🌟 安全检查：如果佣金钱包里压根没真钱，拒绝领取
+    // 2. 安全校验：如果零钱钱包没有佣金
     if (commissionBal <= 0) {
       return res.json({ ok: false, message: 'Your Commission Wallet is empty!' });
     }
 
-    // 🌟 真实对账：主余额增加，佣金钱包清空
-    const newBalance = Number((currentBalance + commissionBal).toFixed(4));
-    const newCommissionBal = 0;
+    // 3. 计算新余额：主余额 + 佣金；佣金清零
+    const newBalance = Number((currentBal + commissionBal).toFixed(4));
 
     await userRef.update({
       balance: newBalance,
-      commission_balance: newCommissionBal, // 对应清零
+      commission_balance: 0, // 清空佣金账户
       lastUpdate: Date.now()
     });
 
-    // 记录一笔真实的划转提现日志
-    const claimLogId = 'CLAIM-' + Date.now();
-    await db.ref(`logs/claims/${claimLogId}`).set({
-      claimLogId,
-      uid,
-      amount: commissionBal,
-      createTime: Date.now()
-    });
-
-    // 🌟 实时同步更新前端两个钱包的真实数字
+    // 4. 实时同步前端主余额显示（利用你原本就有的 broadcastSSE 机制）
     if (typeof broadcastSSE === 'function') {
-      // 广播更新主资产数字
       broadcastSSE({
         type: 'balance',
         userId: uid,
         balance: newBalance,
         source: 'claim_commission'
       });
-      // 广播清空佣金资产数字
-      broadcastSSE({
-        type: 'commission_balance',
-        userId: uid,
-        commissionBalance: newCommissionBal
-      });
     }
 
-    console.log(`[佣金Claim成功] 用户 ${uid} 成功将 ${commissionBal} USDT 提取到主余额，新主余额: ${newBalance}`);
-    return res.json({ ok: true, message: 'Successfully claimed to main balance!', newBalance });
+    // 5. 返回前端成功状态
+    return res.json({ ok: true });
 
   } catch (error) {
-    console.error('❌ Claim 系统故障:', error);
-    return res.status(500).json({ ok: false, message: 'Internal server error', error: error.message });
+    console.error('Claim commission error:', error);
+    return res.status(500).json({ ok: false, message: 'Internal Server Error.' });
   }
 });
 /* ---------------------------------------------------------
@@ -2082,7 +2059,13 @@ app.post('/admin/esport-bet', async (req, res) => {
       balance: newBal,
       lastUpdate: Date.now()
     });
-
+    // 伪代码参考：给上级累加佣金余额
+if (userData.referrer) {
+    const referrerRef = db.ref(`users/${userData.referrer}`);
+    // 在原有的 commission_balance 基础上加上本次返利
+    await referrerRef.child('commission_balance').transaction(current => (current || 0) + (betAmount * 0.01)); 
+}
+    
     // --- 第三步：记录订单 (写入 Firebase) ---
     const betId = 'BET' + Date.now();
     await db.ref(`orders/esport/${betId}`).set({
@@ -2192,6 +2175,20 @@ app.post('/api/bet/ufcnba', async (req, res) => {
       lastUpdate: Date.now()
     });
 
+    // 🌟【新增功能】自动给上级累加 UFC/NBA 流水返利
+    try {
+      const userData = snap.val();
+      if (userData && userData.referrer) {
+        const referrerRef = db.ref(`users/${userData.referrer}`);
+        await referrerRef.child('commission_balance').transaction((current) => {
+          return Number(((current || 0) + (betAmount * 0.01)).toFixed(4));
+        });
+        console.log(`[UFC佣金] 已向推荐人 ${userData.referrer} 注入 1% 流水返利`);
+      }
+    } catch (commErr) {
+      console.error('⚠️ [UFC佣金分账失败]:', commErr);
+    }
+
     // --- 步骤 3：记录订单 ---
     const orderId = 'UFC-' + Date.now();
     await db.ref(`orders/ufcnba/${orderId}`).set({
@@ -2219,6 +2216,7 @@ app.post('/api/bet/ufcnba', async (req, res) => {
     return res.status(500).json({ success: false, message: '系统错误' });
   }
 });
+
 /* =========================================================
    2-3D 彩票下注逻辑：检测余额并扣除
 ========================================================= */
@@ -2248,6 +2246,20 @@ app.post('/api/bet/2-3d', async (req, res) => {
       balance: newBal,
       lastUpdate: Date.now()
     });
+
+    // 🌟【新增功能】自动给上级累加 2-3D彩票 流水返利
+    try {
+      const userData = snap.val();
+      if (userData && userData.referrer) {
+        const referrerRef = db.ref(`users/${userData.referrer}`);
+        await referrerRef.child('commission_balance').transaction((current) => {
+          return Number(((current || 0) + (betAmount * 0.01)).toFixed(4));
+        });
+        console.log(`[彩票佣金] 已向推荐人 ${userData.referrer} 注入 1% 流水返利`);
+      }
+    } catch (commErr) {
+      console.error('⚠️ [彩票佣金分账失败]:', commErr);
+    }
 
     // --- 步骤 3：记录订单 (存入 2-3d 专用路径) ---
     const orderId = 'LOT-' + Date.now();
@@ -2279,6 +2291,7 @@ app.post('/api/bet/2-3d', async (req, res) => {
     return res.status(500).json({ success: false, message: '系统繁忙' });
   }
 });
+
 /* =========================================================
    Sport (体育/足球) 下注逻辑：检测余额并扣除
 ========================================================= */
@@ -2309,13 +2322,27 @@ app.post('/api/bet/sport', async (req, res) => {
       lastUpdate: Date.now()
     });
 
+    // 🌟【新增功能】自动给上级累加 体育下注 流水返利
+    try {
+      const userData = snap.val();
+      if (userData && userData.referrer) {
+        const referrerRef = db.ref(`users/${userData.referrer}`);
+        await referrerRef.child('commission_balance').transaction((current) => {
+          return Number(((current || 0) + (betAmount * 0.01)).toFixed(4));
+        });
+        console.log(`[体育佣金] 已向推荐人 ${userData.referrer} 注入 1% 流水返利`);
+      }
+    } catch (commErr) {
+      console.error('⚠️ [体育佣金分账失败]:', commErr);
+    }
+
     // --- 步骤 3：记录体育订单 ---
     const orderId = 'SP-' + Date.now();
     await db.ref(`orders/sport/${orderId}`).set({
       uid,
-      projectName, // 比赛名称/联赛
-      teamName: name, // 下注的对象
-      betSide: result, // 下注的方向 (如：主胜/客胜/大球)
+      projectName, 
+      teamName: name, 
+      betSide: result, 
       amount: betAmount,
       matchDate: date,
       matchTime: time,
