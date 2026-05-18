@@ -464,10 +464,11 @@ app.post('/api/orders/sync', async (req, res) => {
   }
 });
 // ==========================================
-// 🌟 位置 2：Plan 投资接口修正版
+// 🌟 位置 2：Plan 投资接口，当下级投资时自动返 5% 给上级
 // ==========================================
-const investAmount = Number(amount); // 改为 amount
-const userId = uid;                  // 确保 userId 映射到接口的 uid
+// ✅ 修改后（去掉了重新定义，直接赋值）：
+investAmount = Number(amount); 
+userId = uid;
 
 // 1. 查出当前下单投资的下级档案
 const subUserSnap = await db.ref(`users/${userId}`).once('value');
