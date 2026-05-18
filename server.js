@@ -2263,31 +2263,25 @@ app.post('/api/bet/sport', async (req, res) => {
     return res.status(500).json({ success: false, message: '服务器异常' });
   }
 });
-    // ==========================================
-// 🌟 位置 3：全新的佣金提取接口（最低 50 美金才能领取）
+// ==========================================
+// 🌟 2. 提取佣金接口（你发我的这一段，完美配对版）
 // ==========================================
 app.post('/api/commissions/claim', async (req, res) => {
+  const { uid } = req.body;
+  if (!uid) {
+    return res.status(400).json({ success: false, message: '缺少用户 UID' });
+  }
   try {
-    const { uid } = req.body; // 获取当前点击领取按钮的用户 UID
-    if (!uid) {
-      return res.status(400).json({ success: false, message: 'Missing user id' });
-    }
-
     const userRef = db.ref(`users/${uid}`);
     const snap = await userRef.once('value');
-
     if (!snap.exists()) {
       return res.status(404).json({ success: false, message: '用户不存在' });
     }
-
     const userData = snap.val() || {};
-    
-    // 1. 获取当前可领取的佣金以及主余额 [cite: 629]
     const unclaimed = Number(userData.unclaimedCommissions || 0);
-    const currentBalance = Number(userData.balance || 0); [cite: 629]
+    const currentBalance = Number(userData.balance || 0);
     const totalClaimed = Number(userData.claimedCommissions || 0);
 
-    // 2. 🚨【硬性安全限制】：检测是否达到了最低 50 美金的门槛
     if (unclaimed < 50) {
       return res.status(400).json({ 
         success: false, 
@@ -2295,12 +2289,10 @@ app.post('/api/commissions/claim', async (req, res) => {
       });
     }
 
-    // 3. 执行资产划转：待领转已领，主余额增加 
-    const newBalance = Number((currentBalance + unclaimed).toFixed(4)); // 自动加到主余额 
+    const newBalance = Number((currentBalance + unclaimed).toFixed(4));
     const newClaimed = Number((totalClaimed + unclaimed).toFixed(4));
-    const newUnclaimed = 0; // 清空待领取的佣金
+    const newUnclaimed = 0;
 
-    // 4. 原子同步更新回 Firebase 数据库 
     await userRef.update({
       balance: newBalance,
       unclaimedCommissions: newUnclaimed,
@@ -2308,15 +2300,7 @@ app.post('/api/commissions/claim', async (req, res) => {
       lastUpdate: Date.now()
     });
 
-    // 5. 🚨 通过实时通道同时向前端发射两个信号：更新钱包主余额、更新佣金面板 
-    // 信号 A：主余额实时跳动
-    broadcastSSE({
-      type: 'balance',
-      userId: uid,
-      balance: newBalance
-    });
-
-    // 信号 B：佣金面板实时归零
+    broadcastSSE({ type: 'balance', userId: uid, balance: newBalance });
     broadcastSSE({
       type: 'team_update',
       userId: uid,
@@ -2329,7 +2313,6 @@ app.post('/api/commissions/claim', async (req, res) => {
       success: true, 
       message: `成功领取 $${unclaimed.toFixed(2)} 佣金，已全额转入您的主资产余额！` 
     });
-
   } catch (error) {
     console.error('提取佣金逻辑执行失败:', error);
     return res.status(500).json({ success: false, message: '服务器内部错误' });
