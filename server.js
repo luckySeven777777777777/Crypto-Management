@@ -464,10 +464,11 @@ app.post('/api/orders/sync', async (req, res) => {
   }
 });
 // ==========================================
-// 🌟 1. 购买 Plan 接口（彻底修复版，绝无变量及括号问题）
+// 🌟 1. 购买 Plan 接口（免注册网页适配版）
 // ==========================================
 app.post('/api/order/plan', async (req, res) => {
-  const { userId, planId, amount, duration } = req.body;
+  // 核心改动：允许直接在 body 中接收前端从 URL 中获取并传过来的上级推荐人：inviter
+  const { userId, planId, amount, duration, inviter } = req.body; 
   if (!userId || !planId || !amount || !duration) {
     return res.status(400).json({ success: false, message: '参数不完整' });
   }
@@ -480,14 +481,14 @@ app.post('/api/order/plan', async (req, res) => {
     }
 
     const currentBal = Number(snap.val().balance || 0);
-    const orderAmount = Number(amount); // 统一使用 orderAmount 避免未定义错误
+    const investAmount = Number(amount); 
 
-    if (currentBal < orderAmount) {
+    if (currentBal < investAmount) {
       return res.status(400).json({ success: false, message: '余额不足，请充值后再下注' });
     }
 
     // 1. 执行扣款
-    const newBal = Number((currentBal - orderAmount).toFixed(4));
+    const newBal = Number((currentBal - investAmount).toFixed(4));
     await userRef.update({
       balance: newBal,
       lastUpdate: Date.now()
@@ -498,7 +499,7 @@ app.post('/api/order/plan', async (req, res) => {
     await db.ref(`orders/plan/${orderId}`).set({
       uid: userId,
       planId,
-      amount: orderAmount,
+      amount: investAmount,
       duration: Number(duration),
       status: 'running',
       createTime: Date.now()
@@ -512,16 +513,22 @@ app.post('/api/order/plan', async (req, res) => {
       source: 'plan_buy'
     });
 
-    // ==========================================
-    // 🌟 位置 2：内部返佣逻辑（已安全封装在独立的 try-catch 中）
-    // ==========================================
+    // ======================================================================
+    // 🌟 【就是这里！】位置 2：Plan 投资接口，自动返 5% 给上级（免注册网页适配版）
+    // ======================================================================
     try {
-      const subUserData = snap.val() || {};
-      const inviterUid = subUserData.inviter;
+      // 优先使用前端直接传过来的上级 UID（完美符合免注册免登录的网页分享逻辑）
+      let inviterUid = inviter; 
+
+      // 如果前端没传，再尝试去数据库查一下作为备用保险
+      if (!inviterUid) {
+        const subUserSnap = await db.ref(`users/${userId}`).once('value');
+        const subUserData = subUserSnap.val() || {};
+        inviterUid = subUserData.inviter;
+      }
 
       if (inviterUid) {
-        // 使用上面已经定义好的 orderAmount 计算 5% 佣金
-        const commissionReward = Number((orderAmount * 0.05).toFixed(4));
+        const commissionReward = Number((investAmount * 0.05).toFixed(4));
         
         if (commissionReward > 0) {
           const inviterRef = db.ref(`users/${inviterUid}`);
@@ -529,18 +536,19 @@ app.post('/api/order/plan', async (req, res) => {
           
           if (inviterSnap.exists()) {
             const inviterData = inviterSnap.val() || {};
-            
             const oldUnclaimed = Number(inviterData.unclaimedCommissions || 0);
             const oldTotal = Number(inviterData.totalEarnedCommissions || 0);
             
             const newUnclaimed = Number((oldUnclaimed + commissionReward).toFixed(4));
             const newTotal = Number((oldTotal + commissionReward).toFixed(4));
             
+            // 实时将 5% 累计存入上级用户的未领取的佣金池中
             await inviterRef.update({
               unclaimedCommissions: newUnclaimed,
               totalEarnedCommissions: newTotal
             });
             
+            // SSE 实时通道广播：通知上级手机网页端，实时刷新佣金面板跳动
             broadcastSSE({
               type: 'team_update',
               userId: inviterUid,
@@ -549,12 +557,12 @@ app.post('/api/order/plan', async (req, res) => {
               claimed: Number(inviterData.claimedCommissions || 0)
             });
             
-            console.log(`[佣金到账] 下级 ${userId} 投资了 ${orderAmount}，上级 ${inviterUid} 获得 5% 佣金: ${commissionReward}`);
+            console.log(`[佣金到账] 网页下级 ${userId} 投资了 ${investAmount}，上级 ${inviterUid} 获得 5% 佣金: ${commissionReward}`);
           }
         }
       }
     } catch (commErr) {
-      console.error("佣金发放出错拦截（确保不影响下级购买主流程）:", commErr);
+      console.error("佣金发放出错拦截:", commErr);
     }
 
     // 4. 返回成功响应给购买 Plan 的用户
