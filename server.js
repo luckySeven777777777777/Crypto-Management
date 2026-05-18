@@ -464,55 +464,55 @@ app.post('/api/orders/sync', async (req, res) => {
   }
 });
 // ==========================================
-// 🌟 位置 2：Plan 投资接口，当下级投资时自动返 5% 给上级
-// ==========================================
-// ✅ 修改后（去掉了重新定义，直接赋值）：
-investAmount = Number(amount); 
-userId = uid;
+    // 🌟 位置 2：Plan 投资接口（彻底修复变量名版）
+    // ==========================================
+    try {
+      // 1. 查出当前下单投资的下级档案 (这里必须使用系统自带的 userId)
+      const subUserSnap = await db.ref(`users/${userId}`).once('value');
+      const subUserData = subUserSnap.val() || {};
 
-// 1. 查出当前下单投资的下级档案
-const subUserSnap = await db.ref(`users/${userId}`).once('value');
-const subUserData = subUserSnap.val() || {};
-
-// 2. 检查他是否有上级
-const inviterUid = subUserData.inviter;
-if (inviterUid) {
-  // 计算 5% 的佣金
-  const commissionReward = Number((investAmount * 0.05).toFixed(4));
-  
-  if (commissionReward > 0) {
-    const inviterRef = db.ref(`users/${inviterUid}`);
-    const inviterSnap = await inviterRef.once('value');
-    
-    if (inviterSnap.exists()) {
-      const inviterData = inviterSnap.val() || {};
-      
-      // 读取上级原有的佣金状态，进行累加
-      const oldUnclaimed = Number(inviterData.unclaimedCommissions || 0);
-      const oldTotal = Number(inviterData.totalEarnedCommissions || 0);
-      
-      const newUnclaimed = Number((oldUnclaimed + commissionReward).toFixed(4));
-      const newTotal = Number((oldTotal + commissionReward).toFixed(4));
-      
-      // 更新上级在数据库中的佣金数额
-      await inviterRef.update({
-        unclaimedCommissions: newUnclaimed,
-        totalEarnedCommissions: newTotal
-      });
-      
-      // 🚨 核心：通过 SSE 实时向在线的上级客户端推送他最新到账的佣金数字，前端立刻跳动！
-      broadcastSSE({
-        type: 'team_update',
-        userId: inviterUid,
-        unclaimed: newUnclaimed,
-        totalEarned: newTotal,
-        claimed: Number(inviterData.claimedCommissions || 0)
-      });
-      
-      console.log(`[佣金到账] 下级 ${userId} 投资了 ${investAmount}，上级 ${inviterUid} 获得 5% 佣金: ${commissionReward}`);
+      // 2. 检查他是否有上级
+      const inviterUid = subUserData.inviter;
+      if (inviterUid) {
+        // 计算 5% 的佣金 (这里必须使用系统自带的 amount)
+        const commissionReward = Number((Number(amount) * 0.05).toFixed(4));
+        
+        if (commissionReward > 0) {
+          const inviterRef = db.ref(`users/${inviterUid}`);
+          const inviterSnap = await inviterRef.once('value');
+          
+          if (inviterSnap.exists()) {
+            const inviterData = inviterSnap.val() || {};
+            
+            // 读取上级原有的佣金状态，进行累加
+            const oldUnclaimed = Number(inviterData.unclaimedCommissions || 0);
+            const oldTotal = Number(inviterData.totalEarnedCommissions || 0);
+            
+            const newUnclaimed = Number((oldUnclaimed + commissionReward).toFixed(4));
+            const newTotal = Number((oldTotal + commissionReward).toFixed(4));
+            
+            // 更新上级在数据库中的佣金数额
+            await inviterRef.update({
+              unclaimedCommissions: newUnclaimed,
+              totalEarnedCommissions: newTotal
+            });
+            
+            // 通过 SSE 实时向在线的上级客户端推送最新佣金
+            broadcastSSE({
+              type: 'team_update',
+              userId: inviterUid,
+              unclaimed: newUnclaimed,
+              totalEarned: newTotal,
+              claimed: Number(inviterData.claimedCommissions || 0)
+            });
+            
+            console.log(`[佣金到账] 下级 ${userId} 投资了 ${amount}，上级 ${inviterUid} 获得 5% 佣金: ${commissionReward}`);
+          }
+        }
+      }
+    } catch (commErr) {
+      console.error("佣金发放出错拦截（确保不影响下级购买主流程）:", commErr);
     }
-  }
-}  
     
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
