@@ -363,88 +363,51 @@ function objToSortedArray(objOrNull){
    Root
 --------------------------------------------------------- */
 app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
-
-/* ---------------------------------------------------------
-   Basic user sync
---------------------------------------------------------- */
+// ==========================================
+// 🌟 位置 1：用户同步/注册接口，绑定上下级推荐关系
+// ==========================================
 app.post('/api/users/sync', async (req, res) => {
   try {
-    const { userid, userId } = req.body;
+    const { userid, userId, inviteCodeFromUrl } = req.body; 
     const uid = userid || userId;
-    if(!uid) return res.json({ ok:false, message:'no uid' });
-    if(!db) return res.json({ ok:true, message:'no-db' });
-
-    const userRef = db.ref('users/' + uid);
-    const createdSnap = await userRef.child('created').once('value');
-    const createdVal = createdSnap.exists() ? createdSnap.val() : null;
-    const created = (createdVal !== null && createdVal !== undefined) ? createdVal : now();
-    const balanceSnap = await userRef.child('balance').once('value');
-
-    const balance = safeNumber(balanceSnap.exists() ? balanceSnap.val() : 0, 0);
-
-    await userRef.update({
-     userid: uid,
-     created,
-     updated: now(),
-     balance,
-
-     loginTime: now(),
-     lastOnline: now()
-   });
-
-    return res.json({ ok:true });
-  } catch(e){
-    console.error('users sync error', e);
-    return res.json({ ok:false });
-  }
-});
-// ==========================================
-// 🌟 新增：佣金领取接口（对接前端 /api/commission/claim）
-// ==========================================
-app.post('/api/commission/claim', async (req, res) => {
-  try {
-    const { uid } = req.body;
-    if (!uid || !isSafeUid(uid)) {
-      return res.status(400).json({ success: false, message: '无效的用户ID' });
-    }
-    if (!db) return res.status(500).json({ success: false, message: '数据库未连接' });
+    if (!uid) return res.json({ ok: false, message: 'no uid' });
 
     const userRef = db.ref(`users/${uid}`);
     const snap = await userRef.once('value');
-    if (!snap.exists()) {
-      return res.status(404).json({ success: false, message: '用户不存在' });
-    }
-
-    const userData = snap.val();
-    // 假设您在 RTDB 的用户节点下存有 'unclaimedCommission' 字段
-    const unclaimed = Number(userData.unclaimedCommission || 0);
-    const currentBalance = Number(userData.balance || 0);
-
-    if (unclaimed <= 0) {
-      return res.status(400).json({ success: false, message: '没有可领取的佣金' });
-    }
-
-    // 执行转账逻辑：清空可领佣金，并加入到主余额
-    const newBalance = Number((currentBalance + unclaimed).toFixed(4));
     
-    await userRef.update({
-      unclaimedCommission: 0,
-      balance: newBalance,
-      updated: Date.now()
-    });
+    // 如果用户是第一次被创建/同步
+    if (!snap.exists()) {
+      let inviterUid = "";
+      
+      // 如果注册时URL带了上级的推荐码
+      if (inviteCodeFromUrl) {
+        // 去数据库里查这个推荐码属于哪个上级
+        const usersSnap = await db.ref('users').once('value');
+        const allUsers = usersSnap.val() || {};
+        for (const [parentUid, parentData] of Object.entries(allUsers)) {
+          if (parentData.inviteCode === inviteCodeFromUrl || parentData.invite_code === inviteCodeFromUrl) {
+            inviterUid = parentUid; // 找到了上级的 UID
+            break;
+          }
+        }
+      }
 
-    // 实时通过 SSE 广播通知前端更新余额
-    broadcastSSE({
-      type: 'balance',
-      userId: uid,
-      balance: newBalance,
-      source: 'commission_claim'
-    });
-
-    return res.json({ success: true, message: '领取成功' });
+      // 初始化下级档案，并绑定上级
+      await userRef.set({
+        userid: uid,
+        balance: 0,
+        inviteCode: 'INV-' + Math.floor(100000 + Math.random() * 900000), // 为下级生成他自己的邀请码
+        inviter: inviterUid, // 👈 核心：记录他的上级是谁！
+        unclaimedCommissions: 0, // 待领取佣金
+        totalEarnedCommissions: 0, // 累计总佣金
+        claimedCommissions: 0,      // 已领取佣金
+        created: Date.now()
+      });
+    }
+    return res.json({ ok: true });
   } catch (e) {
-    console.error('佣金领取出错:', e);
-    return res.status(500).json({ success: false, message: '服务器内部错误' });
+    console.error('users sync error', e);
+    return res.json({ ok: false });
   }
 });
 app.post('/api/users/online', async (req,res)=>{
@@ -500,6 +463,56 @@ app.post('/api/orders/sync', async (req, res) => {
     res.status(500).json({ ok: false, message: 'Failed to sync orders' });
   }
 });
+  // ==========================================
+// 🌟 位置 2：Plan 投资接口，当下级投资时自动返 5% 给上级
+// ==========================================
+// 假设这里是你的购买 Plan 路由内部：
+const investAmount = Number(payload.amount); // 用户的投资金额
+
+// 1. 查出当前下单投资的下级档案
+const subUserSnap = await db.ref(`users/${userId}`).once('value');
+const subUserData = subUserSnap.val() || {};
+
+// 2. 检查他是否有上级
+const inviterUid = subUserData.inviter;
+if (inviterUid) {
+  // 计算 5% 的佣金
+  const commissionReward = Number((investAmount * 0.05).toFixed(4));
+  
+  if (commissionReward > 0) {
+    const inviterRef = db.ref(`users/${inviterUid}`);
+    const inviterSnap = await inviterRef.once('value');
+    
+    if (inviterSnap.exists()) {
+      const inviterData = inviterSnap.val() || {};
+      
+      // 读取上级原有的佣金状态，进行累加
+      const oldUnclaimed = Number(inviterData.unclaimedCommissions || 0);
+      const oldTotal = Number(inviterData.totalEarnedCommissions || 0);
+      
+      const newUnclaimed = Number((oldUnclaimed + commissionReward).toFixed(4));
+      const newTotal = Number((oldTotal + commissionReward).toFixed(4));
+      
+      // 更新上级在数据库中的佣金数额
+      await inviterRef.update({
+        unclaimedCommissions: newUnclaimed,
+        totalEarnedCommissions: newTotal
+      });
+      
+      // 🚨 核心：通过 SSE 实时向在线的上级客户端推送他最新到账的佣金数字，前端立刻跳动！
+      broadcastSSE({
+        type: 'team_update',
+        userId: inviterUid,
+        unclaimed: newUnclaimed,
+        totalEarned: newTotal,
+        claimed: Number(inviterData.claimedCommissions || 0)
+      });
+      
+      console.log(`[佣金到账] 下级 ${userId} 投资了 ${investAmount}，上级 ${inviterUid} 获得 5% 佣金: ${commissionReward}`);
+    }
+  }
+}  
+    
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
   try {
@@ -655,147 +668,7 @@ app.post('/wallet/:uid/credit', async (req, res) => {
     return res.status(500).json({ ok:false, error: e.message });
   }
 });
-/* ---------------------------------------------------------
-   🔔 接口 1：PLAN 投资触发 —— 钱只进上级的 Commission 钱包
-   路由路径：POST /wallet/commission
---------------------------------------------------------- */
-app.post('/wallet/commission', async (req, res) => {
-  const { referrerUid, subordinateUid, investmentAmount, commission, planName } = req.body;
 
-  if (!referrerUid || !subordinateUid || !investmentAmount || !commission) {
-    return res.status(400).json({ ok: false, message: '缺少必要的佣金参数' });
-  }
-
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-
-    const referrerRef = db.ref(`users/${referrerUid}`);
-    const snap = await referrerRef.once('value');
-
-    if (!snap.exists()) {
-      return res.status(404).json({ ok: false, message: '上级推荐人不存在' });
-    }
-
-    // 🌟 核心改动：获取当前的 Commission Wallet 余额（而不是主余额）
-    const currentCommissionBal = Number(snap.val().commission_balance || 0);
-    const commissionNum = Number(commission);
-
-    // 计算新的佣金钱包总额
-    const newCommissionBal = Number((currentCommissionBal + commissionNum).toFixed(4));
-    
-    // 🌟 写入数据库：只更新 commission_balance
-    await referrerRef.update({
-      commission_balance: newCommissionBal,
-      lastUpdate: Date.now()
-    });
-
-    // 记录真实的佣金待领取日志
-    const logId = 'COM-' + Date.now();
-    await db.ref(`logs/commission/${logId}`).set({
-      logId,
-      referrerUid,
-      subordinateUid,
-      investmentAmount: Number(investmentAmount),
-      commissionAmount: commissionNum,
-      planName,
-      status: 'unclaimed', // 标记为待领取
-      createTime: Date.now()
-    });
-
-    // 🌟 通过 SSE 实时把最新的【佣金钱包数字】推给上级前端，界面立刻刷新
-    if (typeof broadcastSSE === 'function') {
-      broadcastSSE({
-        type: 'commission_balance',
-        userId: referrerUid,
-        commissionBalance: newCommissionBal
-      });
-    }
-
-    console.log(`[佣金到账] 下级 ${subordinateUid} 投资, 上级 ${referrerUid} 佣金钱包增加: ${commissionNum} USDT (当前等待 Claim: ${newCommissionBal})`);
-    return res.json({ ok: true, message: '佣金已存入佣金钱包' });
-
-  } catch (error) {
-    console.error('❌ 佣金存入失败:', error);
-    return res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
-/* ---------------------------------------------------------
-   🔔 接口：上级点击 Claim Commissions 触发 —— 真正的资产转移（融合优化版）
-   路由路径：POST /wallet/claim-commission
---------------------------------------------------------- */
-app.post('/wallet/claim-commission', async (req, res) => {
-  const { uid } = req.body; // 当前点击 Claim 的用户 UID
-
-  if (!uid) {
-    return res.status(400).json({ ok: false, message: '用户UID不能为空' });
-  }
-
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    if (!snap.exists()) {
-      return res.status(404).json({ ok: false, message: '用户不存在' });
-    }
-
-    const userData = snap.val();
-    
-    // 🌟 【注意】这里读取的是 commission_balance，如果您的数据库是 commissionWallet，请将其修改
-    const commissionBal = Number(userData.commission_balance || 0);
-    const currentBalance = Number(userData.balance || 0);
-
-    // 🌟 安全检查：如果佣金钱包里压根没真钱，拒绝领取
-    if (commissionBal <= 0) {
-      return res.json({ ok: false, message: 'Your Commission Wallet is empty!' });
-    }
-
-    // 🌟 真实对账：主余额增加，佣金钱包清空
-    const newBalance = Number((currentBalance + commissionBal).toFixed(4));
-    const newCommissionBal = 0;
-
-    await userRef.update({
-      balance: newBalance,
-      commission_balance: newCommissionBal, // 对应清零
-      lastUpdate: Date.now()
-    });
-
-    // 记录一笔真实的划转提现日志
-    const claimLogId = 'CLAIM-' + Date.now();
-    await db.ref(`logs/claims/${claimLogId}`).set({
-      claimLogId,
-      uid,
-      amount: commissionBal,
-      createTime: Date.now()
-    });
-
-    // 🌟 实时同步更新前端两个钱包的真实数字
-    if (typeof broadcastSSE === 'function') {
-      // 广播更新主资产数字
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBalance,
-        source: 'claim_commission'
-      });
-      // 广播清空佣金资产数字
-      broadcastSSE({
-        type: 'commission_balance',
-        userId: uid,
-        commissionBalance: newCommissionBal
-      });
-    }
-
-    console.log(`[佣金Claim成功] 用户 ${uid} 成功将 ${commissionBal} USDT 提取到主余额，新主余额: ${newBalance}`);
-    return res.json({ ok: true, message: 'Successfully claimed to main balance!', newBalance });
-
-  } catch (error) {
-    console.error('❌ Claim 系统故障:', error);
-    return res.status(500).json({ ok: false, message: 'Internal server error', error: error.message });
-  }
-});
 /* ---------------------------------------------------------
    Wallet internal deduct (PLAN / TRADE 用)
 --------------------------------------------------------- */
@@ -2387,6 +2260,78 @@ app.post('/api/bet/sport', async (req, res) => {
   } catch (e) {
     console.error('Sport bet error:', e);
     return res.status(500).json({ success: false, message: '服务器异常' });
+  }
+});
+    // ==========================================
+// 🌟 位置 3：全新的佣金提取接口（最低 50 美金才能领取）
+// ==========================================
+app.post('/api/commissions/claim', async (req, res) => {
+  try {
+    const { uid } = req.body; // 获取当前点击领取按钮的用户 UID
+    if (!uid) {
+      return res.status(400).json({ success: false, message: 'Missing user id' });
+    }
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    if (!snap.exists()) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    const userData = snap.val() || {};
+    
+    // 1. 获取当前可领取的佣金以及主余额 [cite: 629]
+    const unclaimed = Number(userData.unclaimedCommissions || 0);
+    const currentBalance = Number(userData.balance || 0); [cite: 629]
+    const totalClaimed = Number(userData.claimedCommissions || 0);
+
+    // 2. 🚨【硬性安全限制】：检测是否达到了最低 50 美金的门槛
+    if (unclaimed < 50) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `领取失败：当前可领取佣金为 $${unclaimed.toFixed(2)}，未达到最低 $50.00 的提领门槛。` 
+      });
+    }
+
+    // 3. 执行资产划转：待领转已领，主余额增加 
+    const newBalance = Number((currentBalance + unclaimed).toFixed(4)); // 自动加到主余额 
+    const newClaimed = Number((totalClaimed + unclaimed).toFixed(4));
+    const newUnclaimed = 0; // 清空待领取的佣金
+
+    // 4. 原子同步更新回 Firebase 数据库 
+    await userRef.update({
+      balance: newBalance,
+      unclaimedCommissions: newUnclaimed,
+      claimedCommissions: newClaimed,
+      lastUpdate: Date.now()
+    });
+
+    // 5. 🚨 通过实时通道同时向前端发射两个信号：更新钱包主余额、更新佣金面板 
+    // 信号 A：主余额实时跳动
+    broadcastSSE({
+      type: 'balance',
+      userId: uid,
+      balance: newBalance
+    });
+
+    // 信号 B：佣金面板实时归零
+    broadcastSSE({
+      type: 'team_update',
+      userId: uid,
+      unclaimed: newUnclaimed,
+      totalEarned: Number(userData.totalEarnedCommissions || 0),
+      claimed: newClaimed
+    });
+
+    return res.json({ 
+      success: true, 
+      message: `成功领取 $${unclaimed.toFixed(2)} 佣金，已全额转入您的主资产余额！` 
+    });
+
+  } catch (error) {
+    console.error('提取佣金逻辑执行失败:', error);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 });
 /* ---------------------------------------------------------
