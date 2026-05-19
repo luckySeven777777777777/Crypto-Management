@@ -463,11 +463,7 @@ app.post('/api/orders/sync', async (req, res) => {
     res.status(500).json({ ok: false, message: 'Failed to sync orders' });
   }
 });
-// ==========================================
-// 🌟 1. 购买 Plan 接口（免注册网页适配版）
-// ==========================================
 app.post('/api/order/plan', async (req, res) => {
-  // 核心改动：允许直接在 body 中接收前端从 URL 中获取并传过来的上级推荐人：inviter
   const { userId, planId, amount, duration, inviter } = req.body; 
   if (!userId || !planId || !amount || !duration) {
     return res.status(400).json({ success: false, message: '参数不完整' });
@@ -513,14 +509,9 @@ app.post('/api/order/plan', async (req, res) => {
       source: 'plan_buy'
     });
 
-    // ======================================================================
-    // 🌟 【就是这里！】位置 2：Plan 投资接口，自动返 5% 给上级（免注册网页适配版）
-    // ======================================================================
+    // 4. 自动返 5% 给上级（这是你原来那段非常完美的逻辑）
     try {
-      // 优先使用前端直接传过来的上级 UID（完美符合免注册免登录的网页分享逻辑）
       let inviterUid = inviter; 
-
-      // 如果前端没传，再尝试去数据库查一下作为备用保险
       if (!inviterUid) {
         const subUserSnap = await db.ref(`users/${userId}`).once('value');
         const subUserData = subUserSnap.val() || {};
@@ -529,43 +520,30 @@ app.post('/api/order/plan', async (req, res) => {
 
       if (inviterUid) {
         const commissionReward = Number((investAmount * 0.05).toFixed(4));
-        
         if (commissionReward > 0) {
           const inviterRef = db.ref(`users/${inviterUid}`);
-          const inviterSnap = await inviterRef.once('value');
           
-          if (inviterSnap.exists()) {
-            const inviterData = inviterSnap.val() || {};
-            const oldUnclaimed = Number(inviterData.unclaimedCommissions || 0);
-            const oldTotal = Number(inviterData.totalEarnedCommissions || 0);
-            
-            const newUnclaimed = Number((oldUnclaimed + commissionReward).toFixed(4));
-            const newTotal = Number((oldTotal + commissionReward).toFixed(4));
-            
-            // 实时将 5% 累计存入上级用户的未领取的佣金池中
-            await inviterRef.update({
-              unclaimedCommissions: newUnclaimed,
-              totalEarnedCommissions: newTotal
-            });
-            
-            // SSE 实时通道广播：通知上级手机网页端，实时刷新佣金面板跳动
-            broadcastSSE({
-              type: 'team_update',
-              userId: inviterUid,
-              unclaimed: newUnclaimed,
-              totalEarned: newTotal,
-              claimed: Number(inviterData.claimedCommissions || 0)
-            });
-            
-            console.log(`[佣金到账] 网页下级 ${userId} 投资了 ${investAmount}，上级 ${inviterUid} 获得 5% 佣金: ${commissionReward}`);
-          }
+          // 使用事务保证数据准确性
+          await inviterRef.child('unclaimedCommissions').transaction((current) => (Number(current) || 0) + commissionReward);
+          await inviterRef.child('totalEarnedCommissions').transaction((current) => (Number(current) || 0) + commissionReward);
+          
+          // 获取最新数据用于广播
+          const inviterSnap = await inviterRef.once('value');
+          const inviterData = inviterSnap.val() || {};
+          
+          broadcastSSE({
+            type: 'team_update',
+            userId: inviterUid,
+            unclaimed: Number(inviterData.unclaimedCommissions),
+            totalEarned: Number(inviterData.totalEarnedCommissions),
+            claimed: Number(inviterData.claimedCommissions || 0)
+          });
         }
       }
     } catch (commErr) {
-      console.error("佣金发放出错拦截:", commErr);
+      console.error("佣金发放出错:", commErr);
     }
 
-    // 4. 返回成功响应给购买 Plan 的用户
     return res.json({ success: true, message: '购买成功', orderId, newBalance: newBal });
 
   } catch (error) {
@@ -2441,6 +2419,34 @@ app.post('/api/commissions/claim', async (req, res) => {
     console.error('提取佣金逻辑执行失败:', error);
     return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
+});
+                       // 新增的绑定接口
+// serverjs 中建议的校验逻辑
+app.post('/api/bind-inviter', async (req, res) => {
+    const { myUid, inviterUid } = req.body;
+    
+    // 1. 安全校验：不能自己邀请自己
+    if (myUid === inviterUid) return res.status(400).send("无效操作");
+
+    try {
+        const userRef = admin.database().ref(`users/${myUid}`);
+        const snapshot = await userRef.once('value');
+        
+        // 2. 幂等性检查：如果该用户已经有上级了，防止被覆盖
+        if (snapshot.val().inviter) {
+            return res.status(400).json({ success: false, message: "该账户已绑定过上级" });
+        }
+
+        // 3. 执行绑定
+        await userRef.update({
+            inviter: inviterUid,
+            bindTime: Date.now()
+        });
+
+        res.json({ success: true, message: "绑定成功" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: '服务器错误' });
+    }
 });
 /* ---------------------------------------------------------
    Start server
