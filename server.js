@@ -363,39 +363,51 @@ function objToSortedArray(objOrNull){
    Root
 --------------------------------------------------------- */
 app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
-
-/* ---------------------------------------------------------
-   Basic user sync
---------------------------------------------------------- */
+// ==========================================
+// 🌟 位置 1：用户同步/注册接口，绑定上下级推荐关系
+// ==========================================
 app.post('/api/users/sync', async (req, res) => {
   try {
-    const { userid, userId } = req.body;
+    const { userid, userId, inviteCodeFromUrl } = req.body; 
     const uid = userid || userId;
-    if(!uid) return res.json({ ok:false, message:'no uid' });
-    if(!db) return res.json({ ok:true, message:'no-db' });
+    if (!uid) return res.json({ ok: false, message: 'no uid' });
 
-    const userRef = db.ref('users/' + uid);
-    const createdSnap = await userRef.child('created').once('value');
-    const createdVal = createdSnap.exists() ? createdSnap.val() : null;
-    const created = (createdVal !== null && createdVal !== undefined) ? createdVal : now();
-    const balanceSnap = await userRef.child('balance').once('value');
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+    
+    // 如果用户是第一次被创建/同步
+    if (!snap.exists()) {
+      let inviterUid = "";
+      
+      // 如果注册时URL带了上级的推荐码
+      if (inviteCodeFromUrl) {
+        // 去数据库里查这个推荐码属于哪个上级
+        const usersSnap = await db.ref('users').once('value');
+        const allUsers = usersSnap.val() || {};
+        for (const [parentUid, parentData] of Object.entries(allUsers)) {
+          if (parentData.inviteCode === inviteCodeFromUrl || parentData.invite_code === inviteCodeFromUrl) {
+            inviterUid = parentUid; // 找到了上级的 UID
+            break;
+          }
+        }
+      }
 
-    const balance = safeNumber(balanceSnap.exists() ? balanceSnap.val() : 0, 0);
-
-    await userRef.update({
-     userid: uid,
-     created,
-     updated: now(),
-     balance,
-
-     loginTime: now(),
-     lastOnline: now()
-   });
-
-    return res.json({ ok:true });
-  } catch(e){
+      // 初始化下级档案，并绑定上级
+      await userRef.set({
+        userid: uid,
+        balance: 0,
+        inviteCode: 'INV-' + Math.floor(100000 + Math.random() * 900000), // 为下级生成他自己的邀请码
+        inviter: inviterUid, // 👈 核心：记录他的上级是谁！
+        unclaimedCommissions: 0, // 待领取佣金
+        totalEarnedCommissions: 0, // 累计总佣金
+        claimedCommissions: 0,      // 已领取佣金
+        created: Date.now()
+      });
+    }
+    return res.json({ ok: true });
+  } catch (e) {
     console.error('users sync error', e);
-    return res.json({ ok:false });
+    return res.json({ ok: false });
   }
 });
 app.post('/api/users/online', async (req,res)=>{
@@ -451,6 +463,159 @@ app.post('/api/orders/sync', async (req, res) => {
     res.status(500).json({ ok: false, message: 'Failed to sync orders' });
   }
 });
+app.post('/api/order/plan', async (req, res) => {
+  const { userId, planId, amount, duration, inviter } = req.body; 
+  if (!userId || !planId || !amount || !duration) {
+    return res.status(400).json({ success: false, message: '参数不完整' });
+  }
+
+  try {
+    const userRef = db.ref(`users/${userId}`);
+    const snap = await userRef.once('value');
+    if (!snap.exists()) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    const currentBal = Number(snap.val().balance || 0);
+    const investAmount = Number(amount); 
+
+    if (currentBal < investAmount) {
+      return res.status(400).json({ success: false, message: '余额不足，请充值后再下注' });
+    }
+
+    // 1. 执行扣款
+    const newBal = Number((currentBal - investAmount).toFixed(4));
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: Date.now()
+    });
+
+    // 2. 写入 Plan 订单
+    const orderId = 'PL-' + Date.now();
+    await db.ref(`orders/plan/${orderId}`).set({
+      uid: userId,
+      planId,
+      amount: investAmount,
+      duration: Number(duration),
+      status: 'running',
+      createTime: Date.now()
+    });
+
+    // 3. 实时同步前端扣款后的余额
+    broadcastSSE({
+      type: 'balance',
+      userId: userId,
+      balance: newBal,
+      source: 'plan_buy'
+    });
+
+    // 4. 自动返 5% 给上级（这是你原来那段非常完美的逻辑）
+    try {
+      let inviterUid = inviter; 
+      if (!inviterUid) {
+        const subUserSnap = await db.ref(`users/${userId}`).once('value');
+        const subUserData = subUserSnap.val() || {};
+        inviterUid = subUserData.inviter;
+      }
+
+      if (inviterUid) {
+        const commissionReward = Number((investAmount * 0.05).toFixed(4));
+        if (commissionReward > 0) {
+          const inviterRef = db.ref(`users/${inviterUid}`);
+          
+          // 使用事务保证数据准确性
+          await inviterRef.child('unclaimedCommissions').transaction((current) => (Number(current) || 0) + commissionReward);
+          await inviterRef.child('totalEarnedCommissions').transaction((current) => (Number(current) || 0) + commissionReward);
+          
+          // 获取最新数据用于广播
+          const inviterSnap = await inviterRef.once('value');
+          const inviterData = inviterSnap.val() || {};
+          
+          broadcastSSE({
+            type: 'team_update',
+            userId: inviterUid,
+            unclaimed: Number(inviterData.unclaimedCommissions),
+            totalEarned: Number(inviterData.totalEarnedCommissions),
+            claimed: Number(inviterData.claimedCommissions || 0)
+          });
+        }
+      }
+    } catch (commErr) {
+      console.error("佣金发放出错:", commErr);
+    }
+
+    return res.json({ success: true, message: '购买成功', orderId, newBalance: newBal });
+
+  } catch (error) {
+    console.error('购买 Plan 失败:', error);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+});
+
+// ==========================================
+// 🌟 2. 提取佣金接口（完美闭合对接版）
+// ==========================================
+app.post('/api/commissions/claim', async (req, res) => {
+  const { uid } = req.body;
+  if (!uid) {
+    return res.status(400).json({ success: false, message: '缺少用户 UID' });
+  }
+
+  try {
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+    if (!snap.exists()) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    const userData = snap.val() || {};
+    const unclaimed = Number(userData.unclaimedCommissions || 0);
+    const currentBalance = Number(userData.balance || 0);
+    const totalClaimed = Number(userData.claimedCommissions || 0);
+
+    if (unclaimed < 50) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `领取失败：当前可领取佣金为 $${unclaimed.toFixed(2)}，未达到最低 $50.00 的提领门槛。` 
+      });
+    }
+
+    const newBalance = Number((currentBalance + unclaimed).toFixed(4));
+    const newClaimed = Number((totalClaimed + unclaimed).toFixed(4));
+    const newUnclaimed = 0;
+
+    await userRef.update({
+      balance: newBalance,
+      unclaimedCommissions: newUnclaimed,
+      claimedCommissions: newClaimed,
+      lastUpdate: Date.now()
+    });
+
+    broadcastSSE({
+      type: 'balance',
+      userId: uid,
+      balance: newBalance
+    });
+
+    broadcastSSE({
+      type: 'team_update',
+      userId: uid,
+      unclaimed: newUnclaimed,
+      totalEarned: Number(userData.totalEarnedCommissions || 0),
+      claimed: newClaimed
+    });
+
+    return res.json({ 
+      success: true, 
+      message: `成功领取 $${unclaimed.toFixed(2)} 佣金，已全额转入您的主资产余额！` 
+    });
+
+  } catch (error) {
+    console.error('提取佣金逻辑执行失败:', error);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+});
+    
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
   try {
@@ -2199,6 +2364,89 @@ app.post('/api/bet/sport', async (req, res) => {
     console.error('Sport bet error:', e);
     return res.status(500).json({ success: false, message: '服务器异常' });
   }
+});
+// ==========================================
+// 🌟 2. 提取佣金接口（你发我的这一段，完美配对版）
+// ==========================================
+app.post('/api/commissions/claim', async (req, res) => {
+  const { uid } = req.body;
+  if (!uid) {
+    return res.status(400).json({ success: false, message: '缺少用户 UID' });
+  }
+  try {
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+    if (!snap.exists()) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+    const userData = snap.val() || {};
+    const unclaimed = Number(userData.unclaimedCommissions || 0);
+    const currentBalance = Number(userData.balance || 0);
+    const totalClaimed = Number(userData.claimedCommissions || 0);
+
+    if (unclaimed < 50) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `领取失败：当前可领取佣金为 $${unclaimed.toFixed(2)}，未达到最低 $50.00 的提领门槛。` 
+      });
+    }
+
+    const newBalance = Number((currentBalance + unclaimed).toFixed(4));
+    const newClaimed = Number((totalClaimed + unclaimed).toFixed(4));
+    const newUnclaimed = 0;
+
+    await userRef.update({
+      balance: newBalance,
+      unclaimedCommissions: newUnclaimed,
+      claimedCommissions: newClaimed,
+      lastUpdate: Date.now()
+    });
+
+    broadcastSSE({ type: 'balance', userId: uid, balance: newBalance });
+    broadcastSSE({
+      type: 'team_update',
+      userId: uid,
+      unclaimed: newUnclaimed,
+      totalEarned: Number(userData.totalEarnedCommissions || 0),
+      claimed: newClaimed
+    });
+
+    return res.json({ 
+      success: true, 
+      message: `成功领取 $${unclaimed.toFixed(2)} 佣金，已全额转入您的主资产余额！` 
+    });
+  } catch (error) {
+    console.error('提取佣金逻辑执行失败:', error);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+});
+                       // 新增的绑定接口
+// serverjs 中建议的校验逻辑
+app.post('/api/bind-inviter', async (req, res) => {
+    const { myUid, inviterUid } = req.body;
+    
+    // 1. 安全校验：不能自己邀请自己
+    if (myUid === inviterUid) return res.status(400).send("无效操作");
+
+    try {
+        const userRef = admin.database().ref(`users/${myUid}`);
+        const snapshot = await userRef.once('value');
+        
+        // 2. 幂等性检查：如果该用户已经有上级了，防止被覆盖
+        if (snapshot.val().inviter) {
+            return res.status(400).json({ success: false, message: "该账户已绑定过上级" });
+        }
+
+        // 3. 执行绑定
+        await userRef.update({
+            inviter: inviterUid,
+            bindTime: Date.now()
+        });
+
+        res.json({ success: true, message: "绑定成功" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: '服务器错误' });
+    }
 });
 /* ---------------------------------------------------------
    Start server
