@@ -2898,6 +2898,58 @@ await db.ref(`referrals/${inviterId}/${uid}`).set({
     }
 
 });
+ // ======================================
+// 获取下级列表
+// ======================================
+
+app.get('/api/referrals/:uid', async (req,res)=>{
+
+    try{
+
+        const uid =
+            req.params.uid;
+
+        if(!uid){
+
+            return res.json({
+                ok:false,
+                list:[]
+            });
+
+        }
+
+        const snap =
+            await db.ref(
+                `referrals/${uid}`
+            ).once('value');
+
+        const val =
+            snap.val() || {};
+
+        const list =
+            Object.values(val);
+
+        return res.json({
+
+            ok:true,
+            list
+
+        });
+
+    }catch(e){
+
+        console.log(e);
+
+        return res.json({
+
+            ok:false,
+            list:[]
+
+        });
+
+    }
+
+});
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
