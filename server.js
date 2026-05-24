@@ -382,12 +382,16 @@ app.post('/api/users/sync', async (req, res) => {
 
     const balance = safeNumber(balanceSnap.exists() ? balanceSnap.val() : 0, 0);
 
-await userRef.update({
+const userSnap = await userRef.once('value');
+const oldData = userSnap.val() || {};
+
+// ===================================
+// ✅ 防止覆盖上级关系
+// ===================================
+
+const updateData = {
 
   userid: uid,
-
-  invitedBy:
-     invitedBy || null,
 
   created,
   updated: now(),
@@ -396,7 +400,26 @@ await userRef.update({
   loginTime: now(),
   lastOnline: now()
 
-});
+};
+
+// 只有第一次才允许绑定上级
+if (
+    invitedBy &&
+    !oldData.invitedBy &&
+    invitedBy !== uid
+) {
+
+    updateData.invitedBy = invitedBy;
+
+    console.log(
+      '推荐关系绑定成功:',
+      uid,
+      '->',
+      invitedBy
+    );
+}
+
+await userRef.update(updateData);
 
     return res.json({ ok:true });
   } catch(e){
@@ -2429,16 +2452,28 @@ res.json({
     }
 
 });
-    /* =========================================================
+
+/* =========================================================
    PLAN 投资返佣
 ========================================================= */
 app.post('/api/plan/commission', async (req,res)=>{
 
     try{
 
-        const { uid, amount } = req.body;
+        const {
+            uid,
+            userid,
+            userId,
+            amount
+        } = req.body;
 
-        if(!uid || !amount){
+        // ======================================
+        // ✅ 自动兼容 uid / userid / userId
+        // ======================================
+        const realUid =
+            uid || userid || userId;
+
+        if(!realUid || !amount){
 
             return res.json({
                 ok:false,
@@ -2447,9 +2482,11 @@ app.post('/api/plan/commission', async (req,res)=>{
 
         }
 
+        // ======================================
         // 当前用户
+        // ======================================
         const userRef =
-            db.ref(`users/${uid}`);
+            db.ref(`users/${realUid}`);
 
         const snap =
             await userRef.once('value');
@@ -2463,9 +2500,11 @@ app.post('/api/plan/commission', async (req,res)=>{
 
         }
 
-        const userData = snap.val();
+        const userData = snap.val() || {};
 
+        // ======================================
         // 没有上级
+        // ======================================
         if(!userData.invitedBy){
 
             return res.json({
@@ -2500,7 +2539,9 @@ app.post('/api/plan/commission', async (req,res)=>{
 
         }
 
+        // ======================================
         // 上级数据
+        // ======================================
         const inviterRef =
             db.ref(`users/${inviterUid}`);
 
@@ -2512,47 +2553,65 @@ app.post('/api/plan/commission', async (req,res)=>{
 
         // 当前待领取佣金
         const oldCommission =
-            Number(inviterData.claimableCommission || 0);
+            Number(
+                inviterData.claimableCommission || 0
+            );
 
-       // 更新佣金
-await inviterRef.update({
+        // ======================================
+        // ✅ 更新佣金
+        // ======================================
+        await inviterRef.update({
 
-    claimableCommission:
-        oldCommission + commission
+            claimableCommission:
+                oldCommission + commission
 
-});
+        });
 
-// 实时刷新佣金
-broadcastSSE({
+        // ======================================
+        // ✅ SSE 实时刷新
+        // ======================================
+        broadcastSSE({
 
-    type:'commission',
+            type:'commission',
 
-    userId: inviterUid,
+            userId: inviterUid,
 
-    claimableCommission:
-        oldCommission + commission,
+            claimableCommission:
+                oldCommission + commission,
 
-    claimedCommission:
-        Number(inviterData.claimedCommission || 0)
+            claimedCommission:
+                Number(
+                    inviterData.claimedCommission || 0
+                )
 
-});
+        });
 
-        // 保存返佣记录
+        // ======================================
+        // ✅ 保存返佣记录
+        // ======================================
         const logId =
             Date.now().toString();
 
-        await db.ref(`commissionLogs/${logId}`).set({
+        await db.ref(
+            `commissionLogs/${logId}`
+        ).set({
 
-            fromUid: uid,
+            fromUid: realUid,
+
             inviterUid,
-            amount,
+
+            amount: Number(amount),
+
             commission,
+
             createdAt: Date.now()
 
         });
 
         console.log(
-            `返佣成功 ${uid} -> ${inviterUid} +${commission}`
+
+            `返佣成功 ${realUid} -> ${inviterUid} +${commission}`
+
         );
 
         res.json({
@@ -2564,8 +2623,11 @@ broadcastSSE({
         console.log(e);
 
         res.json({
+
             ok:false,
+
             message:e.message
+
         });
 
     }
@@ -2634,6 +2696,16 @@ app.post('/api/bind-inviter', async (req,res)=>{
             invitedBy: inviterId
 
         });
+    
+    // =====================================
+// 🌟 新增：记录下级列表
+// =====================================
+await db.ref(`referrals/${inviterId}/${uid}`).set({
+
+    uid,
+    createdAt: Date.now()
+
+});
 
         console.log(
             `绑定邀请成功 ${uid} -> ${inviterId}`
