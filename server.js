@@ -843,30 +843,32 @@ app.post('/api/admin/balance', async (req, res) => {
    - includes 'processed' flag to prevent double-processing by admin
    - broadcasts both 'new' and buysell events so admin UI and wallet UI both receive
 --------------------------------------------------------- */
-async function saveOrder(type, data){
+async function saveOrder(type, data) {
+
   if (!db) return null;
 
   const ts = now();
+
   const allowed = [
-  'userId',
-  'user',
-  'amount',
-  'estimate', // ✅ 加这一行
-  'coin',
-  'side',
-  'converted',
-  'coinQty',
-  'tp',
-  'sl',
-  'note',
-  'meta',
-  'orderId',
-  'status',
-  'deducted',
-  'wallet',
-  'ip',
-  'currency'
-];
+    'userId',
+    'user',
+    'amount',
+    'estimate',
+    'coin',
+    'side',
+    'converted',
+    'coinQty',
+    'tp',
+    'sl',
+    'note',
+    'meta',
+    'orderId',
+    'status',
+    'deducted',
+    'wallet',
+    'ip',
+    'currency'
+  ];
 
 
   const clean = {};
