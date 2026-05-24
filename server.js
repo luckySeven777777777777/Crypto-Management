@@ -2634,16 +2634,6 @@ app.post('/api/bind-inviter', async (req,res)=>{
             invitedBy: inviterId
 
         });
-    
-    // =====================================
-// 🌟 新增：记录下级列表
-// =====================================
-await db.ref(`referrals/${inviterId}/${uid}`).set({
-
-    uid,
-    createdAt: Date.now()
-
-});
 
         console.log(
             `绑定邀请成功 ${uid} -> ${inviterId}`
