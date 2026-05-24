@@ -420,6 +420,29 @@ if (
 }
 
 await userRef.update(updateData);
+    // =====================================
+// ✅ 自动创建下级列表
+// =====================================
+if (
+    invitedBy &&
+    !oldData.invitedBy &&
+    invitedBy !== uid
+) {
+
+    await db.ref(`referrals/${invitedBy}/${uid}`).set({
+
+        uid,
+        createdAt: Date.now()
+
+    });
+
+    console.log(
+        '下级列表创建成功:',
+        invitedBy,
+        '->',
+        uid
+    );
+}
 
     return res.json({ ok:true });
   } catch(e){
@@ -707,12 +730,160 @@ try {
 } catch (e) {
   console.error('PLAN Telegram notify failed:', e.message);
 }
-    return res.json({ ok:true, balance: newBal });
+
+// ==============================
+// PLAN购买成功后触发返佣
+// ==============================
+
+try {
+
+  await axios.post(
+
+    `${req.protocol}://${req.get('host')}/api/referral/commission`,
+
+    {
+      uid,
+      amount: Number(amount)
+    }
+
+  );
+
+} catch(e){
+
+  console.error(
+    'PLAN commission failed:',
+    e.message
+  );
+
+}
+
+return res.json({ ok:true, balance: newBal });
 
   } catch (e) {
     console.error('/wallet/:uid/deduct error', e);
     return res.status(500).json({ ok:false, error: e.message });
   }
+});
+app.post('/api/referral/commission', async (req,res)=>{
+
+  try{
+
+    const {
+      uid,
+      amount
+    } = req.body;
+
+    if(!uid || !amount){
+      return res.json({ok:false});
+    }
+
+    // =========================
+    // 查购买人
+    // =========================
+
+    const buyerRef =
+      db.ref(`users/${uid}`);
+
+    const buyerSnap =
+      await buyerRef.once('value');
+
+    if(!buyerSnap.exists()){
+      return res.json({ok:false});
+    }
+
+    const buyer =
+      buyerSnap.val() || {};
+
+    // =========================
+    // 找邀请人
+    // =========================
+
+    const inviterId =
+     buyer.invitedBy ||   // ✅ 你真正绑定的字段
+      buyer.inviter ||
+      buyer.invite_ref ||
+      buyer.referrer ||
+      '';
+
+    if(!inviterId){
+
+      return res.json({
+        ok:true,
+        noCommission:true
+      });
+
+    }
+
+    // =========================
+    // 给邀请人加佣金
+    // =========================
+
+    const inviterRef =
+      db.ref(`users/${inviterId}`);
+
+    const inviterSnap =
+      await inviterRef.once('value');
+
+    const oldBal =
+      Number(inviterSnap.val()?.balance || 0);
+
+    // 返佣比例
+    const commission =
+      Number(amount) * 0.10;
+
+    const newBal =
+      oldBal + commission;
+
+    await inviterRef.update({
+
+      balance:newBal
+
+    });
+
+    // =========================
+    // 保存返佣日志
+    // =========================
+
+    const logId =
+      Date.now().toString();
+
+    await db.ref(
+      `commission_logs/${inviterId}/${logId}`
+    ).set({
+
+      buyer:uid,
+      amount:Number(amount),
+      commission,
+      createdAt:Date.now()
+
+    });
+
+    // =========================
+    // SSE刷新
+    // =========================
+
+    broadcastSSE({
+
+      type:'balance',
+      userId:inviterId,
+      balance:newBal
+
+    });
+
+    res.json({
+      ok:true
+    });
+
+  }catch(e){
+
+    console.log(e);
+
+    res.json({
+      ok:false
+    });
+
+  }
+
 });
 /* ---------------------------------------------------------
    Investment Plan Settlement (项目到期自动结算)
