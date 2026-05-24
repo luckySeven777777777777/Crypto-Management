@@ -848,8 +848,24 @@ async function saveOrder(type, data){
 
   const ts = now();
   const allowed = [
-  'userId','user','amount','coin','side','converted','coinQty',
-  'tp','sl','note','meta','orderId','status','deducted','wallet','ip','currency'
+  'userId',
+  'user',
+  'amount',
+  'estimate', // ✅ 加这一行
+  'coin',
+  'side',
+  'converted',
+  'coinQty',
+  'tp',
+  'sl',
+  'note',
+  'meta',
+  'orderId',
+  'status',
+  'deducted',
+  'wallet',
+  'ip',
+  'currency'
 ];
 
 
@@ -874,11 +890,14 @@ async function saveOrder(type, data){
 
     // 保存钱包地址到用户
     wallet: clean.wallet || null,
-    estimate:
-  type === 'buysell'
-    ? Number(clean.amount)      // buysell 的 amount 本来就是 USDT
-    : calcEstimateUSDT(clean.amount, clean.coin)
-  };
+   estimate:
+  clean.estimate != null
+    ? Number(clean.estimate)
+    : (
+        type === 'buysell'
+          ? Number(clean.amount)
+          : calcEstimateUSDT(clean.amount, clean.coin)
+      )
 
   await db.ref(`orders/${type}/${id}`).set(payload);
 
