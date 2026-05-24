@@ -870,67 +870,87 @@ async function saveOrder(type, data) {
     'currency'
   ];
 
-
   const clean = {};
+
   Object.keys(data || {}).forEach(k => {
     if (allowed.includes(k)) clean[k] = data[k];
   });
 
-  if (!clean.userId && clean.user) clean.userId = clean.user;
+  if (!clean.userId && clean.user) {
+    clean.userId = clean.user;
+  }
 
   const id = clean.orderId || genOrderId(type.toUpperCase());
 
   const payload = {
     ...clean,
+
     orderId: id,
     timestamp: ts,
     time_us: usTime(ts),
+
     status: clean.status || 'processing',
+
     type,
     processed: false,
+
     coin: clean.coin || null,
 
-    // 保存钱包地址到用户
+    // 保存钱包地址
     wallet: clean.wallet || null,
-   estimate:
-  clean.estimate != null
-    ? Number(clean.estimate)
-    : (
-        type === 'buysell'
-          ? Number(clean.amount)
-          : calcEstimateUSDT(clean.amount, clean.coin)
-      )
 
+    // ✅ estimate 修复
+    estimate:
+      clean.estimate != null
+        ? Number(clean.estimate)
+        : (
+            type === 'buysell'
+              ? Number(clean.amount)
+              : calcEstimateUSDT(clean.amount, clean.coin)
+          ),
+  };
+
+  // 保存订单
   await db.ref(`orders/${type}/${id}`).set(payload);
 
   // user_orders 索引
   if (payload.userId) {
+
     try {
+
       await db.ref(`user_orders/${payload.userId}/${id}`).set({
         orderId: id,
         type,
         timestamp: ts
       });
 
-      // ✅ 保存钱包地址到用户
+      // 保存钱包地址到用户
       const userRef = db.ref(`users/${payload.userId}`);
+
       const userSnap = await userRef.once('value');
+
       const user = userSnap.val() || {};
 
-      // 只保留最后一个钱包地址，避免重复记录
       const wallets = user.wallets || [];
+
       if (clean.wallet && !wallets.includes(clean.wallet)) {
+
         wallets.push(clean.wallet);
+
         await userRef.update({ wallets });
+
       }
 
     } catch(e) {
+
       console.warn('user_orders write failed:', e.message);
+
     }
   }
 
   // SSE 广播
   try {
+
     broadcastSSE({
       type: 'new',
       typeName: type,
@@ -939,13 +959,16 @@ async function saveOrder(type, data) {
     });
 
     if (type === 'buysell') {
+
       broadcastSSE({
         type: 'buysell',
         typeName: type,
         userId: payload.userId,
         order: payload
       });
+
     }
+
   } catch(e){}
 
   return id;
