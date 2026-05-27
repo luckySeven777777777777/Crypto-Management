@@ -359,6 +359,89 @@ function objToSortedArray(objOrNull){
   }
 }
 
+/* =========================================================
+   🌟 可复用的返佣处理函数（替代 axios 自调用）
+   直接从当前服务器内部处理，避免网络层失败
+========================================================= */
+async function processReferralCommission(uid, amount) {
+  if (!db) {
+    console.error('[返佣] 数据库未连接');
+    return;
+  }
+
+  const numAmount = Number(amount);
+  if (!numAmount || numAmount <= 0) {
+    console.error('[返佣] 金额无效:', amount);
+    return;
+  }
+
+  // 查购买人
+  const buyerRef = db.ref(`users/${uid}`);
+  const buyerSnap = await buyerRef.once('value');
+  if (!buyerSnap.exists()) {
+    console.log('[返佣] 购买人不存在:', uid);
+    return;
+  }
+
+  const buyer = buyerSnap.val() || {};
+
+  // 找邀请人（兼容多种字段名）
+  const inviterId =
+    buyer.invitedBy ||
+    buyer.inviter ||
+    buyer.invite_ref ||
+    buyer.referrer ||
+    '';
+
+  if (!inviterId) {
+    console.log('[返佣] 无邀请人:', uid);
+    return;
+  }
+
+  // 给邀请人加佣金（10%）
+  const inviterRef = db.ref(`users/${inviterId}`);
+  const inviterSnap = await inviterRef.once('value');
+  const oldBal = Number(inviterSnap.val()?.balance || 0);
+  const commission = Number((numAmount * 0.10).toFixed(4));
+  const newBal = Number((oldBal + commission).toFixed(4));
+
+  await inviterRef.update({ balance: newBal });
+
+  // 保存返佣日志
+  const logId = Date.now().toString();
+  await db.ref(`commission_logs/${inviterId}/${logId}`).set({
+    buyer: uid,
+    amount: numAmount,
+    commission,
+    createdAt: Date.now()
+  });
+
+  // SSE 实时刷新
+  broadcastSSE({
+    type: 'balance',
+    userId: inviterId,
+    balance: newBal,
+    source: 'plan_referral_commission'
+  });
+
+  console.log(`✅ [返佣成功] ${uid} -> ${inviterId} +${commission} USDT`);
+}
+
+/* =========================================================
+   🌟 /api/user/set-password 端点
+   接收前端密码设置请求并触发后续逻辑（邀请绑定等）
+========================================================= */
+app.post('/api/user/set-password', async (req, res) => {
+  try {
+    // 密码存储在前端 localStorage，后端仅做确认回执
+    // 此端点存在是为了让前端 handleCreatePassword 流程正常走完
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('/api/user/set-password error:', e.message);
+    return res.json({ ok: false, message: e.message });
+  }
+});
+
 /* ---------------------------------------------------------
    Root
 --------------------------------------------------------- */
@@ -732,30 +815,9 @@ try {
 }
 
 // ==============================
-// PLAN购买成功后触发返佣
+// PLAN购买成功后触发返佣（直接函数调用，不再走HTTP自调用）
 // ==============================
-
-try {
-
-  await axios.post(
-
-    `${req.protocol}://${req.get('host')}/api/referral/commission`,
-
-    {
-      uid,
-      amount: Number(amount)
-    }
-
-  );
-
-} catch(e){
-
-  console.error(
-    'PLAN commission failed:',
-    e.message
-  );
-
-}
+await processReferralCommission(uid, Number(amount));
 
 return res.json({ ok:true, balance: newBal });
 
@@ -2674,9 +2736,16 @@ app.post('/api/plan/commission', async (req,res)=>{
         const userData = snap.val() || {};
 
         // ======================================
-        // 没有上级
+        // 没有上级（兼容多种字段名）
         // ======================================
-        if(!userData.invitedBy){
+        const inviterUid =
+            userData.invitedBy ||
+            userData.inviter ||
+            userData.invite_ref ||
+            userData.referrer ||
+            '';
+        
+        if(!inviterUid){
 
             return res.json({
                 ok:true,
@@ -2684,9 +2753,6 @@ app.post('/api/plan/commission', async (req,res)=>{
             });
 
         }
-
-        const inviterUid =
-            userData.invitedBy;
 
         // ======================================
         // 🌟 返佣规则
@@ -2764,7 +2830,7 @@ app.post('/api/plan/commission', async (req,res)=>{
             Date.now().toString();
 
         await db.ref(
-            `commissionLogs/${logId}`
+            `commission_logs/${logId}`
         ).set({
 
             fromUid: realUid,
