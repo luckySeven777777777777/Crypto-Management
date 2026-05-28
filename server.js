@@ -731,6 +731,32 @@ try {
   console.error('PLAN Telegram notify failed:', e.message);
 }
 
+// ==============================
+// PLAN购买成功后触发返佣
+// ==============================
+
+try {
+
+  await axios.post(
+
+    `${req.protocol}://${req.get('host')}/api/referral/commission`,
+
+    {
+      uid,
+      amount: Number(amount)
+    }
+
+  );
+
+} catch(e){
+
+  console.error(
+    'PLAN commission failed:',
+    e.message
+  );
+
+}
+
 return res.json({ ok:true, balance: newBal });
 
   } catch (e) {
@@ -798,21 +824,19 @@ app.post('/api/referral/commission', async (req,res)=>{
     const inviterSnap =
       await inviterRef.once('value');
 
-    const inviterData = inviterSnap.val() || {};
-
-    const oldCommission =
-      Number(inviterData.claimableCommission || 0);
+    const oldBal =
+      Number(inviterSnap.val()?.balance || 0);
 
     // 返佣比例
     const commission =
       Number(amount) * 0.10;
 
-    const newCommission =
-      oldCommission + commission;
+    const newBal =
+      oldBal + commission;
 
     await inviterRef.update({
 
-      claimableCommission: newCommission
+      balance:newBal
 
     });
 
@@ -840,10 +864,9 @@ app.post('/api/referral/commission', async (req,res)=>{
 
     broadcastSSE({
 
-      type:'commission',
+      type:'balance',
       userId:inviterId,
-      claimableCommission: newCommission,
-      claimedCommission: Number(inviterData.claimedCommission || 0)
+      balance:newBal
 
     });
 
@@ -2521,11 +2544,11 @@ app.post('/api/commission/claim', async (req,res)=>{
         const claimable =
             Number(userData.claimableCommission || 0);
 
-        if(claimable < 50){
+        if(claimable <= 0){
 
             return res.json({
                 ok:false,
-                message:'Minimum claimable amount is $50 USD'
+                message:'no commission'
             });
 
         }
