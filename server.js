@@ -518,9 +518,33 @@ app.post('/api/currency/sync', async (req, res) => {
 
     await ensureUserExists(uid);
 
+    // 先读已存储的 portfolio
     const portfolioRef = db.ref(`users/${uid}/portfolio`);
     const portfolioSnap = await portfolioRef.once('value');
-    const portfolio = portfolioSnap.exists() ? portfolioSnap.val() : {};
+    let portfolio = portfolioSnap.exists() ? portfolioSnap.val() : {};
+
+    // 如果 portfolio 为空，从历史 buysell buy 订单中聚合计算持仓并回写
+    if (!portfolio || Object.keys(portfolio).length === 0) {
+      const buysellSnap = await db.ref('orders/buysell').once('value');
+      if (buysellSnap.exists()) {
+        const orders = buysellSnap.val();
+        const aggregated = {};
+        for (const orderId in orders) {
+          const order = orders[orderId];
+          if (order.userId === uid && String(order.side || '').toLowerCase() === 'buy' && order.coin && order.coinQty) {
+            const coin = String(order.coin).toUpperCase();
+            const qty = Number(order.coinQty);
+            if (qty > 0) {
+              aggregated[coin] = Number(((aggregated[coin] || 0) + qty).toFixed(8));
+            }
+          }
+        }
+        if (Object.keys(aggregated).length > 0) {
+          await portfolioRef.set(aggregated);
+          portfolio = aggregated;
+        }
+      }
+    }
 
     res.json({ ok: true, portfolio });
 
