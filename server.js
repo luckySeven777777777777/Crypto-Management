@@ -2950,6 +2950,360 @@ app.get('/api/referrals/:uid', async (req,res)=>{
     }
 
 });
+/* =========================================================
+   NEW: Enhanced Referral List (下级列表增强版)
+========================================================= */
+app.post('/api/referrals/enhanced', async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.json({ ok: false, list: [], message: 'missing uid' });
+    if (!db) return res.json({ ok: false, list: [], message: 'no-db' });
+
+    const referralsSnap = await db.ref(`referrals/${uid}`).once('value');
+    const referralsVal = referralsSnap.val() || {};
+    const subordinateUids = Object.keys(referralsVal);
+
+    if (subordinateUids.length === 0) {
+      return res.json({ ok: true, list: [], count: 0 });
+    }
+
+    const list = [];
+    for (const subUid of subordinateUids) {
+      const userSnap = await db.ref(`users/${subUid}`).once('value');
+      if (userSnap.exists()) {
+        const userData = userSnap.val();
+        list.push({
+          uid: subUid,
+          email: userData.email || '',
+          balance: safeNumber(userData.balance, 0),
+          createdAt: userData.created || referralsVal[subUid]?.createdAt || null,
+          invitedBy: userData.invitedBy || '',
+          wallet: userData.wallet || '',
+          lastOnline: userData.lastOnline || null
+        });
+      } else {
+        list.push({
+          uid: subUid,
+          email: '',
+          balance: 0,
+          createdAt: referralsVal[subUid]?.createdAt || null,
+          invitedBy: '',
+          wallet: ''
+        });
+      }
+    }
+
+    return res.json({ ok: true, list, count: list.length });
+
+  } catch (e) {
+    console.error('/api/referrals/enhanced error:', e);
+    return res.json({ ok: false, list: [], message: e.message });
+  }
+});
+
+/* =========================================================
+   NEW: Plan Commission V2 (PLAN投资返佣 - claimable模式)
+========================================================= */
+app.post('/api/plan/commission-v2', async (req, res) => {
+  try {
+    const { uid, amount } = req.body;
+    if (!uid || !amount) return res.json({ ok: false, message: 'missing params' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+
+    const buyerRef = db.ref(`users/${uid}`);
+    const buyerSnap = await buyerRef.once('value');
+    if (!buyerSnap.exists()) return res.json({ ok: false, message: 'user not found' });
+
+    const buyer = buyerSnap.val() || {};
+    const inviterId = buyer.invitedBy;
+
+    if (!inviterId) {
+      return res.json({ ok: true, message: 'no inviter' });
+    }
+
+    const numAmount = safeNumber(amount, 0);
+    if (numAmount < 1000) {
+      return res.json({ ok: true, message: 'amount too low' });
+    }
+
+    const commission = 50;
+
+    const inviterRef = db.ref(`users/${inviterId}`);
+    const inviterSnap = await inviterRef.once('value');
+    const oldClaimable = inviterSnap.exists()
+      ? safeNumber(inviterSnap.val().claimableCommission, 0)
+      : 0;
+    const newClaimable = oldClaimable + commission;
+
+    await inviterRef.update({
+      claimableCommission: newClaimable,
+      updated: now()
+    });
+
+    const logId = `commission-${now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    await db.ref(`commissionLogs/${logId}`).set({
+      fromUid: uid,
+      inviterUid: inviterId,
+      amount: numAmount,
+      commission,
+      createdAt: now(),
+      type: 'plan'
+    });
+
+    try {
+      broadcastSSE({
+        type: 'commission',
+        userId: inviterId,
+        claimableCommission: newClaimable,
+        commission
+      });
+    } catch (e) {}
+
+    return res.json({ ok: true, commission });
+
+  } catch (e) {
+    console.error('/api/plan/commission-v2 error:', e);
+    return res.json({ ok: false, message: e.message });
+  }
+});
+
+/* =========================================================
+   NEW: Verify Binding (绑定关系验证/修复)
+========================================================= */
+app.post('/api/referral/verify-binding', async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.json({ ok: false, message: 'missing uid' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+
+    const userSnap = await db.ref(`users/${uid}`).once('value');
+    if (!userSnap.exists()) return res.json({ ok: false, message: 'user not found' });
+
+    const userData = userSnap.val() || {};
+    const invitedBy = userData.invitedBy || null;
+
+    let subordinateCount = 0;
+    if (invitedBy) {
+      const refSnap = await db.ref(`referrals/${invitedBy}/${uid}`).once('value');
+      if (!refSnap.exists()) {
+        await db.ref(`referrals/${invitedBy}/${uid}`).set({
+          uid,
+          createdAt: now()
+        });
+      }
+    }
+
+    const subSnap = await db.ref(`referrals/${uid}`).once('value');
+    const subVal = subSnap.val() || {};
+    subordinateCount = Object.keys(subVal).length;
+
+    return res.json({ ok: true, invitedBy, subordinateCount });
+
+  } catch (e) {
+    console.error('/api/referral/verify-binding error:', e);
+    return res.json({ ok: false, message: e.message });
+  }
+});
+
+/* =========================================================
+   NEW: Check Commission (检查上级佣金状态)
+========================================================= */
+app.post('/api/referral/check-commission', async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.json({ ok: false, message: 'missing uid' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+
+    const userSnap = await db.ref(`users/${uid}`).once('value');
+    if (!userSnap.exists()) return res.json({ ok: false, message: 'user not found' });
+
+    const userData = userSnap.val() || {};
+
+    return res.json({
+      ok: true,
+      claimableCommission: safeNumber(userData.claimableCommission, 0),
+      claimedCommission: safeNumber(userData.claimedCommission, 0),
+      balance: safeNumber(userData.balance, 0)
+    });
+
+  } catch (e) {
+    console.error('/api/referral/check-commission error:', e);
+    return res.json({ ok: false, message: e.message });
+  }
+});
+
+/* =========================================================
+   NEW: CLAIM Commission (提取佣金到余额)
+========================================================= */
+app.post('/api/referral/claim-commission', async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.json({ ok: false, message: 'missing uid' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+
+    const userRef = db.ref(`users/${uid}`);
+    const userSnap = await userRef.once('value');
+    if (!userSnap.exists()) return res.json({ ok: false, message: 'user not found' });
+
+    const userData = userSnap.val() || {};
+    const claimable = safeNumber(userData.claimableCommission, 0);
+
+    if (claimable <= 0) {
+      return res.json({ ok: false, message: 'no commission to claim' });
+    }
+
+    const oldBalance = safeNumber(userData.balance, 0);
+    const oldClaimed = safeNumber(userData.claimedCommission, 0);
+
+    const newBalance = oldBalance + claimable;
+    const newClaimed = oldClaimed + claimable;
+
+    await userRef.update({
+      balance: newBalance,
+      claimableCommission: 0,
+      claimedCommission: newClaimed,
+      updated: now()
+    });
+
+    const logId = `claim-${now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    await db.ref(`commissionLogs/${logId}`).set({
+      inviterUid: uid,
+      claimed: claimable,
+      newBalance,
+      createdAt: now(),
+      type: 'claim'
+    });
+
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId: uid,
+        balance: newBalance,
+        claimableCommission: 0,
+        claimedCommission: newClaimed
+      });
+    } catch (e) {}
+
+    return res.json({
+      ok: true,
+      claimed: claimable,
+      balance: newBalance,
+      claimableCommission: 0,
+      claimedCommission: newClaimed
+    });
+
+  } catch (e) {
+    console.error('/api/referral/claim-commission error:', e);
+    return res.json({ ok: false, message: e.message });
+  }
+});
+
+/* =========================================================
+   NEW: Plan Buy + Commission 一体接口
+========================================================= */
+app.post('/api/plan/buy-with-commission', async (req, res) => {
+  try {
+    const { uid, amount, plan, rateMin, rateMax, days, currency } = req.body;
+    if (!uid || !amount) return res.json({ ok: false, message: 'missing uid or amount' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+
+    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, error: 'invalid uid' });
+
+    const numAmount = safeNumber(amount, 0);
+    if (numAmount <= 0) return res.status(400).json({ ok: false, error: 'invalid amount' });
+
+    await ensureUserExists(uid);
+
+    // 1. 扣款
+    const userRef = db.ref(`users/${uid}`);
+    const userSnap = await userRef.once('value');
+    const userData = userSnap.val() || {};
+    const curBal = safeNumber(userData.balance, 0);
+
+    if (curBal < numAmount) {
+      return res.status(400).json({ ok: false, error: 'Insufficient balance' });
+    }
+
+    const newBal = curBal - numAmount;
+    await userRef.update({ balance: newBal, updated: now() });
+
+    try {
+      broadcastSSE({ type: 'balance', userId: uid, balance: newBal, source: 'plan_buy' });
+    } catch (e) {}
+
+    // 2. 保存 PLAN 订单
+    const orderId = genOrderId('PLAN');
+    const planOrder = {
+      userId: uid,
+      orderId,
+      amount: numAmount,
+      currency: currency || 'USDT',
+      plan: plan || '',
+      rateMin: safeNumber(rateMin, 0),
+      rateMax: safeNumber(rateMax, 0),
+      days: safeNumber(days, 0),
+      timestamp: now()
+    };
+    await db.ref(`orders/plan/${orderId}`).set(planOrder);
+
+    // 3. Telegram 通知
+    try {
+      await sendPlanOrderToTelegram(planOrder);
+    } catch (e) {
+      console.error('PLAN Telegram notify failed:', e.message);
+    }
+
+    // 4. 自动返佣
+    let commission = 0;
+    const inviterId = userData.invitedBy;
+    if (inviterId && numAmount >= 1000) {
+      commission = 50;
+
+      const inviterRef = db.ref(`users/${inviterId}`);
+      const inviterSnap = await inviterRef.once('value');
+      const oldClaimable = inviterSnap.exists()
+        ? safeNumber(inviterSnap.val().claimableCommission, 0)
+        : 0;
+      const newClaimable = oldClaimable + commission;
+
+      await inviterRef.update({
+        claimableCommission: newClaimable,
+        updated: now()
+      });
+
+      const logId = `commission-${now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      await db.ref(`commissionLogs/${logId}`).set({
+        fromUid: uid,
+        inviterUid: inviterId,
+        amount: numAmount,
+        commission,
+        createdAt: now(),
+        type: 'plan'
+      });
+
+      try {
+        broadcastSSE({
+          type: 'commission',
+          userId: inviterId,
+          claimableCommission: newClaimable,
+          commission
+        });
+      } catch (e) {}
+    }
+
+    return res.json({
+      ok: true,
+      balance: newBal,
+      orderId,
+      commission
+    });
+
+  } catch (e) {
+    console.error('/api/plan/buy-with-commission error:', e);
+    return res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
