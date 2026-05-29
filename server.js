@@ -328,11 +328,51 @@ app.post('/api/recovery/backup', async (req, res) => {
         restoredAt: null
       });
       await db.ref(`users/${uid}/recoveryBacked`).set(true);
+      // Reverse lookup: hash → uid for cross-device restore
+      await db.ref(`recovery_lookup/${hash}`).set(uid);
     }
 
     res.json({ ok: true, message: 'Recovery phrase hash stored successfully' });
   } catch (e) {
     console.error('recovery backup error:', e);
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// 通过助记词反查用户（换设备恢复用）
+app.post('/api/recovery/lookup', async (req, res) => {
+  try {
+    const { phrase } = req.body;
+    if (!phrase || !Array.isArray(phrase) || phrase.length !== 12) {
+      return res.status(400).json({ ok: false, message: 'phrase must be 12 words array' });
+    }
+
+    const phraseStr = phrase.join(' ');
+    const inputHash = hashPhrase(phraseStr);
+
+    if (!db) return res.status(503).json({ ok: false, message: 'database not available' });
+
+    // Look up uid by hash
+    const uidSnap = await db.ref(`recovery_lookup/${inputHash}`).once('value');
+    const uid = uidSnap.val();
+    if (!uid) {
+      return res.status(404).json({ ok: false, message: 'No account found for this recovery phrase' });
+    }
+
+    // Fetch full user data
+    const userSnap = await db.ref(`users/${uid}`).once('value');
+    const userData = userSnap.val() || {};
+
+    // Also mark as restored
+    await db.ref(`recovery_phrases/${uid}/restoredAt`).set(Date.now());
+
+    res.json({
+      ok: true,
+      uid,
+      userData
+    });
+  } catch (e) {
+    console.error('recovery lookup error:', e);
     res.status(500).json({ ok: false, message: e.message });
   }
 });
