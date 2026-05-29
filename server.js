@@ -313,6 +313,30 @@ app.get('/api/recovery/status/:uid', async (req, res) => {
   }
 });
 
+// 客户端备份哈希（仅存储hash，短语由客户端生成）
+app.post('/api/recovery/backup', async (req, res) => {
+  try {
+    const { userid, userId, hash } = req.body;
+    const uid = userid || userId;
+    if (!uid) return res.status(400).json({ ok: false, message: 'no userId' });
+    if (!hash) return res.status(400).json({ ok: false, message: 'no hash provided' });
+
+    if (db) {
+      await db.ref(`recovery_phrases/${uid}`).set({
+        hash,
+        backedAt: Date.now(),
+        restoredAt: null
+      });
+      await db.ref(`users/${uid}/recoveryBacked`).set(true);
+    }
+
+    res.json({ ok: true, message: 'Recovery phrase hash stored successfully' });
+  } catch (e) {
+    console.error('recovery backup error:', e);
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
 /* ---------------------------------------------------------
    Middleware
 --------------------------------------------------------- */
