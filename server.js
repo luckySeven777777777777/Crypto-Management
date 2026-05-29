@@ -356,6 +356,8 @@ app.post('/api/recovery/backup', async (req, res) => {
     if (db) {
       // Direct key: hash → account data (deterministic, no lookup table needed)
       await db.ref(`recovery_accounts/${hash}`).set(recoveryPayload);
+      // Also copy user data under hash key so hash-derived wallet_uid works
+      await db.ref(`users/${hash}`).set(userSnapshot);
       // Legacy lookup for backward compat
       await db.ref(`recovery_lookup/${hash}`).set(uid);
       await db.ref(`recovery_phrases/${uid}`).set({ hash, backedAt: Date.now(), restoredAt: null });
@@ -365,6 +367,7 @@ app.post('/api/recovery/backup', async (req, res) => {
       fileStore.accounts = fileStore.accounts || {};
       fileStore.accounts[hash] = recoveryPayload;
       fileStore.users[uid] = fileStore.users[uid] || {};
+      fileStore.users[hash] = userSnapshot;
       saveStore(fileStore);
     }
 
@@ -3295,61 +3298,5 @@ app.get('/api/referrals/:uid', async (req,res)=>{
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
-
-// Re-register recovery routes after all middleware (ensure availability)
-app.post('/api/recovery/backup', async (req, res) => {
-  try {
-    const { userid, userId, hash } = req.body;
-    const uid = userid || userId;
-    if (!uid) return res.status(400).json({ ok: false, message: 'no userId' });
-    if (!hash) return res.status(400).json({ ok: false, message: 'no hash provided' });
-    let userSnapshot = {};
-    if (db) { const snap = await db.ref(`users/${uid}`).once('value'); userSnapshot = snap.val() || {}; }
-    else { userSnapshot = fileStore.users[uid] || {}; }
-    const payload = { uid, backedAt: Date.now(), restoredAt: null, userData: userSnapshot };
-    if (db) {
-      await db.ref(`recovery_accounts/${hash}`).set(payload);
-      await db.ref(`recovery_lookup/${hash}`).set(uid);
-      await db.ref(`users/${uid}/recoveryBacked`).set(true);
-    } else {
-      fileStore.lookup[hash] = uid;
-      fileStore.accounts = fileStore.accounts || {};
-      fileStore.accounts[hash] = payload;
-      fileStore.users[uid] = fileStore.users[uid] || {};
-      saveStore(fileStore);
-    }
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, message: e.message }); }
-});
-
-app.post('/api/recovery/lookup', async (req, res) => {
-  try {
-    const { phrase } = req.body;
-    if (!phrase || !Array.isArray(phrase) || phrase.length !== 12)
-      return res.status(400).json({ ok: false, message: 'phrase must be 12 words array' });
-    const inputHash = hashPhrase(phrase.join(' '));
-    let uid = null, userData = {};
-    if (db) {
-      const snap = await db.ref(`recovery_accounts/${inputHash}`).once('value');
-      const d = snap.val();
-      if (d && d.uid) { uid = d.uid; userData = d.userData || {}; }
-    } else if (fileStore.accounts && fileStore.accounts[inputHash]) {
-      const d = fileStore.accounts[inputHash];
-      uid = d.uid; userData = d.userData || {};
-    }
-    if (!uid && db) {
-      const s = await db.ref(`recovery_lookup/${inputHash}`).once('value');
-      uid = s.val();
-      if (uid) { const us = await db.ref(`users/${uid}`).once('value'); userData = us.val() || {}; }
-    }
-    if (!uid && !db && fileStore.lookup[inputHash]) {
-      uid = fileStore.lookup[inputHash];
-      userData = fileStore.users[uid] || {};
-    }
-    if (!uid) return res.status(404).json({ ok: false, message: 'No account found for this recovery phrase' });
-    if (db) await db.ref(`recovery_phrases/${uid}/restoredAt`).set(Date.now());
-    res.json({ ok: true, uid, userData });
-  } catch (e) { res.status(500).json({ ok: false, message: e.message }); }
-});
 
 app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
