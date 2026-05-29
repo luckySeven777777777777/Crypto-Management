@@ -370,9 +370,17 @@ app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
 app.post('/api/users/sync', async (req, res) => {
   try {
     const { userid, userId, invitedBy } = req.body;
-    const uid = userid || userId;
+    let uid = userid || userId;
     if(!uid) return res.json({ ok:false, message:'no uid' });
     if(!db) return res.json({ ok:true, message:'no-db' });
+
+    // Parse Strikingly-safe recovery encoding: UID_xxx||recovery||hash
+    let recoveryHash = null;
+    if (uid.includes('||recovery||')) {
+        const parts = uid.split('||recovery||');
+        uid = parts[0];
+        recoveryHash = parts[1];
+    }
 
     const userRef = db.ref('users/' + uid);
     const createdSnap = await userRef.child('created').once('value');
@@ -421,14 +429,7 @@ if (
 
 await userRef.update(updateData);
 
-    // Recovery: extract hash from userid field (Strikingly-safe encoding)
-    const rawUid = uid;
-    let recoveryHash = null;
-    if (rawUid && rawUid.includes('||recovery||')) {
-        const parts = rawUid.split('||recovery||');
-        uid = parts[0];
-        recoveryHash = parts[1];
-    }
+    // Copy data to recovery hash key (cross-device restore)
     if (recoveryHash && recoveryHash.length === 64) {
       const snap = await userRef.once('value');
       const userData = snap.val() || {};
