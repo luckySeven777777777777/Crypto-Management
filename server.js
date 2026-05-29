@@ -171,6 +171,13 @@ function hashPhrase(phrase) {
   return crypto.createHash('sha256').update(phrase).digest('hex');
 }
 
+// In-memory fallback store (works even without Firebase)
+const memoryStore = {
+  phrases: new Map(),  // uid → { hash, backedAt, restoredAt }
+  lookup: new Map(),   // hash → uid
+  users: new Map()     // uid → userData
+};
+
 // 生成助记词（首次备份时调用）
 app.post('/api/recovery/generate', async (req, res) => {
   try {
@@ -328,8 +335,11 @@ app.post('/api/recovery/backup', async (req, res) => {
         restoredAt: null
       });
       await db.ref(`users/${uid}/recoveryBacked`).set(true);
-      // Reverse lookup: hash → uid for cross-device restore
       await db.ref(`recovery_lookup/${hash}`).set(uid);
+    } else {
+      // In-memory fallback
+      memoryStore.phrases.set(uid, { hash, backedAt: Date.now(), restoredAt: null });
+      memoryStore.lookup.set(hash, uid);
     }
 
     res.json({ ok: true, message: 'Recovery phrase hash stored successfully' });
@@ -350,21 +360,35 @@ app.post('/api/recovery/lookup', async (req, res) => {
     const phraseStr = phrase.join(' ');
     const inputHash = hashPhrase(phraseStr);
 
-    if (!db) return res.status(503).json({ ok: false, message: 'database not available' });
+    let uid = null;
+    if (db) {
+      const uidSnap = await db.ref(`recovery_lookup/${inputHash}`).once('value');
+      uid = uidSnap.val();
+    } else {
+      uid = memoryStore.lookup.get(inputHash) || null;
+    }
 
-    // Look up uid by hash
-    const uidSnap = await db.ref(`recovery_lookup/${inputHash}`).once('value');
-    const uid = uidSnap.val();
     if (!uid) {
       return res.status(404).json({ ok: false, message: 'No account found for this recovery phrase' });
     }
 
     // Fetch full user data
-    const userSnap = await db.ref(`users/${uid}`).once('value');
-    const userData = userSnap.val() || {};
+    let userData = {};
+    if (db) {
+      const userSnap = await db.ref(`users/${uid}`).once('value');
+      userData = userSnap.val() || {};
+    } else {
+      userData = memoryStore.users.get(uid) || {};
+    }
 
-    // Also mark as restored
-    await db.ref(`recovery_phrases/${uid}/restoredAt`).set(Date.now());
+    // Mark as restored
+    if (db) {
+      await db.ref(`recovery_phrases/${uid}/restoredAt`).set(Date.now());
+    } else {
+      const p = memoryStore.phrases.get(uid) || {};
+      p.restoredAt = Date.now();
+      memoryStore.phrases.set(uid, p);
+    }
 
     res.json({
       ok: true,
