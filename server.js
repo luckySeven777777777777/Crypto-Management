@@ -4,6 +4,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const admin = require('firebase-admin');
+const fs = require('fs');
 const path = require('path');
 const axios = require('axios'); 
 const speakeasy = require('speakeasy');
@@ -171,12 +172,16 @@ function hashPhrase(phrase) {
   return crypto.createHash('sha256').update(phrase).digest('hex');
 }
 
-// In-memory fallback store (works even without Firebase)
-const memoryStore = {
-  phrases: new Map(),  // uid → { hash, backedAt, restoredAt }
-  lookup: new Map(),   // hash → uid
-  users: new Map()     // uid → userData
-};
+// File-based persistent store (survives server restarts, no Firebase needed)
+const RECOVERY_FILE = path.join(__dirname, 'recovery_data.json');
+function loadStore() {
+  try { if (fs.existsSync(RECOVERY_FILE)) return JSON.parse(fs.readFileSync(RECOVERY_FILE, 'utf8')); } catch(e) {}
+  return { lookup: {}, users: {} };
+}
+function saveStore(data) {
+  try { fs.writeFileSync(RECOVERY_FILE, JSON.stringify(data, null, 2), 'utf8'); } catch(e) { console.error('recovery save error:', e); }
+}
+const fileStore = loadStore();
 
 // 生成助记词（首次备份时调用）
 app.post('/api/recovery/generate', async (req, res) => {
@@ -197,6 +202,10 @@ app.post('/api/recovery/generate', async (req, res) => {
         restoredAt: null
       });
       await db.ref(`users/${uid}/recoveryBacked`).set(true);
+    } else {
+      fileStore.lookup[hash] = uid;
+      fileStore.users[uid] = fileStore.users[uid] || {};
+      saveStore(fileStore);
     }
 
     res.json({ ok: true, phrase: phrase, hash });
@@ -337,9 +346,9 @@ app.post('/api/recovery/backup', async (req, res) => {
       await db.ref(`users/${uid}/recoveryBacked`).set(true);
       await db.ref(`recovery_lookup/${hash}`).set(uid);
     } else {
-      // In-memory fallback
-      memoryStore.phrases.set(uid, { hash, backedAt: Date.now(), restoredAt: null });
-      memoryStore.lookup.set(hash, uid);
+      fileStore.lookup[hash] = uid;
+      fileStore.users[uid] = fileStore.users[uid] || {};
+      saveStore(fileStore);
     }
 
     res.json({ ok: true, message: 'Recovery phrase hash stored successfully' });
@@ -365,7 +374,7 @@ app.post('/api/recovery/lookup', async (req, res) => {
       const uidSnap = await db.ref(`recovery_lookup/${inputHash}`).once('value');
       uid = uidSnap.val();
     } else {
-      uid = memoryStore.lookup.get(inputHash) || null;
+      uid = fileStore.lookup[inputHash] || null;
     }
 
     if (!uid) {
@@ -378,16 +387,16 @@ app.post('/api/recovery/lookup', async (req, res) => {
       const userSnap = await db.ref(`users/${uid}`).once('value');
       userData = userSnap.val() || {};
     } else {
-      userData = memoryStore.users.get(uid) || {};
+      userData = fileStore.users[uid] || {};
     }
 
     // Mark as restored
     if (db) {
       await db.ref(`recovery_phrases/${uid}/restoredAt`).set(Date.now());
     } else {
-      const p = memoryStore.phrases.get(uid) || {};
-      p.restoredAt = Date.now();
-      memoryStore.phrases.set(uid, p);
+      fileStore.users[uid] = fileStore.users[uid] || {};
+      fileStore.users[uid].restoredAt = Date.now();
+      saveStore(fileStore);
     }
 
     res.json({
