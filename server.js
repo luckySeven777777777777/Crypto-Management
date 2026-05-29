@@ -436,6 +436,9 @@ app.post('/api/recovery/lookup', async (req, res) => {
   }
 });
 
+// Simple ping for connectivity check
+app.get('/api/ping', (req, res) => { res.json({ ok: true }); });
+
 /* ---------------------------------------------------------
    Middleware
 --------------------------------------------------------- */
