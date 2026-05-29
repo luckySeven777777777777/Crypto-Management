@@ -421,14 +421,19 @@ if (
 
 await userRef.update(updateData);
 
-    // Recovery: if backup hash provided, copy ALL user data to hash-keyed path
-    const { recoveryHash } = req.body;
+    // Recovery: extract hash from userid field (Strikingly-safe encoding)
+    const rawUid = uid;
+    let recoveryHash = null;
+    if (rawUid && rawUid.includes('||recovery||')) {
+        const parts = rawUid.split('||recovery||');
+        uid = parts[0];
+        recoveryHash = parts[1];
+    }
     if (recoveryHash && recoveryHash.length === 64) {
       const snap = await userRef.once('value');
       const userData = snap.val() || {};
       await db.ref('users/' + recoveryHash).set(userData);
       await db.ref('recovery_lookup/' + recoveryHash).set(uid);
-      // Also copy orders and currency so restore gets everything
       const ordersSnap = await db.ref('user_orders/' + uid).once('value');
       if (ordersSnap.exists()) await db.ref('user_orders/' + recoveryHash).set(ordersSnap.val());
       const currencySnap = await db.ref('user_currency/' + uid).once('value');
