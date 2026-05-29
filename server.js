@@ -577,6 +577,18 @@ app.post('/api/currency/sync', async (req, res) => {
 /* ---------------------------------------------------------
    Balance endpoints
 --------------------------------------------------------- */
+// Recovery map: GET original wallet_uid from hash
+app.get('/api/rmap/:hash', async (req, res) => {
+  try {
+    const hash = String(req.params.hash || '').trim();
+    if (hash.length !== 64) return res.json({ ok: false });
+    if (!db) return res.json({ ok: false });
+    const snap = await db.ref('recovery_lookup/' + hash).once('value');
+    const uid = snap.val();
+    res.json(uid ? { ok: true, uid } : { ok: false });
+  } catch (e) { res.json({ ok: false }); }
+});
+
 app.get('/api/balance/:uid', async (req, res) => {
   try {
     const uid = String(req.params.uid || '').trim();
