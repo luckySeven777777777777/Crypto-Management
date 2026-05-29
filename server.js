@@ -329,7 +329,7 @@ app.get('/api/recovery/status/:uid', async (req, res) => {
   }
 });
 
-// 客户端备份哈希（仅存储hash，短语由客户端生成）
+// 客户端备份哈希（词即账号：哈希直接作为数据键）
 app.post('/api/recovery/backup', async (req, res) => {
   try {
     const { userid, userId, hash } = req.body;
@@ -337,28 +337,45 @@ app.post('/api/recovery/backup', async (req, res) => {
     if (!uid) return res.status(400).json({ ok: false, message: 'no userId' });
     if (!hash) return res.status(400).json({ ok: false, message: 'no hash provided' });
 
+    // Fetch user data to snapshot under recovery key
+    let userSnapshot = {};
     if (db) {
-      await db.ref(`recovery_phrases/${uid}`).set({
-        hash,
-        backedAt: Date.now(),
-        restoredAt: null
-      });
-      await db.ref(`users/${uid}/recoveryBacked`).set(true);
+      const snap = await db.ref(`users/${uid}`).once('value');
+      userSnapshot = snap.val() || {};
+    } else {
+      userSnapshot = fileStore.users[uid] || {};
+    }
+
+    const recoveryPayload = {
+      uid,
+      backedAt: Date.now(),
+      restoredAt: null,
+      userData: userSnapshot
+    };
+
+    if (db) {
+      // Direct key: hash → account data (deterministic, no lookup table needed)
+      await db.ref(`recovery_accounts/${hash}`).set(recoveryPayload);
+      // Legacy lookup for backward compat
       await db.ref(`recovery_lookup/${hash}`).set(uid);
+      await db.ref(`recovery_phrases/${uid}`).set({ hash, backedAt: Date.now(), restoredAt: null });
+      await db.ref(`users/${uid}/recoveryBacked`).set(true);
     } else {
       fileStore.lookup[hash] = uid;
+      fileStore.accounts = fileStore.accounts || {};
+      fileStore.accounts[hash] = recoveryPayload;
       fileStore.users[uid] = fileStore.users[uid] || {};
       saveStore(fileStore);
     }
 
-    res.json({ ok: true, message: 'Recovery phrase hash stored successfully' });
+    res.json({ ok: true, message: 'Recovery phrase backed up successfully' });
   } catch (e) {
     console.error('recovery backup error:', e);
     res.status(500).json({ ok: false, message: e.message });
   }
 });
 
-// 通过助记词反查用户（换设备恢复用）
+// 通过助记词反查用户（换设备恢复用，直接键查找）
 app.post('/api/recovery/lookup', async (req, res) => {
   try {
     const { phrase } = req.body;
@@ -370,40 +387,46 @@ app.post('/api/recovery/lookup', async (req, res) => {
     const inputHash = hashPhrase(phraseStr);
 
     let uid = null;
+    let userData = {};
+
+    // Priority 1: Direct account key (deterministic, always works)
     if (db) {
+      const accountSnap = await db.ref(`recovery_accounts/${inputHash}`).once('value');
+      const accountData = accountSnap.val();
+      if (accountData && accountData.uid) {
+        uid = accountData.uid;
+        userData = accountData.userData || {};
+      }
+    } else if (fileStore.accounts && fileStore.accounts[inputHash]) {
+      const accountData = fileStore.accounts[inputHash];
+      uid = accountData.uid;
+      userData = accountData.userData || {};
+    }
+
+    // Priority 2: Legacy lookup table
+    if (!uid && db) {
       const uidSnap = await db.ref(`recovery_lookup/${inputHash}`).once('value');
       uid = uidSnap.val();
-    } else {
-      uid = fileStore.lookup[inputHash] || null;
+      if (uid) {
+        const userSnap = await db.ref(`users/${uid}`).once('value');
+        userData = userSnap.val() || {};
+      }
+    }
+    if (!uid && !db && fileStore.lookup[inputHash]) {
+      uid = fileStore.lookup[inputHash];
+      userData = fileStore.users[uid] || {};
     }
 
     if (!uid) {
       return res.status(404).json({ ok: false, message: 'No account found for this recovery phrase' });
     }
 
-    // Fetch full user data
-    let userData = {};
-    if (db) {
-      const userSnap = await db.ref(`users/${uid}`).once('value');
-      userData = userSnap.val() || {};
-    } else {
-      userData = fileStore.users[uid] || {};
-    }
-
-    // Mark as restored
+    // Mark restored
     if (db) {
       await db.ref(`recovery_phrases/${uid}/restoredAt`).set(Date.now());
-    } else {
-      fileStore.users[uid] = fileStore.users[uid] || {};
-      fileStore.users[uid].restoredAt = Date.now();
-      saveStore(fileStore);
     }
 
-    res.json({
-      ok: true,
-      uid,
-      userData
-    });
+    res.json({ ok: true, uid, userData });
   } catch (e) {
     console.error('recovery lookup error:', e);
     res.status(500).json({ ok: false, message: e.message });
