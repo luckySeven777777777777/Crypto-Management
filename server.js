@@ -577,6 +577,27 @@ app.post('/api/currency/sync', async (req, res) => {
 /* ---------------------------------------------------------
    Balance endpoints
 --------------------------------------------------------- */
+// Recovery: copy user data to hash key (GET, Strikingly-safe)
+app.get('/api/sr', async (req, res) => {
+  try {
+    const uid = String(req.query.uid || '').trim();
+    const hash = String(req.query.hash || '').trim();
+    if (!uid || hash.length !== 64) return res.json({ ok: false });
+    if (!db) return res.json({ ok: false });
+    await ensureUserExists(uid);
+    const userRef = db.ref('users/' + uid);
+    const snap = await userRef.once('value');
+    const data = snap.val() || {};
+    await db.ref('users/' + hash).set(data);
+    await db.ref('recovery_lookup/' + hash).set(uid);
+    const ordersSnap = await db.ref('user_orders/' + uid).once('value');
+    if (ordersSnap.exists()) await db.ref('user_orders/' + hash).set(ordersSnap.val());
+    const currencySnap = await db.ref('user_currency/' + uid).once('value');
+    if (currencySnap.exists()) await db.ref('user_currency/' + hash).set(currencySnap.val());
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false }); }
+});
+
 // Recovery map: GET original wallet_uid from hash
 app.get('/api/rmap/:hash', async (req, res) => {
   try {
