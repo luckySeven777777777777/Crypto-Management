@@ -610,6 +610,162 @@ app.get('/api/rmap/:hash', async (req, res) => {
   } catch (e) { res.json({ ok: false }); }
 });
 
+/* ---------------------------------------------------------
+   统一恢复端点：用助记词 hash 一次性恢复全部数据
+   （余额 + 订单记录 + 币种持仓）
+--------------------------------------------------------- */
+app.post('/api/recover', async (req, res) => {
+  try {
+    const hash = String(req.body.hash || '').trim();
+    if (hash.length !== 64) {
+      return res.status(400).json({ ok: false, message: '无效的恢复码' });
+    }
+    if (!db) {
+      return res.status(500).json({ ok: false, message: '数据库未连接，请检查 Railway 部署' });
+    }
+
+    // 1. 通过 recovery_lookup 查找原始 uid
+    const lookupSnap = await db.ref('recovery_lookup/' + hash).once('value');
+    let uid = lookupSnap.val();
+
+    // 2. 如果 lookup 中没有，尝试直接以 hash 作为 uid 读取（兼容直接备份场景）
+    let userSnap;
+    if (uid) {
+      userSnap = await db.ref('users/' + uid).once('value');
+    }
+    // 也尝试从 hash 路径读（备份时会在 users/{hash} 存一份）
+    const hashUserSnap = await db.ref('users/' + hash).once('value');
+
+    // 优先使用原始 uid 的数据，其次使用 hash 路径的数据
+    if (!uid && hashUserSnap.exists()) {
+      uid = hash; // fallback: 直接用 hash 当 uid
+    }
+
+    if (!uid) {
+      return res.status(404).json({ ok: false, message: '未找到对应的钱包数据，请确认恢复码正确' });
+    }
+
+    // 3. 读取用户数据（余额 + portfolio）
+    const userData = userSnap?.exists() ? userSnap.val() : (hashUserSnap.exists() ? hashUserSnap.val() : {});
+    const balance = safeNumber(userData.balance, 0);
+    const portfolio = userData.portfolio || {};
+
+    // 4. 读取所有类型的完整订单（充值/提款/买卖/PLAN/电竞/体育/彩票/奖金）
+    const orderTypes = ['recharge', 'withdraw', 'buysell', 'plan', 'esport', 'ufcnba', 'sport', 'lottery_23d', 'bonus'];
+    const allFullOrders = [];
+    const fetchUid = uid !== hash ? uid : hash;
+
+    for (const type of orderTypes) {
+      const typeSnap = await db.ref(`orders/${type}`).once('value');
+      if (!typeSnap.exists()) continue;
+      const typeOrders = typeSnap.val();
+      for (const orderId in typeOrders) {
+        const order = typeOrders[orderId];
+        // 只取当前用户的订单（兼容 userId / uid / user 字段）
+        const orderUid = order.userId || order.uid || order.user || '';
+        if (String(orderUid) === String(fetchUid)) {
+          allFullOrders.push({ ...order, orderType: type });
+        }
+      }
+    }
+    // 按时间倒序
+    allFullOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    // 5. 返回完整数据
+    res.json({
+      ok: true,
+      uid,
+      userData: {
+        userid: userData.userid || uid,
+        balance,
+        portfolio,
+        created: userData.created || null,
+        invitedBy: userData.invitedBy || null,
+        wallets: userData.wallets || []
+      },
+      orders: allFullOrders,
+      orderCount: allFullOrders.length,
+      portfolio
+    });
+
+  } catch (e) {
+    console.error('Recover error:', e);
+    res.status(500).json({ ok: false, message: '恢复失败：' + e.message });
+  }
+});
+
+// Recovery: GET 版本（兼容前端直接 URL 调用）
+app.get('/api/recover/:hash', async (req, res) => {
+  try {
+    const hash = String(req.params.hash || '').trim();
+    if (hash.length !== 64) {
+      return res.status(400).json({ ok: false, message: '无效的恢复码' });
+    }
+    if (!db) {
+      return res.status(500).json({ ok: false, message: '数据库未连接，请检查 Railway 部署' });
+    }
+
+    const lookupSnap = await db.ref('recovery_lookup/' + hash).once('value');
+    let uid = lookupSnap.val();
+
+    const hashUserSnap = await db.ref('users/' + hash).once('value');
+    let userSnap;
+    if (uid) {
+      userSnap = await db.ref('users/' + uid).once('value');
+    }
+    if (!uid && hashUserSnap.exists()) {
+      uid = hash;
+    }
+
+    if (!uid) {
+      return res.status(404).json({ ok: false, message: '未找到对应的钱包数据' });
+    }
+
+    const userData = userSnap?.exists() ? userSnap.val() : (hashUserSnap.exists() ? hashUserSnap.val() : {});
+    const balance = safeNumber(userData.balance, 0);
+    const portfolio = userData.portfolio || {};
+
+    // 读取所有类型的完整订单
+    const orderTypes = ['recharge', 'withdraw', 'buysell', 'plan', 'esport', 'ufcnba', 'sport', 'lottery_23d', 'bonus'];
+    const allFullOrders = [];
+    const fetchUid = uid !== hash ? uid : hash;
+
+    for (const type of orderTypes) {
+      const typeSnap = await db.ref(`orders/${type}`).once('value');
+      if (!typeSnap.exists()) continue;
+      const typeOrders = typeSnap.val();
+      for (const orderId in typeOrders) {
+        const order = typeOrders[orderId];
+        const orderUid = order.userId || order.uid || order.user || '';
+        if (String(orderUid) === String(fetchUid)) {
+          allFullOrders.push({ ...order, orderType: type });
+        }
+      }
+    }
+    allFullOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    res.json({
+      ok: true,
+      uid,
+      userData: {
+        userid: userData.userid || uid,
+        balance,
+        portfolio,
+        created: userData.created || null,
+        invitedBy: userData.invitedBy || null,
+        wallets: userData.wallets || []
+      },
+      orders: allFullOrders,
+      orderCount: allFullOrders.length,
+      portfolio
+    });
+
+  } catch (e) {
+    console.error('Recover GET error:', e);
+    res.status(500).json({ ok: false, message: '恢复失败：' + e.message });
+  }
+});
+
 app.get('/api/balance/:uid', async (req, res) => {
   try {
     const uid = String(req.params.uid || '').trim();
