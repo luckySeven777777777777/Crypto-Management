@@ -3292,7 +3292,7 @@ app.get('/api/sync/:uid', async (req, res) => {
     const portfolio = userData.portfolio || {};
 
     // 2. 读取所有订单类型
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap'];
+    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan'];
     const allOrders = {};
 
     for (const type of orderTypes) {
@@ -3312,6 +3312,12 @@ app.get('/api/sync/:uid', async (req, res) => {
       allOrders[type] = orders;
     }
 
+    // 3. 计算当日充值订单次数
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+    const todayRechargeCount = (allOrders.recharge || []).filter(o => (o.timestamp || 0) >= todayStart).length;
+    const maxSubmissions = 5;
+
     res.json({
       ok: true,
       uid,
@@ -3322,7 +3328,13 @@ app.get('/api/sync/:uid', async (req, res) => {
         recharge: allOrders.recharge.length,
         withdraw: allOrders.withdraw.length,
         buysell: allOrders.buysell.length,
-        swap: allOrders.swap.length
+        swap: allOrders.swap.length,
+        plan: allOrders.plan ? allOrders.plan.length : 0
+      },
+      remainingSubmissions: {
+        max: maxSubmissions,
+        used: todayRechargeCount,
+        remaining: Math.max(0, maxSubmissions - todayRechargeCount)
       }
     });
 
