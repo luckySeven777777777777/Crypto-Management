@@ -651,7 +651,7 @@ app.post('/api/recover', async (req, res) => {
     const portfolio = userData.portfolio || {};
 
     // 4. 读取所有类型的完整订单（充值/提款/买卖/PLAN/电竞/体育/彩票/奖金）
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'plan', 'esport', 'ufcnba', 'sport', 'lottery_23d', 'bonus'];
+    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan', 'esport', 'ufcnba', 'sport', 'lottery_23d', 'bonus'];
     const allFullOrders = [];
     const fetchUid = uid !== hash ? uid : hash;
 
@@ -726,7 +726,7 @@ app.get('/api/recover/:hash', async (req, res) => {
     const portfolio = userData.portfolio || {};
 
     // 读取所有类型的完整订单
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'plan', 'esport', 'ufcnba', 'sport', 'lottery_23d', 'bonus'];
+    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan', 'esport', 'ufcnba', 'sport', 'lottery_23d', 'bonus'];
     const allFullOrders = [];
     const fetchUid = uid !== hash ? uid : hash;
 
@@ -3196,6 +3196,142 @@ app.get('/api/referrals/:uid', async (req,res)=>{
     }
 
 });
+/* ---------------------------------------------------------
+   Swap endpoint (Convert coin → USDT)
+--------------------------------------------------------- */
+app.post('/api/order/swap', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+
+    const payload = req.body || {};
+    const userId = payload.userId || payload.user;
+
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: 'missing userId' });
+    }
+    if (!isSafeUid(userId)) {
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+    }
+
+    await ensureUserExists(userId);
+
+    const coin = String(payload.coin || '');
+    const amount = Number(payload.amount || 0);
+    const usdtAmount = Number(payload.usdtAmount || 0);
+    const price = Number(payload.price || 0);
+
+    if (!coin || amount <= 0 || usdtAmount <= 0) {
+      return res.status(400).json({ ok: false, error: 'invalid swap params' });
+    }
+
+    const orderId = genOrderId('SWAP');
+
+    const order = {
+      orderId,
+      userId,
+      coin,
+      amount,
+      usdtAmount,
+      price,
+      timestamp: now(),
+      time_us: usTime(now()),
+      status: 'completed'
+    };
+
+    await db.ref(`orders/swap/${orderId}`).set(order);
+
+    // user_orders 索引
+    try {
+      await db.ref(`user_orders/${userId}/${orderId}`).set({
+        orderId,
+        type: 'swap',
+        timestamp: now()
+      });
+    } catch (e) {
+      console.warn('user_orders swap write failed:', e.message);
+    }
+
+    // SSE 广播
+    try {
+      broadcastSSE({
+        type: 'new',
+        typeName: 'swap',
+        userId,
+        order
+      });
+    } catch (e) {}
+
+    return res.json({ ok: true, orderId });
+
+  } catch (e) {
+    console.error('/api/order/swap error:', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/* ---------------------------------------------------------
+   扫码全量同步：返回余额 + 所有订单 + 持仓
+--------------------------------------------------------- */
+app.get('/api/sync/:uid', async (req, res) => {
+  try {
+    const uid = String(req.params.uid || '').trim();
+    if (!isSafeUid(uid)) {
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+    }
+    if (!db) {
+      return res.status(500).json({ ok: false, error: 'Database not connected' });
+    }
+
+    await ensureUserExists(uid);
+
+    // 1. 读取用户数据
+    const userSnap = await db.ref(`users/${uid}`).once('value');
+    const userData = userSnap.exists() ? userSnap.val() : {};
+
+    const balance = safeNumber(userData.balance, 0);
+    const portfolio = userData.portfolio || {};
+
+    // 2. 读取所有订单类型
+    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap'];
+    const allOrders = {};
+
+    for (const type of orderTypes) {
+      const typeSnap = await db.ref(`orders/${type}`).once('value');
+      const orders = [];
+      if (typeSnap.exists()) {
+        const typeOrders = typeSnap.val();
+        for (const orderId in typeOrders) {
+          const order = typeOrders[orderId];
+          const orderUid = order.userId || order.uid || order.user || '';
+          if (String(orderUid) === String(uid)) {
+            orders.push({ ...order, orderType: type });
+          }
+        }
+      }
+      orders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      allOrders[type] = orders;
+    }
+
+    res.json({
+      ok: true,
+      uid,
+      balance,
+      portfolio,
+      orders: allOrders,
+      totalOrders: {
+        recharge: allOrders.recharge.length,
+        withdraw: allOrders.withdraw.length,
+        buysell: allOrders.buysell.length,
+        swap: allOrders.swap.length
+      }
+    });
+
+  } catch (e) {
+    console.error('/api/sync error:', e);
+    res.status(500).json({ ok: false, message: '同步失败：' + e.message });
+  }
+});
+
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
