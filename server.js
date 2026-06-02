@@ -792,6 +792,15 @@ try {
   console.error('PLAN Telegram notify failed:', e.message);
 }
 
+// ✅ SSE 广播 PLAN 新订单（手机/电脑实时同步）
+try {
+  broadcastSSE({
+    type: 'plan',
+    userId: uid,
+    order: planOrder
+  });
+} catch(e) {}
+
 return res.json({ ok:true, balance: newBal });
 
   } catch (e) {
