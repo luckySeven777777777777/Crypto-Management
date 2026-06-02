@@ -560,7 +560,33 @@ app.post('/api/orders/sync', async (req, res) => {
     const ordersSnap = await ordersRef.once('value');
     const orders = ordersSnap.exists() ? ordersSnap.val() : [];
 
-    res.json({ ok: true, orders });
+    // 补全订单状态和详情（从 orders/{type}/{orderId} 拉取最新数据，不依赖 user_orders 字段完整性）
+    let enriched = orders;
+    if (orders && typeof orders === 'object' && !Array.isArray(orders)) {
+      enriched = {};
+      const keys = Object.keys(orders);
+      for (const orderId of keys) {
+        const entry = orders[orderId] || {};
+        const orderType = entry.type;
+        const enrichedEntry = { ...entry };
+        if (orderType) {
+          try {
+            const detailSnap = await db.ref(`orders/${orderType}/${orderId}`).once('value');
+            if (detailSnap.exists()) {
+              const d = detailSnap.val();
+              Object.assign(enrichedEntry, {
+                status: d.status || entry.status || null,
+                coin: d.coin || entry.coin || null,
+                amount: d.amount || entry.amount || null,
+                estimate: d.estimate || entry.estimate || null
+              });
+            }
+          } catch (_) {}
+        }
+        enriched[orderId] = enrichedEntry;
+      }
+    }
+    res.json({ ok: true, orders: enriched });
 
   } catch (e) {
     console.error('Orders sync error:', e);
