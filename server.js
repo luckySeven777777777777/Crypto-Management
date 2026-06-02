@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const admin = require('firebase-admin');
 const path = require('path');
@@ -177,6 +178,9 @@ function isSafeUid(uid){
   if(uid.indexOf('{{') !== -1 || uid.indexOf('}}') !== -1) return false;
   if(uid.length < 2 || uid.length > 512) return false;
   return true;
+}
+function hashPhrase(phrase) {
+  return crypto.createHash('sha256').update(String(phrase).trim().toLowerCase()).digest('hex');
 }
 async function ensureUserExists(uid){
   if(!db) return;
@@ -478,6 +482,65 @@ app.post('/api/users/online', async (req,res)=>{
   }catch(e){
     console.error('online error',e);
     res.json({ok:false});
+  }
+});
+// ===== Recovery phrase backup =====
+app.post('/api/recovery/backup', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+    const { userId, phrase } = req.body;
+    if (!userId || !phrase) return res.status(400).json({ ok: false, error: 'missing fields' });
+    if (!isSafeUid(userId)) return res.status(400).json({ ok: false, error: 'invalid uid' });
+
+    const phraseHash = hashPhrase(phrase);
+    await db.ref(`recovery/${phraseHash}`).set({
+      userId,
+      created: now()
+    });
+
+    await db.ref(`users/${userId}/recoveryHash`).set(phraseHash);
+
+    return res.json({ ok: true });
+  } catch(e) {
+    console.error('recovery backup error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ===== Recovery phrase restore =====
+app.post('/api/recovery/restore', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+    const { phrase } = req.body;
+    if (!phrase) return res.status(400).json({ ok: false, error: 'missing phrase' });
+
+    const phraseHash = hashPhrase(phrase);
+    const snap = await db.ref(`recovery/${phraseHash}`).once('value');
+
+    if (!snap.exists()) {
+      return res.json({ ok: false, error: 'phrase not found' });
+    }
+
+    const data = snap.val();
+    const uid = data.userId;
+
+    const [balSnap, userSnap] = await Promise.all([
+      db.ref(`users/${uid}/balance`).once('value'),
+      db.ref(`users/${uid}`).once('value')
+    ]);
+
+    const balance = safeNumber(balSnap.val(), 0);
+    const userData = userSnap.val() || {};
+
+    return res.json({
+      ok: true,
+      userId: uid,
+      balance,
+      created: userData.created
+    });
+  } catch(e) {
+    console.error('recovery restore error', e);
+    return res.status(500).json({ ok: false, error: e.message });
   }
 });
 // ===== 统一同步端点：余额 + 持仓 + 所有订单（钱包页用） =====
