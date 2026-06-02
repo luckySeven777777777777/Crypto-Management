@@ -302,7 +302,7 @@ function calcEstimateUSDT(amount, coin){
 /* ---------------------------------------------------------
    SSE utilities
    - Used by: recharge page, withdraw page, buy/sell, and
-     notification bell (main page listens for update events
+     🔔 notification bell (main page listens for update events
      with typeName 'recharge'/'withdraw' to show notifications)
 --------------------------------------------------------- */
 global.__sseClients = global.__sseClients || [];
@@ -560,66 +560,50 @@ app.post('/api/orders/sync', async (req, res) => {
     const ordersSnap = await ordersRef.once('value');
     const orders = ordersSnap.exists() ? ordersSnap.val() : [];
 
-    // 补全订单状态和详情（从 orders/{type}/{orderId} 拉取最新数据，不依赖 user_orders 字段完整性）
-    let enriched = orders;
-    if (orders && typeof orders === 'object' && !Array.isArray(orders)) {
-      enriched = {};
-      const keys = Object.keys(orders);
-      for (const orderId of keys) {
-        const entry = orders[orderId] || {};
-        const orderType = entry.type;
-        const enrichedEntry = { ...entry };
-        if (orderType) {
-          try {
-            const detailSnap = await db.ref(`orders/${orderType}/${orderId}`).once('value');
-            if (detailSnap.exists()) {
-              const d = detailSnap.val();
-              Object.assign(enrichedEntry, {
-                status: d.status || entry.status || null,
-                coin: d.coin || entry.coin || null,
-                amount: d.amount || entry.amount || null,
-                estimate: d.estimate || entry.estimate || null
-              });
-            }
-          } catch (_) {}
-        }
-        enriched[orderId] = enrichedEntry;
-      }
-    }
-    // 兜底：user_orders 为空时直接从 orders/{recharge,withdraw} 扫描（处理 UID 不匹配等场景）
-    let isEmpty = !enriched || (typeof enriched === 'object' && !Array.isArray(enriched) && Object.keys(enriched).length === 0) || (Array.isArray(enriched) && enriched.length === 0);
-    if (isEmpty) {
-      enriched = {};
-      const types = ['recharge', 'withdraw'];
-      for (const t of types) {
-        try {
-          const snap = await db.ref(`orders/${t}`).once('value');
-          if (snap.exists()) {
-            const all = snap.val();
-            for (const [orderId, data] of Object.entries(all)) {
-              if (data.userId === uid || data.user === uid) {
-                enriched[orderId] = {
-                  orderId: orderId,
-                  type: t,
-                  status: data.status || null,
-                  coin: data.coin || null,
-                  amount: data.amount || null,
-                  estimate: data.estimate || null,
-                  timestamp: data.timestamp || null
-                };
-              }
-            }
-          }
-        } catch (_) {}
-      }
-    }
-    res.json({ ok: true, orders: enriched });
+    res.json({ ok: true, orders });
 
   } catch (e) {
     console.error('Orders sync error:', e);
     res.status(500).json({ ok: false, message: 'Failed to sync orders' });
   }
 });
+
+// Swap 订单保存接口
+app.post('/api/order/swap', async (req, res) => {
+  try {
+    const { userId, coin, amount, usdtAmount, price } = req.body;
+    if (!userId || !coin || !amount) {
+      return res.status(400).json({ ok: false, error: 'missing required fields' });
+    }
+    if (!db) return res.status(500).json({ ok: false, error: 'Database not connected' });
+
+    const orderId = `SWAP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const orderData = {
+      orderId,
+      userId,
+      coin,
+      amount: Number(amount),
+      usdtAmount: Number(usdtAmount || 0),
+      price: Number(price || 0),
+      timestamp: Date.now(),
+      time_us: new Date().toISOString()
+    };
+
+    await db.ref(`orders/swap/${orderId}`).set(orderData);
+
+    broadcastSSE({
+      type: 'swap',
+      userId,
+      order: orderData
+    });
+
+    return res.json({ ok: true, orderId });
+  } catch (e) {
+    console.error('/api/order/swap error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
   try {
@@ -2011,18 +1995,9 @@ if (finalStatus) {
     processed: true,
     updated: now()
   });
-
-  // 同步更新 user_orders 索引状态（供铃铛通知拉取）
-  if (userId) {
-    db.ref(`user_orders/${userId}/${orderId}`).update({
-      status: finalStatus,
-      processed: true,
-      updated: now()
-    }).catch(() => {});
-  }
 }
 
-// ===== 再广播订单更新（供通知铃铛系统消费） =====
+// ===== 再广播订单更新（🔔 供通知铃铛系统消费） =====
 const newSnap = await ref.once('value');
 const latestOrder = { ...newSnap.val(), orderId };
 
