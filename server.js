@@ -477,67 +477,6 @@ app.post('/api/users/online', async (req,res)=>{
     res.json({ok:false});
   }
 });
-// ===== 统一同步端点：余额 + 持仓 + 所有订单（钱包页用） =====
-app.get('/api/sync/:uid', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, error: 'invalid uid' });
-    if (!db) return res.json({ ok: true, balance: 0, portfolio: {}, orders: {} });
-
-    await ensureUserExists(uid);
-
-    // 1. 余额
-    const balSnap = await db.ref(`users/${uid}/balance`).once('value');
-    const balance = safeNumber(balSnap.val(), 0);
-
-    // 2. 从 orders/ 路径读取所有类型完整订单
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan'];
-    const grouped = { recharge: [], withdraw: [], buysell: [], swap: [], plan: [] };
-    const portfolioMap = {};
-
-    const snapshots = await Promise.all(
-      orderTypes.map(t => db.ref(`orders/${t}`).once('value'))
-    );
-
-    for (let i = 0; i < orderTypes.length; i++) {
-      const t = orderTypes[i];
-      const snap = snapshots[i];
-      const raw = snap.exists() ? snap.val() : {};
-      const orders = Object.values(raw).filter(o => o.userId === uid || o.user === uid);
-
-      // 添加 type 标记确保前端能识别
-      for (const o of orders) {
-        o.orderType = t;
-        // buysell 统一 type 字段给前端
-        if (t === 'buysell') {
-          o.type = o.side || o.tradeType || o.type || 'buy';
-          // 聚合持仓
-          const coin = o.coin || '';
-          const coinQty = Number(o.coinQty || 0);
-          const isBuy = (String(o.side || o.tradeType || '').toLowerCase() === 'buy');
-          if (coin && coinQty > 0) {
-            portfolioMap[coin] = (portfolioMap[coin] || 0) + (isBuy ? coinQty : -coinQty);
-          }
-        }
-      }
-
-      grouped[t] = sortByTimeDesc(orders);
-    }
-
-    // 过滤零持仓
-    const portfolio = {};
-    for (const [coin, qty] of Object.entries(portfolioMap)) {
-      if (qty > 0.0000001) portfolio[coin] = Number(qty.toFixed(6));
-    }
-
-    return res.json({ ok: true, uid, balance, portfolio, orders: grouped });
-
-  } catch (e) {
-    console.error('/api/sync error', e);
-    return res.json({ ok: false, error: e.message });
-  }
-});
-
 // 同步订单记录接口
 app.post('/api/orders/sync', async (req, res) => {
   try {
@@ -564,43 +503,6 @@ app.post('/api/orders/sync', async (req, res) => {
     res.status(500).json({ ok: false, message: 'Failed to sync orders' });
   }
 });
-
-// Swap 订单保存接口
-app.post('/api/order/swap', async (req, res) => {
-  try {
-    const { userId, coin, amount, usdtAmount, price } = req.body;
-    if (!userId || !coin || !amount) {
-      return res.status(400).json({ ok: false, error: 'missing required fields' });
-    }
-    if (!db) return res.status(500).json({ ok: false, error: 'Database not connected' });
-
-    const orderId = `SWAP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const orderData = {
-      orderId,
-      userId,
-      coin,
-      amount: Number(amount),
-      usdtAmount: Number(usdtAmount || 0),
-      price: Number(price || 0),
-      timestamp: Date.now(),
-      time_us: new Date().toISOString()
-    };
-
-    await db.ref(`orders/swap/${orderId}`).set(orderData);
-
-    broadcastSSE({
-      type: 'swap',
-      userId,
-      order: orderData
-    });
-
-    return res.json({ ok: true, orderId });
-  } catch (e) {
-    console.error('/api/order/swap error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
   try {
@@ -616,11 +518,35 @@ app.post('/api/currency/sync', async (req, res) => {
 
     await ensureUserExists(uid);
 
-    const balanceRef = db.ref(`users/${uid}/balance`);
-    const balanceSnap = await balanceRef.once('value');
-    const balance = balanceSnap.exists() ? balanceSnap.val() : 0;
+    // 先读已存储的 portfolio
+    const portfolioRef = db.ref(`users/${uid}/portfolio`);
+    const portfolioSnap = await portfolioRef.once('value');
+    let portfolio = portfolioSnap.exists() ? portfolioSnap.val() : {};
 
-    res.json({ ok: true, balance });
+    // 如果 portfolio 为空，从历史 buysell buy 订单中聚合计算持仓并回写
+    if (!portfolio || Object.keys(portfolio).length === 0) {
+      const buysellSnap = await db.ref('orders/buysell').once('value');
+      if (buysellSnap.exists()) {
+        const orders = buysellSnap.val();
+        const aggregated = {};
+        for (const orderId in orders) {
+          const order = orders[orderId];
+          if (order.userId === uid && String(order.side || '').toLowerCase() === 'buy' && order.coin && order.coinQty) {
+            const coin = String(order.coin).toUpperCase();
+            const qty = Number(order.coinQty);
+            if (qty > 0) {
+              aggregated[coin] = Number(((aggregated[coin] || 0) + qty).toFixed(8));
+            }
+          }
+        }
+        if (Object.keys(aggregated).length > 0) {
+          await portfolioRef.set(aggregated);
+          portfolio = aggregated;
+        }
+      }
+    }
+
+    res.json({ ok: true, portfolio });
 
   } catch (e) {
     console.error('Currency sync error:', e);
@@ -829,14 +755,31 @@ try {
   console.error('PLAN Telegram notify failed:', e.message);
 }
 
-// ✅ SSE 广播 PLAN 新订单（手机/电脑实时同步）
+// ==============================
+// PLAN购买成功后触发返佣
+// ==============================
+
 try {
-  broadcastSSE({
-    type: 'plan',
-    userId: uid,
-    order: planOrder
-  });
-} catch(e) {}
+
+  await axios.post(
+
+    `${req.protocol}://${req.get('host')}/api/referral/commission`,
+
+    {
+      uid,
+      amount: Number(amount)
+    }
+
+  );
+
+} catch(e){
+
+  console.error(
+    'PLAN commission failed:',
+    e.message
+  );
+
+}
 
 return res.json({ ok:true, balance: newBal });
 
@@ -905,21 +848,19 @@ app.post('/api/referral/commission', async (req,res)=>{
     const inviterSnap =
       await inviterRef.once('value');
 
-    const inviterData = inviterSnap.val() || {};
-
-    const oldCommission =
-      Number(inviterData.claimableCommission || 0);
+    const oldBal =
+      Number(inviterSnap.val()?.balance || 0);
 
     // 返佣比例
     const commission =
       Number(amount) * 0.10;
 
-    const newCommission =
-      oldCommission + commission;
+    const newBal =
+      oldBal + commission;
 
     await inviterRef.update({
 
-      claimableCommission: newCommission
+      balance:newBal
 
     });
 
@@ -947,10 +888,9 @@ app.post('/api/referral/commission', async (req,res)=>{
 
     broadcastSSE({
 
-      type:'commission',
+      type:'balance',
       userId:inviterId,
-      claimableCommission: newCommission,
-      claimedCommission: Number(inviterData.claimedCommission || 0)
+      balance:newBal
 
     });
 
@@ -1136,7 +1076,6 @@ async function saveOrder(type, data) {
     'side',
     'converted',
     'coinQty',
-    'qty',         // ✅ 兼容前端直接传 qty
     'tp',
     'sl',
     'note',
@@ -1227,6 +1166,19 @@ async function saveOrder(type, data) {
     }
   }
 
+  // 更新 coin 持仓（buysell buy 时累加）
+  if (type === 'buysell' && data.side === 'buy' && data.coin && data.coinQty) {
+    try {
+      const coin = String(data.coin).toUpperCase();
+      const portfolioRef = db.ref(`users/${payload.userId}/portfolio/${coin}`);
+      const pSnap = await portfolioRef.once('value');
+      const existing = pSnap.exists() ? Number(pSnap.val()) : 0;
+      await portfolioRef.set(Number((existing + Number(data.coinQty)).toFixed(8)));
+    } catch(e) {
+      console.warn('portfolio update failed:', e.message);
+    }
+  }
+
   // SSE 广播
   try {
 
@@ -1271,7 +1223,6 @@ async function handleBuySellRequest(req, res){
       coin,
       amount,
       converted,
-      qty,          // ✅ 前端直接传币数量
       tp,
       sl,
       orderId,
@@ -1310,10 +1261,9 @@ async function handleBuySellRequest(req, res){
     // ===== 计算币数量（安全版）=====
 let coinQty = 0;
 
-// ① 优先用前端传来的币数量（converted 或 qty）
-const frontendQty = Number(converted ?? qty ?? 0);
-if (frontendQty > 0) {
-  coinQty = frontendQty;
+// ① 优先用前端传来的币数量
+if (converted !== undefined && converted !== null && Number(converted) > 0) {
+  coinQty = Number(converted);
 }
 // ② 否则用 USDT / price 计算
 else {
@@ -2631,11 +2581,11 @@ app.post('/api/commission/claim', async (req,res)=>{
         const claimable =
             Number(userData.claimableCommission || 0);
 
-        if(claimable < 50){
+        if(claimable <= 0){
 
             return res.json({
                 ok:false,
-                message:'Minimum claimable amount is $50 USD'
+                message:'no commission'
             });
 
         }
