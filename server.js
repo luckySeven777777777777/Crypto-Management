@@ -1958,6 +1958,15 @@ if (finalStatus) {
     processed: true,
     updated: now()
   });
+
+  // 同步更新 user_orders 索引状态（供铃铛通知拉取）
+  if (userId) {
+    db.ref(`user_orders/${userId}/${orderId}`).update({
+      status: finalStatus,
+      processed: true,
+      updated: now()
+    }).catch(() => {});
+  }
 }
 
 // ===== 再广播订单更新（供通知铃铛系统消费） =====
