@@ -586,6 +586,33 @@ app.post('/api/orders/sync', async (req, res) => {
         enriched[orderId] = enrichedEntry;
       }
     }
+    // 兜底：user_orders 为空时直接从 orders/{recharge,withdraw} 扫描（处理 UID 不匹配等场景）
+    let isEmpty = !enriched || (typeof enriched === 'object' && !Array.isArray(enriched) && Object.keys(enriched).length === 0) || (Array.isArray(enriched) && enriched.length === 0);
+    if (isEmpty) {
+      enriched = {};
+      const types = ['recharge', 'withdraw'];
+      for (const t of types) {
+        try {
+          const snap = await db.ref(`orders/${t}`).once('value');
+          if (snap.exists()) {
+            const all = snap.val();
+            for (const [orderId, data] of Object.entries(all)) {
+              if (data.userId === uid || data.user === uid) {
+                enriched[orderId] = {
+                  orderId: orderId,
+                  type: t,
+                  status: data.status || null,
+                  coin: data.coin || null,
+                  amount: data.amount || null,
+                  estimate: data.estimate || null,
+                  timestamp: data.timestamp || null
+                };
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
     res.json({ ok: true, orders: enriched });
 
   } catch (e) {
