@@ -564,6 +564,43 @@ app.post('/api/orders/sync', async (req, res) => {
     res.status(500).json({ ok: false, message: 'Failed to sync orders' });
   }
 });
+
+// Swap 订单保存接口
+app.post('/api/order/swap', async (req, res) => {
+  try {
+    const { userId, coin, amount, usdtAmount, price } = req.body;
+    if (!userId || !coin || !amount) {
+      return res.status(400).json({ ok: false, error: 'missing required fields' });
+    }
+    if (!db) return res.status(500).json({ ok: false, error: 'Database not connected' });
+
+    const orderId = `SWAP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const orderData = {
+      orderId,
+      userId,
+      coin,
+      amount: Number(amount),
+      usdtAmount: Number(usdtAmount || 0),
+      price: Number(price || 0),
+      timestamp: Date.now(),
+      time_us: new Date().toISOString()
+    };
+
+    await db.ref(`orders/swap/${orderId}`).set(orderData);
+
+    broadcastSSE({
+      type: 'swap',
+      userId,
+      order: orderData
+    });
+
+    return res.json({ ok: true, orderId });
+  } catch (e) {
+    console.error('/api/order/swap error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
   try {
