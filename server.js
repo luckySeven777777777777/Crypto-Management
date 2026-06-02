@@ -370,17 +370,9 @@ app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
 app.post('/api/users/sync', async (req, res) => {
   try {
     const { userid, userId, invitedBy } = req.body;
-    let uid = userid || userId;
+    const uid = userid || userId;
     if(!uid) return res.json({ ok:false, message:'no uid' });
     if(!db) return res.json({ ok:true, message:'no-db' });
-
-    // Parse Strikingly-safe recovery encoding: UID_xxx||recovery||hash
-    let recoveryHash = null;
-    if (uid.includes('||recovery||')) {
-        const parts = uid.split('||recovery||');
-        uid = parts[0];
-        recoveryHash = parts[1];
-    }
 
     const userRef = db.ref('users/' + uid);
     const createdSnap = await userRef.child('created').once('value');
@@ -428,18 +420,6 @@ if (
 }
 
 await userRef.update(updateData);
-
-    // Copy data to recovery hash key (cross-device restore)
-    if (recoveryHash && recoveryHash.length === 64) {
-      const snap = await userRef.once('value');
-      const userData = snap.val() || {};
-      await db.ref('users/' + recoveryHash).set(userData);
-      await db.ref('recovery_lookup/' + recoveryHash).set(uid);
-      const ordersSnap = await db.ref('user_orders/' + uid).once('value');
-      if (ordersSnap.exists()) await db.ref('user_orders/' + recoveryHash).set(ordersSnap.val());
-      const currencySnap = await db.ref('user_currency/' + uid).once('value');
-      if (currencySnap.exists()) await db.ref('user_currency/' + recoveryHash).set(currencySnap.val());
-    }
     // =====================================
 // ✅ 自动创建下级列表
 // =====================================
@@ -497,6 +477,67 @@ app.post('/api/users/online', async (req,res)=>{
     res.json({ok:false});
   }
 });
+// ===== 统一同步端点：余额 + 持仓 + 所有订单（钱包页用） =====
+app.get('/api/sync/:uid', async (req, res) => {
+  try {
+    const uid = String(req.params.uid || '').trim();
+    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, error: 'invalid uid' });
+    if (!db) return res.json({ ok: true, balance: 0, portfolio: {}, orders: {} });
+
+    await ensureUserExists(uid);
+
+    // 1. 余额
+    const balSnap = await db.ref(`users/${uid}/balance`).once('value');
+    const balance = safeNumber(balSnap.val(), 0);
+
+    // 2. 从 orders/ 路径读取所有类型完整订单
+    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan'];
+    const grouped = { recharge: [], withdraw: [], buysell: [], swap: [], plan: [] };
+    const portfolioMap = {};
+
+    const snapshots = await Promise.all(
+      orderTypes.map(t => db.ref(`orders/${t}`).once('value'))
+    );
+
+    for (let i = 0; i < orderTypes.length; i++) {
+      const t = orderTypes[i];
+      const snap = snapshots[i];
+      const raw = snap.exists() ? snap.val() : {};
+      const orders = Object.values(raw).filter(o => o.userId === uid || o.user === uid);
+
+      // 添加 type 标记确保前端能识别
+      for (const o of orders) {
+        o.orderType = t;
+        // buysell 统一 type 字段给前端
+        if (t === 'buysell') {
+          o.type = o.side || o.tradeType || o.type || 'buy';
+          // 聚合持仓
+          const coin = o.coin || '';
+          const coinQty = Number(o.coinQty || 0);
+          const isBuy = (String(o.side || o.tradeType || '').toLowerCase() === 'buy');
+          if (coin && coinQty > 0) {
+            portfolioMap[coin] = (portfolioMap[coin] || 0) + (isBuy ? coinQty : -coinQty);
+          }
+        }
+      }
+
+      grouped[t] = sortByTimeDesc(orders);
+    }
+
+    // 过滤零持仓
+    const portfolio = {};
+    for (const [coin, qty] of Object.entries(portfolioMap)) {
+      if (qty > 0.0000001) portfolio[coin] = Number(qty.toFixed(6));
+    }
+
+    return res.json({ ok: true, uid, balance, portfolio, orders: grouped });
+
+  } catch (e) {
+    console.error('/api/sync error', e);
+    return res.json({ ok: false, error: e.message });
+  }
+});
+
 // 同步订单记录接口
 app.post('/api/orders/sync', async (req, res) => {
   try {
@@ -538,35 +579,11 @@ app.post('/api/currency/sync', async (req, res) => {
 
     await ensureUserExists(uid);
 
-    // 先读已存储的 portfolio
-    const portfolioRef = db.ref(`users/${uid}/portfolio`);
-    const portfolioSnap = await portfolioRef.once('value');
-    let portfolio = portfolioSnap.exists() ? portfolioSnap.val() : {};
+    const balanceRef = db.ref(`users/${uid}/balance`);
+    const balanceSnap = await balanceRef.once('value');
+    const balance = balanceSnap.exists() ? balanceSnap.val() : 0;
 
-    // 如果 portfolio 为空，从历史 buysell buy 订单中聚合计算持仓并回写
-    if (!portfolio || Object.keys(portfolio).length === 0) {
-      const buysellSnap = await db.ref('orders/buysell').once('value');
-      if (buysellSnap.exists()) {
-        const orders = buysellSnap.val();
-        const aggregated = {};
-        for (const orderId in orders) {
-          const order = orders[orderId];
-          if (order.userId === uid && String(order.side || '').toLowerCase() === 'buy' && order.coin && order.coinQty) {
-            const coin = String(order.coin).toUpperCase();
-            const qty = Number(order.coinQty);
-            if (qty > 0) {
-              aggregated[coin] = Number(((aggregated[coin] || 0) + qty).toFixed(8));
-            }
-          }
-        }
-        if (Object.keys(aggregated).length > 0) {
-          await portfolioRef.set(aggregated);
-          portfolio = aggregated;
-        }
-      }
-    }
-
-    res.json({ ok: true, portfolio });
+    res.json({ ok: true, balance });
 
   } catch (e) {
     console.error('Currency sync error:', e);
@@ -577,195 +594,6 @@ app.post('/api/currency/sync', async (req, res) => {
 /* ---------------------------------------------------------
    Balance endpoints
 --------------------------------------------------------- */
-// Recovery: copy user data to hash key (GET, Strikingly-safe)
-app.get('/api/sr', async (req, res) => {
-  try {
-    const uid = String(req.query.uid || '').trim();
-    const hash = String(req.query.hash || '').trim();
-    if (!uid || hash.length !== 64) return res.json({ ok: false });
-    if (!db) return res.json({ ok: false });
-    await ensureUserExists(uid);
-    const userRef = db.ref('users/' + uid);
-    const snap = await userRef.once('value');
-    const data = snap.val() || {};
-    await db.ref('users/' + hash).set(data);
-    await db.ref('recovery_lookup/' + hash).set(uid);
-    const ordersSnap = await db.ref('user_orders/' + uid).once('value');
-    if (ordersSnap.exists()) await db.ref('user_orders/' + hash).set(ordersSnap.val());
-    const currencySnap = await db.ref('user_currency/' + uid).once('value');
-    if (currencySnap.exists()) await db.ref('user_currency/' + hash).set(currencySnap.val());
-    res.json({ ok: true });
-  } catch (e) { res.json({ ok: false }); }
-});
-
-// Recovery map: GET original wallet_uid from hash
-app.get('/api/rmap/:hash', async (req, res) => {
-  try {
-    const hash = String(req.params.hash || '').trim();
-    if (hash.length !== 64) return res.json({ ok: false });
-    if (!db) return res.json({ ok: false });
-    const snap = await db.ref('recovery_lookup/' + hash).once('value');
-    const uid = snap.val();
-    res.json(uid ? { ok: true, uid } : { ok: false });
-  } catch (e) { res.json({ ok: false }); }
-});
-
-/* ---------------------------------------------------------
-   统一恢复端点：用助记词 hash 一次性恢复全部数据
-   （余额 + 订单记录 + 币种持仓）
---------------------------------------------------------- */
-app.post('/api/recover', async (req, res) => {
-  try {
-    const hash = String(req.body.hash || '').trim();
-    if (hash.length !== 64) {
-      return res.status(400).json({ ok: false, message: '无效的恢复码' });
-    }
-    if (!db) {
-      return res.status(500).json({ ok: false, message: '数据库未连接，请检查 Railway 部署' });
-    }
-
-    // 1. 通过 recovery_lookup 查找原始 uid
-    const lookupSnap = await db.ref('recovery_lookup/' + hash).once('value');
-    let uid = lookupSnap.val();
-
-    // 2. 如果 lookup 中没有，尝试直接以 hash 作为 uid 读取（兼容直接备份场景）
-    let userSnap;
-    if (uid) {
-      userSnap = await db.ref('users/' + uid).once('value');
-    }
-    // 也尝试从 hash 路径读（备份时会在 users/{hash} 存一份）
-    const hashUserSnap = await db.ref('users/' + hash).once('value');
-
-    // 优先使用原始 uid 的数据，其次使用 hash 路径的数据
-    if (!uid && hashUserSnap.exists()) {
-      uid = hash; // fallback: 直接用 hash 当 uid
-    }
-
-    if (!uid) {
-      return res.status(404).json({ ok: false, message: '未找到对应的钱包数据，请确认恢复码正确' });
-    }
-
-    // 3. 读取用户数据（余额 + portfolio）
-    const userData = userSnap?.exists() ? userSnap.val() : (hashUserSnap.exists() ? hashUserSnap.val() : {});
-    const balance = safeNumber(userData.balance, 0);
-    const portfolio = userData.portfolio || {};
-
-    // 4. 读取所有类型的完整订单（充值/提款/买卖/PLAN/电竞/体育/彩票/奖金）
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan', 'esport', 'ufcnba', 'sport', 'lottery_23d', 'bonus'];
-    const allFullOrders = [];
-    const fetchUid = uid !== hash ? uid : hash;
-
-    for (const type of orderTypes) {
-      const typeSnap = await db.ref(`orders/${type}`).once('value');
-      if (!typeSnap.exists()) continue;
-      const typeOrders = typeSnap.val();
-      for (const orderId in typeOrders) {
-        const order = typeOrders[orderId];
-        // 只取当前用户的订单（兼容 userId / uid / user 字段）
-        const orderUid = order.userId || order.uid || order.user || '';
-        if (String(orderUid) === String(fetchUid)) {
-          allFullOrders.push({ ...order, orderType: type });
-        }
-      }
-    }
-    // 按时间倒序
-    allFullOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-    // 5. 返回完整数据
-    res.json({
-      ok: true,
-      uid,
-      userData: {
-        userid: userData.userid || uid,
-        balance,
-        portfolio,
-        created: userData.created || null,
-        invitedBy: userData.invitedBy || null,
-        wallets: userData.wallets || []
-      },
-      orders: allFullOrders,
-      orderCount: allFullOrders.length,
-      portfolio
-    });
-
-  } catch (e) {
-    console.error('Recover error:', e);
-    res.status(500).json({ ok: false, message: '恢复失败：' + e.message });
-  }
-});
-
-// Recovery: GET 版本（兼容前端直接 URL 调用）
-app.get('/api/recover/:hash', async (req, res) => {
-  try {
-    const hash = String(req.params.hash || '').trim();
-    if (hash.length !== 64) {
-      return res.status(400).json({ ok: false, message: '无效的恢复码' });
-    }
-    if (!db) {
-      return res.status(500).json({ ok: false, message: '数据库未连接，请检查 Railway 部署' });
-    }
-
-    const lookupSnap = await db.ref('recovery_lookup/' + hash).once('value');
-    let uid = lookupSnap.val();
-
-    const hashUserSnap = await db.ref('users/' + hash).once('value');
-    let userSnap;
-    if (uid) {
-      userSnap = await db.ref('users/' + uid).once('value');
-    }
-    if (!uid && hashUserSnap.exists()) {
-      uid = hash;
-    }
-
-    if (!uid) {
-      return res.status(404).json({ ok: false, message: '未找到对应的钱包数据' });
-    }
-
-    const userData = userSnap?.exists() ? userSnap.val() : (hashUserSnap.exists() ? hashUserSnap.val() : {});
-    const balance = safeNumber(userData.balance, 0);
-    const portfolio = userData.portfolio || {};
-
-    // 读取所有类型的完整订单
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan', 'esport', 'ufcnba', 'sport', 'lottery_23d', 'bonus'];
-    const allFullOrders = [];
-    const fetchUid = uid !== hash ? uid : hash;
-
-    for (const type of orderTypes) {
-      const typeSnap = await db.ref(`orders/${type}`).once('value');
-      if (!typeSnap.exists()) continue;
-      const typeOrders = typeSnap.val();
-      for (const orderId in typeOrders) {
-        const order = typeOrders[orderId];
-        const orderUid = order.userId || order.uid || order.user || '';
-        if (String(orderUid) === String(fetchUid)) {
-          allFullOrders.push({ ...order, orderType: type });
-        }
-      }
-    }
-    allFullOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-    res.json({
-      ok: true,
-      uid,
-      userData: {
-        userid: userData.userid || uid,
-        balance,
-        portfolio,
-        created: userData.created || null,
-        invitedBy: userData.invitedBy || null,
-        wallets: userData.wallets || []
-      },
-      orders: allFullOrders,
-      orderCount: allFullOrders.length,
-      portfolio
-    });
-
-  } catch (e) {
-    console.error('Recover GET error:', e);
-    res.status(500).json({ ok: false, message: '恢复失败：' + e.message });
-  }
-});
-
 app.get('/api/balance/:uid', async (req, res) => {
   try {
     const uid = String(req.params.uid || '').trim();
@@ -964,32 +792,6 @@ try {
   console.error('PLAN Telegram notify failed:', e.message);
 }
 
-// ==============================
-// PLAN购买成功后触发返佣
-// ==============================
-
-try {
-
-  await axios.post(
-
-    `${req.protocol}://${req.get('host')}/api/referral/commission`,
-
-    {
-      uid,
-      amount: Number(amount)
-    }
-
-  );
-
-} catch(e){
-
-  console.error(
-    'PLAN commission failed:',
-    e.message
-  );
-
-}
-
 return res.json({ ok:true, balance: newBal });
 
   } catch (e) {
@@ -1057,19 +859,21 @@ app.post('/api/referral/commission', async (req,res)=>{
     const inviterSnap =
       await inviterRef.once('value');
 
-    const oldBal =
-      Number(inviterSnap.val()?.balance || 0);
+    const inviterData = inviterSnap.val() || {};
+
+    const oldCommission =
+      Number(inviterData.claimableCommission || 0);
 
     // 返佣比例
     const commission =
       Number(amount) * 0.10;
 
-    const newBal =
-      oldBal + commission;
+    const newCommission =
+      oldCommission + commission;
 
     await inviterRef.update({
 
-      balance:newBal
+      claimableCommission: newCommission
 
     });
 
@@ -1097,9 +901,10 @@ app.post('/api/referral/commission', async (req,res)=>{
 
     broadcastSSE({
 
-      type:'balance',
+      type:'commission',
       userId:inviterId,
-      balance:newBal
+      claimableCommission: newCommission,
+      claimedCommission: Number(inviterData.claimedCommission || 0)
 
     });
 
@@ -1285,6 +1090,7 @@ async function saveOrder(type, data) {
     'side',
     'converted',
     'coinQty',
+    'qty',         // ✅ 兼容前端直接传 qty
     'tp',
     'sl',
     'note',
@@ -1375,19 +1181,6 @@ async function saveOrder(type, data) {
     }
   }
 
-  // 更新 coin 持仓（buysell buy 时累加）
-  if (type === 'buysell' && data.side === 'buy' && data.coin && data.coinQty) {
-    try {
-      const coin = String(data.coin).toUpperCase();
-      const portfolioRef = db.ref(`users/${payload.userId}/portfolio/${coin}`);
-      const pSnap = await portfolioRef.once('value');
-      const existing = pSnap.exists() ? Number(pSnap.val()) : 0;
-      await portfolioRef.set(Number((existing + Number(data.coinQty)).toFixed(8)));
-    } catch(e) {
-      console.warn('portfolio update failed:', e.message);
-    }
-  }
-
   // SSE 广播
   try {
 
@@ -1432,6 +1225,7 @@ async function handleBuySellRequest(req, res){
       coin,
       amount,
       converted,
+      qty,          // ✅ 前端直接传币数量
       tp,
       sl,
       orderId,
@@ -1470,9 +1264,10 @@ async function handleBuySellRequest(req, res){
     // ===== 计算币数量（安全版）=====
 let coinQty = 0;
 
-// ① 优先用前端传来的币数量
-if (converted !== undefined && converted !== null && Number(converted) > 0) {
-  coinQty = Number(converted);
+// ① 优先用前端传来的币数量（converted 或 qty）
+const frontendQty = Number(converted ?? qty ?? 0);
+if (frontendQty > 0) {
+  coinQty = frontendQty;
 }
 // ② 否则用 USDT / price 计算
 else {
@@ -2790,11 +2585,11 @@ app.post('/api/commission/claim', async (req,res)=>{
         const claimable =
             Number(userData.claimableCommission || 0);
 
-        if(claimable <= 0){
+        if(claimable < 50){
 
             return res.json({
                 ok:false,
-                message:'no commission'
+                message:'Minimum claimable amount is $50 USD'
             });
 
         }
@@ -3196,154 +2991,6 @@ app.get('/api/referrals/:uid', async (req,res)=>{
     }
 
 });
-/* ---------------------------------------------------------
-   Swap endpoint (Convert coin → USDT)
---------------------------------------------------------- */
-app.post('/api/order/swap', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-
-    const payload = req.body || {};
-    const userId = payload.userId || payload.user;
-
-    if (!userId) {
-      return res.status(400).json({ ok: false, error: 'missing userId' });
-    }
-    if (!isSafeUid(userId)) {
-      return res.status(400).json({ ok: false, error: 'invalid uid' });
-    }
-
-    await ensureUserExists(userId);
-
-    const coin = String(payload.coin || '');
-    const amount = Number(payload.amount || 0);
-    const usdtAmount = Number(payload.usdtAmount || 0);
-    const price = Number(payload.price || 0);
-
-    if (!coin || amount <= 0 || usdtAmount <= 0) {
-      return res.status(400).json({ ok: false, error: 'invalid swap params' });
-    }
-
-    const orderId = genOrderId('SWAP');
-
-    const order = {
-      orderId,
-      userId,
-      coin,
-      amount,
-      usdtAmount,
-      price,
-      timestamp: now(),
-      time_us: usTime(now()),
-      status: 'completed'
-    };
-
-    await db.ref(`orders/swap/${orderId}`).set(order);
-
-    // user_orders 索引
-    try {
-      await db.ref(`user_orders/${userId}/${orderId}`).set({
-        orderId,
-        type: 'swap',
-        timestamp: now()
-      });
-    } catch (e) {
-      console.warn('user_orders swap write failed:', e.message);
-    }
-
-    // SSE 广播
-    try {
-      broadcastSSE({
-        type: 'new',
-        typeName: 'swap',
-        userId,
-        order
-      });
-    } catch (e) {}
-
-    return res.json({ ok: true, orderId });
-
-  } catch (e) {
-    console.error('/api/order/swap error:', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-/* ---------------------------------------------------------
-   扫码全量同步：返回余额 + 所有订单 + 持仓
---------------------------------------------------------- */
-app.get('/api/sync/:uid', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if (!isSafeUid(uid)) {
-      return res.status(400).json({ ok: false, error: 'invalid uid' });
-    }
-    if (!db) {
-      return res.status(500).json({ ok: false, error: 'Database not connected' });
-    }
-
-    await ensureUserExists(uid);
-
-    // 1. 读取用户数据
-    const userSnap = await db.ref(`users/${uid}`).once('value');
-    const userData = userSnap.exists() ? userSnap.val() : {};
-
-    const balance = safeNumber(userData.balance, 0);
-    const portfolio = userData.portfolio || {};
-
-    // 2. 读取所有订单类型
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan'];
-    const allOrders = {};
-
-    for (const type of orderTypes) {
-      const typeSnap = await db.ref(`orders/${type}`).once('value');
-      const orders = [];
-      if (typeSnap.exists()) {
-        const typeOrders = typeSnap.val();
-        for (const orderId in typeOrders) {
-          const order = typeOrders[orderId];
-          const orderUid = order.userId || order.uid || order.user || '';
-          if (String(orderUid) === String(uid)) {
-            orders.push({ ...order, orderType: type });
-          }
-        }
-      }
-      orders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      allOrders[type] = orders;
-    }
-
-    // 3. 计算当日充值订单次数
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
-    const todayRechargeCount = (allOrders.recharge || []).filter(o => (o.timestamp || 0) >= todayStart).length;
-    const maxSubmissions = 5;
-
-    res.json({
-      ok: true,
-      uid,
-      balance,
-      portfolio,
-      orders: allOrders,
-      totalOrders: {
-        recharge: allOrders.recharge.length,
-        withdraw: allOrders.withdraw.length,
-        buysell: allOrders.buysell.length,
-        swap: allOrders.swap.length,
-        plan: allOrders.plan ? allOrders.plan.length : 0
-      },
-      remainingSubmissions: {
-        max: maxSubmissions,
-        used: todayRechargeCount,
-        remaining: Math.max(0, maxSubmissions - todayRechargeCount)
-      }
-    });
-
-  } catch (e) {
-    console.error('/api/sync error:', e);
-    res.status(500).json({ ok: false, message: '同步失败：' + e.message });
-  }
-});
-
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
