@@ -543,6 +543,108 @@ app.post('/api/recovery/restore', async (req, res) => {
     return res.status(500).json({ ok: false, error: e.message });
   }
 });
+
+// ===== 全量快照备份（恢复词 → 完整钱包快照） =====
+// 接受 phraseHash（前端已有 SHA256 哈希），汇聚用户全部数据存入 recovery 路径
+app.post('/api/recovery/snapshot/backup', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+    const { userId, phraseHash } = req.body;
+    if (!userId || !phraseHash) return res.status(400).json({ ok: false, error: 'missing fields' });
+    if (!isSafeUid(userId)) return res.status(400).json({ ok: false, error: 'invalid uid' });
+
+    // 1. 保存 uid → hash 映射
+    await db.ref(`recovery/${phraseHash}`).set({
+      userId,
+      created: now()
+    });
+    await db.ref(`users/${userId}/recoveryHash`).set(phraseHash);
+
+    // 2. 读取用户余额
+    const balSnap = await db.ref(`users/${userId}/balance`).once('value');
+    const balance = safeNumber(balSnap.val(), 0);
+
+    // 3. 从 orders/ 路径汇聚用户全部订单 → portfolio
+    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan'];
+    const portfolioMap = {};
+    const allOrders = { recharge: [], withdraw: [], buysell: [], swap: [], plan: [] };
+
+    const snapshots = await Promise.all(
+      orderTypes.map(t => db.ref(`orders/${t}`).once('value'))
+    );
+
+    for (let i = 0; i < orderTypes.length; i++) {
+      const t = orderTypes[i];
+      const snap = snapshots[i];
+      const raw = snap.exists() ? snap.val() : {};
+      const orders = Object.values(raw).filter(o => o.userId === userId || o.user === userId);
+      for (const o of orders) {
+        o.orderType = t;
+        if (t === 'buysell') {
+          o.type = o.side || o.tradeType || o.type || 'buy';
+          const coin = o.coin || '';
+          const coinQty = Number(o.coinQty || 0);
+          const isBuy = (String(o.side || o.tradeType || '').toLowerCase() === 'buy');
+          if (coin && coinQty > 0) {
+            portfolioMap[coin] = (portfolioMap[coin] || 0) + (isBuy ? coinQty : -coinQty);
+          }
+        }
+      }
+      allOrders[t] = sortByTimeDesc(orders);
+    }
+
+    const portfolio = {};
+    for (const [coin, qty] of Object.entries(portfolioMap)) {
+      if (qty > 0.0000001) portfolio[coin] = Number(qty.toFixed(6));
+    }
+
+    // 4. 全量快照写入 recovery/{hash}/snapshot
+    await db.ref(`recovery/${phraseHash}/snapshot`).set({
+      balance,
+      portfolio,
+      orders: allOrders,
+      updatedAt: now()
+    });
+
+    return res.json({ ok: true, balance, coinCount: Object.keys(portfolio).length });
+  } catch(e) {
+    console.error('recovery snapshot backup error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ===== 全量快照恢复（恢复词 → 完整钱包数据回传前端） =====
+app.post('/api/recovery/snapshot/restore', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+    const { phrase } = req.body;
+    if (!phrase) return res.status(400).json({ ok: false, error: 'missing phrase' });
+
+    const phraseHash = hashPhrase(phrase);
+    const snap = await db.ref(`recovery/${phraseHash}`).once('value');
+
+    if (!snap.exists()) {
+      return res.json({ ok: false, error: 'phrase not found' });
+    }
+
+    const data = snap.val();
+    const uid = data.userId;
+    const snapshot = data.snapshot || {};
+
+    return res.json({
+      ok: true,
+      userId: uid,
+      balance: snapshot.balance || 0,
+      portfolio: snapshot.portfolio || {},
+      orders: snapshot.orders || { recharge: [], withdraw: [], buysell: [], swap: [], plan: [] },
+      updatedAt: snapshot.updatedAt || data.created
+    });
+  } catch(e) {
+    console.error('recovery snapshot restore error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ===== 统一同步端点：余额 + 持仓 + 所有订单（钱包页用） =====
 app.get('/api/sync/:uid', async (req, res) => {
   try {
