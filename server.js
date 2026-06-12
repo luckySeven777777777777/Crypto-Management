@@ -813,6 +813,29 @@ app.get('/api/balance/:uid', async (req, res) => {
   }
 });
 
+// 指纹识别 UID —— 接收客户端浏览器指纹
+app.get('/wallet/init', async (req, res) => {
+  try {
+    const fp = String(req.query.fp || '').trim();
+    if (!fp) return res.json({ ok: false, uid: '', error: 'missing fp' });
+    if (!db) return res.json({ ok: false, uid: '' });
+    const fpRef = db.ref(`fingerprints/${fp}`);
+    const fpSnap = await fpRef.once('value');
+    let uid;
+    if (fpSnap.exists()) {
+      uid = fpSnap.val().uid;
+    } else {
+      uid = 'U' + Date.now() + '_' + Math.floor(Math.random() * 999999);
+      await fpRef.set({ uid, created: now() });
+    }
+    await ensureUserExists(uid);
+    return res.json({ ok: true, uid });
+  } catch (e) {
+    console.error('wallet/init error:', e);
+    return res.json({ ok: false, uid: '' });
+  }
+});
+
 app.get('/wallet/:uid/balance', async (req, res) => {
   try {
     const uid = String(req.params.uid || '').trim();
