@@ -192,7 +192,7 @@ async function ensureUserExists(uid){
   if(snap.exists()) return;
 
   const ts = now();
-  await ref.set({
+  await ref.update({
   userid: uid,
   wallet: "",
   balance: 0,
@@ -2372,27 +2372,7 @@ setInterval(async () => {
 /* =========================================================
    新平台专属：后台管理逻辑 (不影响旧平台)
 ========================================================= */
-
-// 1. 后台确认充值：金额直接入账并同步
-app.post('/admin/confirm-deposit', async (req, res) => {
-  try {
-    const { uid, amount } = req.body;
-    const numAmount = Number(amount);
-    if (!db || isNaN(numAmount)) return res.status(400).json({ ok: false });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const newBal = Number(((snap.exists() ? snap.val().balance : 0) + numAmount).toFixed(4));
-
-    await userRef.update({ balance: newBal, lastUpdate: Date.now() });
-
-    // 实时推送
-    broadcastSSE({ type: 'balance', userId: uid, balance: newBal, source: 'admin_deposit' });
-    return res.json({ ok: true, balance: newBal });
-  } catch (e) { return res.status(500).json({ ok: false }); }
-});
-
-// 2. 后台拒绝提款：金额原路退回并同步
+// 1. 后台拒绝提款：金额原路退回并同步
 app.post('/admin/reject-withdraw', async (req, res) => {
   try {
     const { uid, amount, orderId } = req.body;
