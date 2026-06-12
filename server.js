@@ -687,6 +687,18 @@ app.get('/api/sync/:uid', async (req, res) => {
             portfolioMap[coin] = (portfolioMap[coin] || 0) + (isBuy ? coinQty : -coinQty);
           }
         }
+        // swap 订单：卖出coin → 获得USDT，反映到持仓
+        if (t === 'swap') {
+          const scoin = o.coin || '';
+          const samt = Number(o.amount || 0);
+          const uamt = Number(o.usdtAmount || 0);
+          if (scoin && samt > 0) {
+            portfolioMap[scoin] = (portfolioMap[scoin] || 0) - samt;
+          }
+          if (uamt > 0) {
+            portfolioMap['USDT'] = (portfolioMap['USDT'] || 0) + uamt;
+          }
+        }
       }
 
       grouped[t] = sortByTimeDesc(orders);
