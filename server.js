@@ -698,10 +698,41 @@ app.get('/api/sync/:uid', async (req, res) => {
       if (qty > 0.0000001) portfolio[coin] = Number(qty.toFixed(6));
     }
 
-    return res.json({ ok: true, uid, balance, portfolio, orders: grouped });
+    // 3. 用户设置（提款密码、批准钱包等）
+    let settings = {};
+    try {
+      const setSnap = await db.ref(`users/${uid}/settings`).once('value');
+      settings = setSnap.exists() ? setSnap.val() : {};
+    } catch(e) {}
+
+    return res.json({ ok: true, uid, balance, portfolio, orders: grouped, settings });
 
   } catch (e) {
     console.error('/api/sync error', e);
+    return res.json({ ok: false, error: e.message });
+  }
+});
+
+// 保存用户设置
+app.post('/api/user/settings', async (req, res) => {
+  try {
+    const { userid, userId, uid: bodyUid } = req.body;
+    const uid = userid || userId || bodyUid;
+    if (!uid) return res.status(400).json({ ok: false, error: 'no uid' });
+    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, error: 'invalid uid' });
+    if (!db) return res.status(500).json({ ok: false, error: 'no db' });
+
+    const { withdrawPassword, approvedWallets } = req.body;
+    const updates = {};
+    if (withdrawPassword !== undefined) updates['withdrawPassword'] = withdrawPassword;
+    if (approvedWallets !== undefined) updates['approvedWallets'] = approvedWallets;
+
+    if (Object.keys(updates).length > 0) {
+      await db.ref(`users/${uid}/settings`).update(updates);
+    }
+    return res.json({ ok: true });
+  } catch(e) {
+    console.error('/api/user/settings error', e);
     return res.json({ ok: false, error: e.message });
   }
 });
