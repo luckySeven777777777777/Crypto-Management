@@ -356,6 +356,36 @@ function broadcastSSE(payloadObj){
   global.__sseClients = toKeep;
 }
 
+async function calcPortfolio(uid){
+  const port = {};
+  const orderTypes = ['buysell', 'swap'];
+  for (const t of orderTypes) {
+    const osnap = await db.ref(`orders/${t}`).once('value');
+    const orders = osnap.val() || {};
+    for (const [, o] of Object.entries(orders)) {
+      if (String(o.userId) !== uid) continue;
+      if (t === 'buysell') {
+        const coin = o.coin || '';
+        const qty = Number(o.coinQty || 0);
+        const isBuy = String(o.side || o.tradeType || '').toLowerCase() === 'buy';
+        if (coin && qty > 0) port[coin] = (port[coin] || 0) + (isBuy ? qty : -qty);
+      }
+      if (t === 'swap') {
+        const scoin = o.coin || '';
+        const samt = Number(o.amount || 0);
+        const uamt = Number(o.usdtAmount || 0);
+        if (scoin && samt > 0) port[scoin] = (port[scoin] || 0) - samt;
+        if (uamt > 0) port['USDT'] = (port['USDT'] || 0) + uamt;
+      }
+    }
+  }
+  const filtered = {};
+  for (const [coin, qty] of Object.entries(port)) {
+    if (qty > 0.0000001) filtered[coin] = Number(qty.toFixed(6));
+  }
+  return filtered;
+}
+
 function objToSortedArray(objOrNull){
   if(!objOrNull) return [];
   try {
@@ -883,10 +913,11 @@ app.get('/wallet/:uid/balance', async (req, res) => {
   try {
     const uid = String(req.params.uid || '').trim();
     if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    if (!db) return res.json({ ok:true, uid, balance: 0 });
+    if (!db) return res.json({ ok:true, uid, balance: 0, portfolio: {} });
     const snap = await db.ref(`users/${uid}/balance`).once('value');
     const balance = safeNumber(snap.exists() ? snap.val() : 0, 0);
-    return res.json({ ok:true, uid, balance });
+    const portfolio = await calcPortfolio(uid);
+    return res.json({ ok:true, uid, balance, portfolio });
   } catch (e) {
     console.error('/wallet/:uid/balance error', e);
     return res.status(500).json({ ok:false, error: e.message });
@@ -2276,11 +2307,12 @@ app.get('/wallet/:uid/sse', async (req, res) => {
   const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
   global.__sseClients.push({ res, uid, ka });
   try {
-    if (!db) sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: 0 }), 'balance');
+    if (!db) sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: 0, portfolio: {} }), 'balance');
     else {
       const snap = await db.ref(`users/${uid}/balance`).once('value');
       const bal = safeNumber(snap.exists() ? snap.val() : 0, 0);
-      sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: bal }), 'balance');
+      const pf = await calcPortfolio(uid);
+      sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: bal, portfolio: pf }), 'balance');
     }
   } catch(e){}
   req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
@@ -2308,11 +2340,14 @@ try {
     });
 
     const usersRef = db.ref('users');
-    usersRef.on('child_changed', (snap) => {
+    usersRef.on('child_changed', async (snap) => {
       try {
         const uid = snap.key;
         const data = snap.val() || {};
-   
+        if (data.balance !== undefined) {
+          const pf = await calcPortfolio(uid);
+          broadcastSSE({ type:'balance', userId: uid, balance: safeNumber(data.balance,0), portfolio: pf });
+        }
       } catch(e){}
     });
   }
