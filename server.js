@@ -1368,7 +1368,9 @@ async function saveOrder(type, data) {
     'deducted',
     'wallet',
     'ip',
-    'currency'
+    'currency',
+    'second',
+    'priceRangePercent'
   ];
 
   const clean = {};
@@ -1498,7 +1500,9 @@ async function handleBuySellRequest(req, res){
       sl,
       orderId,
       wallet,
-      ip
+      ip,
+      second,
+      priceRangePercent
     } = req.body;
 
     const uid = userId || user;
@@ -1558,6 +1562,8 @@ const id = await saveOrder('buysell', {
   deducted: (sideLower === 'buy'),
   wallet: wallet || null,
   ip: ip || null,
+  second: second ?? null,
+  priceRangePercent: priceRangePercent ?? null,
   processed: false
 });
 
