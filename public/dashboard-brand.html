@@ -1250,6 +1250,7 @@ async function submitAdminLogin(){
       setAdminName(displayName);
       // 登录成功后重置下级标记，恢复后台元素
       _isSubAdminLogin = false;
+      sessionStorage.removeItem('is_sub_admin_login');
       document.querySelector('.sidebar').style.display = '';
       document.querySelector('.top-header').style.display = '';
       document.body.style.background = '';
@@ -2814,13 +2815,14 @@ function resetWithdrawPage() {
    Init
 ------------------------------ */
   // 检查 URL 中的 login 参数：清除旧登录态，触发下级登录样式
-  let _isSubAdminLogin = false;
+  let _isSubAdminLogin = sessionStorage.getItem('is_sub_admin_login') === '1';
   (function prefillLoginFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const loginId = params.get('login');
     if (!loginId) return;
 
     _isSubAdminLogin = true;
+    sessionStorage.setItem('is_sub_admin_login', '1');
 
     // 清除已有的登录态，确保显示登录页面
     try {
