@@ -2074,8 +2074,10 @@ app.post('/api/admin/create', async (req, res) => {
     };
 
     // 保存管理员信息到 Firebase 数据库
+    const nickname = req.body.nickname || id;
     await db.ref(`admins/${id}`).set({
       id,
+      nickname,
       hashed,
       created,
       isSuper: false,   // 设置为普通管理员，修改为 true 则为超级管理员
@@ -2091,7 +2093,7 @@ app.post('/api/admin/create', async (req, res) => {
       created
     });
 
-    return res.json({ ok: true, id, token });  // 返回管理员信息和 token
+    return res.json({ ok: true, id, token, nickname });  // 返回管理员信息和 token
 
   } catch (e) {
     console.error('admin create error', e);
@@ -2312,6 +2314,34 @@ app.post('/api/admin/reset-password', async (req, res) => {
   }
 });
 
+// 根据 token 获取当前管理员信息（用于自动登录）
+app.get('/api/admin/me', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const token = auth.slice(7);
+    const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
+    if (!tokenSnap.exists())
+      return res.status(403).json({ ok: false, error: 'invalid token' });
+    const adminId = tokenSnap.val().id;
+    const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+    if (!adminSnap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+    const admin = adminSnap.val();
+    return res.json({
+      ok: true,
+      id: admin.id,
+      nickname: admin.nickname || admin.id,
+      permissions: admin.permissions || {},
+      isSuper: !!admin.isSuper
+    });
+  } catch (e) {
+    console.error('admin me error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
 /* --------------------------------------------------
    Utils
 -------------------------------------------------- */
@@ -2343,7 +2373,7 @@ app.post('/api/admin/login', async (req, res) => {
     // 更新状态为在线并记录最后登录时间
     await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
 
-    return res.json({ ok: true, token, permissions: admin.permissions || {}, isSuper: !!admin.isSuper });  // 返回登录成功的 token 和权限
+    return res.json({ ok: true, token, nickname: admin.nickname || admin.id, permissions: admin.permissions || {}, isSuper: !!admin.isSuper });  // 返回登录成功的 token 和权限
 
   } catch (e) {
     console.error(e);
