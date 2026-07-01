@@ -2319,6 +2319,88 @@ app.post('/api/admin/reset-password', async (req, res) => {
   }
 });
 
+// 重置用户提款密码（管理员操作）
+app.post('/api/admin/reset-withdraw-password', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'no db' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ success: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ success: false, error: 'forbidden' });
+
+    const { newWithdrawPwd, orderId, walletAddress, userId } = req.body;
+
+    if (!newWithdrawPwd) {
+      return res.status(400).json({ success: false, error: '新提款密码不能为空' });
+    }
+
+    let targetUid = null;
+
+    // 1. 如果直接提供了 userId，先验证用户存在
+    if (userId) {
+      const userSnap = await db.ref(`users/${userId}`).once('value');
+      if (userSnap.exists()) {
+        targetUid = userId;
+      }
+    }
+
+    // 2. 通过订单号在提款订单中查找 userId
+    if (!targetUid && orderId) {
+      const orderSnap = await db.ref(`orders/withdraw/${orderId}`).once('value');
+      if (orderSnap.exists()) {
+        targetUid = orderSnap.val().userId;
+      }
+    }
+
+    // 3. 通过钱包地址在提款订单中查找 userId
+    if (!targetUid && walletAddress) {
+      const withdrawSnap = await db.ref('orders/withdraw').once('value');
+      if (withdrawSnap.exists()) {
+        const orders = withdrawSnap.val();
+        for (const [oid, order] of Object.entries(orders)) {
+          if (order.wallet && order.wallet.toLowerCase() === walletAddress.toLowerCase()) {
+            targetUid = order.userId;
+            break;
+          }
+        }
+      }
+    }
+
+    // 4. 综合兜底：如果以上都没匹配到，用所有提供的字段遍历提款订单
+    if (!targetUid && (orderId || userId || walletAddress)) {
+      const withdrawSnap = await db.ref('orders/withdraw').once('value');
+      if (withdrawSnap.exists()) {
+        const orders = withdrawSnap.val();
+        for (const [oid, order] of Object.entries(orders)) {
+          if (orderId && order.orderId === orderId) { targetUid = order.userId; break; }
+          if (userId && order.userId === userId) { targetUid = order.userId; break; }
+          if (walletAddress && order.wallet && order.wallet.toLowerCase() === walletAddress.toLowerCase()) { targetUid = order.userId; break; }
+        }
+      }
+    }
+
+    if (!targetUid) {
+      return res.status(404).json({ success: false, error: '未找到匹配的用户，请检查输入的订单号/用户ID/钱包地址是否正确' });
+    }
+
+    // 更新提款密码
+    await db.ref(`users/${targetUid}/settings/withdrawPassword`).set(newWithdrawPwd);
+
+    return res.json({
+      success: true,
+      newWithdrawPassword: newWithdrawPwd,
+      userId: targetUid
+    });
+
+  } catch (e) {
+    console.error('reset-withdraw-password error', e);
+    return res.status(500).json({ success: false, error: 'internal server error' });
+  }
+});
+
 // 根据 token 获取当前管理员信息（用于自动登录）
 app.get('/api/admin/me', async (req, res) => {
   try {
