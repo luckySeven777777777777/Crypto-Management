@@ -1113,6 +1113,7 @@ $all(".sidebar .icon").forEach(ic=>{
     if(page === "buysell") bs_search();
     if(page === "orders") o_search();
     if(page === "members") loadMembers();
+    if(page === "settings") loadAdmins();
   });
 });
 function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="none"); }
@@ -2876,6 +2877,172 @@ else {
 
   // 每 60 秒检查一次是否跨天（不用刷新页面）
   setInterval(checkDayChange, 60 * 1000);
+
+  /* -----------------------------
+     Settings - Admin Management
+  ------------------------------ */
+  async function loadAdmins(){
+    try {
+      const r = await fetch('/api/admin/list', { headers: authHeaders() });
+      const j = await r.json();
+      if (!j.ok) { alert('加载管理员列表失败: ' + (j.error || '未知')); return; }
+      renderAdminTable(j.admins || []);
+    } catch(e) {
+      alert('加载管理员列表失败: ' + e.message);
+    }
+  }
+
+  function renderAdminTable(admins){
+    const tbody = document.getElementById('adminTable');
+    if (!admins.length) {
+      tbody.innerHTML = '<tr><td colspan="4">暂无管理员</td></tr>';
+      return;
+    }
+    let html = '';
+    admins.forEach(a => {
+      const perms = a.permissions || {};
+      const permStrs = [];
+      if (perms.recharge) permStrs.push('充值');
+      if (perms.withdraw) permStrs.push('提款');
+      if (perms.buysell)  permStrs.push('BuySell');
+      const permStr = permStrs.length ? permStrs.join('、') : '无';
+
+      const statusColor = a.status === '在线' ? 'green' : '#999';
+      const activeLabel = a.isActive ? '已启用' : '已禁用';
+      const toggleLabel = a.isActive ? '禁用' : '启用';
+      const toggleClass = a.isActive ? 'secondary' : 'primary';
+      const star = a.isSuper ? ' <span style="color:gold">★</span>' : '';
+
+      html += '<tr>' +
+        '<td>' + escHtml1(a.id) + star + '</td>' +
+        '<td style="white-space:nowrap">' +
+          '<label><input type="checkbox" data-field="recharge" ' + (perms.recharge ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 充值</label> ' +
+          '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
+          '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label>' +
+        '</td>' +
+        '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
+        '<td>' +
+          '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
+          '<button class="danger" onclick="if(confirm(\'确认删除管理员 ' + escHtml1(a.id) + '？\'))deleteAdmin(\'' + escHtml1(a.id) + '\')">删除</button>' +
+          '<div class="small">创建人: ' + escHtml1(a.createdBy || 'system') + '</div>' +
+        '</td>' +
+      '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  function escHtml1(s){
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  async function createAdmin(){
+    const idEl = document.getElementById('newAdminId');
+    const pwEl = document.getElementById('newAdminPassword');
+    const id = idEl.value.trim();
+    const password = pwEl.value;
+    if (!id || !password) return alert('请输入管理员账号和密码');
+
+    const cb = name => {
+      const el = document.querySelector('#page-settings input[type="checkbox"][value="' + name + '"]');
+      return el ? el.checked : false;
+    };
+
+    try {
+      const r = await fetch('/api/admin/create', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          id, password,
+          recharge: cb('recharge'),
+          withdraw: cb('withdraw'),
+          buysell:  cb('buysell')
+        })
+      });
+      const j = await r.json();
+      if (!j.ok) { alert('创建失败: ' + (j.error || '未知')); return; }
+      idEl.value = '';
+      pwEl.value = '';
+      loadAdmins();
+    } catch(e) {
+      alert('创建失败: ' + e.message);
+    }
+  }
+
+  async function toggleAdminStatus(id, isActive){
+    try {
+      const r = await fetch('/api/admin/toggle-status', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ id, isActive })
+      });
+      const j = await r.json();
+      if (!j.ok) { alert('操作失败: ' + (j.error || '未知')); return; }
+      loadAdmins();
+    } catch(e) {
+      alert('操作失败: ' + e.message);
+    }
+  }
+
+  async function deleteAdmin(id){
+    try {
+      const r = await fetch('/api/admin/delete', {
+        method: 'DELETE',
+        headers: authHeaders(),
+        body: JSON.stringify({ id })
+      });
+      const j = await r.json();
+      if (!j.ok) { alert('删除失败: ' + (j.error || '未知')); return; }
+      loadAdmins();
+    } catch(e) {
+      alert('删除失败: ' + e.message);
+    }
+  }
+
+  async function updateAdminPermissions(id, ev){
+    const tr = ev.target.closest('tr');
+    const cbs = tr.querySelectorAll('input[data-field]');
+    const perms = { recharge: false, withdraw: false, buysell: false };
+    cbs.forEach(cb => {
+      perms[cb.getAttribute('data-field')] = cb.checked;
+    });
+
+    try {
+      const r = await fetch('/api/admin/update-permissions', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ id, permissions: perms })
+      });
+      const j = await r.json();
+      if (!j.ok) { alert('更新失败: ' + (j.error || '未知')); loadAdmins(); }
+    } catch(e) {
+      alert('更新失败: ' + e.message);
+      loadAdmins();
+    }
+  }
+
+  async function resetAdminLoginPassword(){
+    const id = document.getElementById('resetAdminId').value.trim();
+    const newPassword = document.getElementById('resetAdminPassword').value;
+    if (!id || !newPassword) return alert('请输入管理员账号和新密码');
+
+    try {
+      const r = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ id, newPassword })
+      });
+      const j = await r.json();
+      if (!j.ok) { alert('重置失败: ' + (j.error || '未知')); return; }
+      alert('密码已重置');
+      document.getElementById('resetAdminId').value = '';
+      document.getElementById('resetAdminPassword').value = '';
+    } catch(e) {
+      alert('重置失败: ' + e.message);
+    }
+  }
+
 })();
 </script>
 
