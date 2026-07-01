@@ -627,12 +627,14 @@ button {
 <tr>
 <th>会员ID</th>
 <th>wallet</th>
+<th>Account Balance</th>
+<th>加减操作</th>
 <th>注册时间</th>
 <th>上线时间</th>
 <th>最后在线时间</th>
 </tr>
 </thead>
-        <tbody id="m_table"><tr><td colspan="3" class="small">暂无数据</td></tr></tbody>
+        <tbody id="m_table"><tr><td colspan="7" class="small">暂无数据</td></tr></tbody>
       </table>
     </div>
 
@@ -2167,7 +2169,7 @@ async function loadMembers(resetPage = true){
   if (resetPage) memberPage = 1;
   
   const tbody = $('#m_table');
-  tbody.innerHTML = `<tr><td colspan="5">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="7">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll();
@@ -2198,7 +2200,7 @@ async function loadMembers(resetPage = true){
     });
 
     if(!Object.keys(users).length){
-      tbody.innerHTML = `<tr><td colspan="5">暂无数据</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7">暂无数据</td></tr>`;
       return;
     }
 
@@ -2227,10 +2229,13 @@ async function loadMembers(resetPage = true){
     tbody.innerHTML = pageRows.map(r => {
       const uid = r.uid;
       const u  = r.u;
+      const bal = u.balance !== undefined && u.balance !== null ? Number(u.balance) : 0;
       return `
       <tr>
         <td>${uid}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${walletMap[uid] || u.wallet || ''}">${walletMap[uid] || u.wallet || '--'}</td>
+        <td>${bal.toFixed(2)}</td>
+        <td><button class="primary" style="margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','add')">+</button> <button class="primary" style="background:#ff4444;margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','deduct')">-</button></td>
         <td>${formatMyanmarTime(u.created)}</td>
         <td>${formatMyanmarTime(r.loginTime)}</td>
         <td>${formatMyanmarTime(r.lastOnline)}</td>
@@ -2242,7 +2247,7 @@ async function loadMembers(resetPage = true){
     if (totalPages > 1) {
       tbody.innerHTML += `
       <tr>
-        <td colspan="5" style="text-align:center;padding:12px 0">
+        <td colspan="7" style="text-align:center;padding:12px 0">
           <button ${memberPage<=1?'disabled':''} onclick="memberPage--;loadMembers(false)">上一页</button>
           <span class="small" style="margin:0 12px">第 ${memberPage} / ${totalPages} 页（共 ${total} 个会员）</span>
           <button ${memberPage>=totalPages?'disabled':''} onclick="memberPage++;loadMembers(false)">下一页</button>
@@ -2251,9 +2256,39 @@ async function loadMembers(resetPage = true){
     }
 
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="5">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7">加载失败</td></tr>`;
   }
 }
+
+async function adjustBalance(uid, direction) {
+  const label = direction === 'add' ? '增加' : '扣除';
+  const amount = parseFloat(prompt(`请输入要${label}的金额：`, ''));
+  if (isNaN(amount) || amount <= 0) {
+    if (amount !== null && amount !== '') alert('请输入有效的正数金额');
+    return;
+  }
+  const payload = {
+    uid,
+    amount: direction === 'add' ? amount : -amount
+  };
+  try {
+    const res = await fetch('/api/admin/adjust-balance', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      alert(`${label}成功！新余额：${Number(data.newBalance).toFixed(2)}`);
+      loadMembers(false);
+    } else {
+      alert('操作失败：' + ((data && data.error) || '未知错误'));
+    }
+  } catch(e) {
+    alert('网络错误：' + e.message);
+  }
+}
+
 // ✅【就插在这里】—— loadDashboard 上面
 function isOrderApproved(o){
   const s = String(o.status || '').toLowerCase();
