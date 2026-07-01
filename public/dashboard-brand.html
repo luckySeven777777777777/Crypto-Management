@@ -1171,15 +1171,12 @@ async function ensureLoggedIn(){
   hideAllPages();
 
   const loginModal = document.getElementById('adminLoginModal');
-  const params = new URLSearchParams(window.location.search);
-  const loginId = params.get('login');
 
-  if (loginId) {
+  if (_isSubAdminLogin) {
     // 下级专属登录：不透明背景、Login 标题、隐藏后台元素
     loginModal.style.background = '#1a1a2e';
     document.getElementById('loginModalTitle').innerText = 'Login';
     document.getElementById('loginModalHint').style.display = 'none';
-    // 隐藏侧边栏和 header
     const sidebar = document.querySelector('.sidebar');
     const header = document.querySelector('.top-header');
     if (sidebar) sidebar.style.display = 'none';
@@ -2805,10 +2802,13 @@ function resetWithdrawPage() {
    Init
 ------------------------------ */
   // 检查 URL 中的 login 参数：清除旧登录态，触发下级登录样式
+  let _isSubAdminLogin = false;
   (function prefillLoginFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const loginId = params.get('login');
     if (!loginId) return;
+
+    _isSubAdminLogin = true;
 
     // 清除已有的登录态，确保显示登录页面
     try {
@@ -2818,7 +2818,7 @@ function resetWithdrawPage() {
       localStorage.removeItem('nexbit_admin_name');
     } catch(e) {}
 
-    // 清除 URL 参数，不自动填入账号（由用户手动输入）
+    // 清除 URL 参数
     if (window.history && window.history.replaceState) {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
