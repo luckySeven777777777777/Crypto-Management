@@ -2130,20 +2130,41 @@ function formatMyanmarTime(ts) {
   }
 }
 
-async function loadMembers(){
+// 会员列表分页状态
+let memberPage = 1;
+const MEMBER_PAGE_SIZE = 20;
+
+async function loadMembers(resetPage = true){
+  if (resetPage) memberPage = 1;
+  
   const tbody = $('#m_table');
   tbody.innerHTML = `<tr><td colspan="5">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll();
     const users = all.users || {};
-    const withdrawOrders = all.withdraw || [];
+    const allOrders = [
+      ...(all.recharge || []),
+      ...(all.withdraw || []),
+      ...(all.buysell  || [])
+    ];
 
-    // 取每个会员最后一次提款使用的钱包地址
+    // 从提款订单中提取每个会员的钱包地址
     const walletMap = {};
-    withdrawOrders.forEach(o => {
+    (all.withdraw || []).forEach(o => {
       if (o.userId && o.wallet && !walletMap[o.userId]) {
         walletMap[o.userId] = o.wallet;
+      }
+    });
+
+    // 从全部订单中推导每个会员的最后活动时间
+    const lastActivityMap = {};
+    allOrders.forEach(o => {
+      const uid = o.userId || o.user;
+      if (!uid) return;
+      const ts = Number(o.timestamp || 0);
+      if (ts > (lastActivityMap[uid] || 0)) {
+        lastActivityMap[uid] = ts;
       }
     });
 
@@ -2152,19 +2173,53 @@ async function loadMembers(){
       return;
     }
 
-    tbody.innerHTML = Object.keys(users).map(uid=>{
+    // 组装并排序：按最后活动时间降序（最新的在最上面），无订单的按注册时间排
+    let rows = Object.keys(users).map(uid => {
       const u = users[uid];
+      const activityTs = lastActivityMap[uid];
+      // 上线时间/最后在线时间：优先用订单活动时间，其次用 DB 里的 loginTime/lastOnline
+      const loginTime = activityTs || u.loginTime;
+      const lastOnline = activityTs || u.lastOnline || u.updated;
+      // 排序键：用最后活动时间，没有则用注册时间
+      const sortKey = activityTs || u.created || 0;
+      return { uid, u, walletMap, loginTime, lastOnline, sortKey };
+    });
 
+    // 降序：最新的在最上面
+    rows.sort((a, b) => b.sortKey - a.sortKey);
+
+    // 分页
+    const total = rows.length;
+    const totalPages = Math.ceil(total / MEMBER_PAGE_SIZE);
+    if (memberPage > totalPages) memberPage = totalPages;
+    const startIdx = (memberPage - 1) * MEMBER_PAGE_SIZE;
+    const pageRows = rows.slice(startIdx, startIdx + MEMBER_PAGE_SIZE);
+
+    tbody.innerHTML = pageRows.map(r => {
+      const uid = r.uid;
+      const u  = r.u;
       return `
       <tr>
         <td>${uid}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${walletMap[uid] || u.wallet || ''}">${walletMap[uid] || u.wallet || '--'}</td>
-        <td>${formatMyanmarTime(u.created) || '--'}</td>
-        <td>${formatMyanmarTime(u.loginTime) || '--'}</td>
-        <td>${formatMyanmarTime(u.lastOnline || u.updated) || '--'}</td>
+        <td>${formatMyanmarTime(u.created)}</td>
+        <td>${formatMyanmarTime(r.loginTime)}</td>
+        <td>${formatMyanmarTime(r.lastOnline)}</td>
       </tr>
       `;
     }).join('');
+
+    // 分页控件
+    if (totalPages > 1) {
+      tbody.innerHTML += `
+      <tr>
+        <td colspan="5" style="text-align:center;padding:12px 0">
+          <button ${memberPage<=1?'disabled':''} onclick="memberPage--;loadMembers(false)">上一页</button>
+          <span class="small" style="margin:0 12px">第 ${memberPage} / ${totalPages} 页（共 ${total} 个会员）</span>
+          <button ${memberPage>=totalPages?'disabled':''} onclick="memberPage++;loadMembers(false)">下一页</button>
+        </td>
+      </tr>`;
+    }
 
   }catch(e){
     tbody.innerHTML = `<tr><td colspan="5">加载失败</td></tr>`;
