@@ -1152,10 +1152,17 @@ function filterSidebar(){
     if(isSuperAdmin()) return; // 超级管理员显示全部
     const perms = getAdminPerms();
     const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
-    // 权限数据为空时不做过滤（兼容服务端尚未返回权限的场景）
-    if (!permCount) { console.log('[filterSidebar] perms empty, skip'); return; }
     const icons = document.querySelectorAll('.sidebar .icon[data-page]');
     if (!icons.length) return;
+    if (!permCount) {
+      // 权限数据为空时仅显示控制台
+      icons.forEach(ic => {
+        const page = ic.getAttribute('data-page');
+        ic.style.display = page === 'dashboard' ? '' : 'none';
+      });
+      console.log('[filterSidebar] perms empty, show dashboard only');
+      return;
+    }
     icons.forEach(ic => {
       const page = ic.getAttribute('data-page');
       let show = true;
@@ -1207,7 +1214,24 @@ async function submitAdminLogin(){
     const j = await r.json();
     if (j.ok && j.token) {
       setAdminToken(j.token);
-      setAdminPerms(j.permissions || {}, !!j.isSuper);
+      let perms = j.permissions || {};
+      let isSuper = !!j.isSuper;
+      // 如果服务端 login 未返回权限，从 admin list 补拉
+      if (!isSuper && Object.keys(perms).length === 0) {
+        try {
+          const lr = await fetch('/api/admin/list', { headers: authHeaders() });
+          const lj = await lr.json();
+          if (lj.ok && lj.admins) {
+            const me = lj.admins.find(a => a.id === id);
+            if (me) {
+              perms = me.permissions || {};
+              isSuper = !!me.isSuper;
+              console.log('[submitAdminLogin] 从 /api/admin/list 补拉权限', perms, isSuper);
+            }
+          }
+        } catch(e) { console.error('[submitAdminLogin] 补拉权限失败', e); }
+      }
+      setAdminPerms(perms, isSuper);
       document.getElementById('adminUser').innerText = id;
       setAdminName(id);
       closeAdminLogin();
