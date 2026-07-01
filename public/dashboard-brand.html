@@ -2112,12 +2112,12 @@ tbody.innerHTML =
       <td>${o.ip || '--'}</td>
       <td>
         <span class="badge" style="background:
-  ${ o.status==='success' ? '#00c851' :
-     o.status==='failed'  ? '#ff4444' :
+  ${ (o.status==='success' || o.status==='approved') ? '#00c851' :
+     (o.status==='failed' || o.status==='rejected' || o.status==='reject')  ? '#ff4444' :
      o.status==='locked'  ? '#ffbb33' :
      '#1976d2' };
   color:#fff;"
-  ${o.status==='failed' && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
+  ${(o.status==='failed' || o.status==='rejected') && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
   ${displayStatus(o.status)}
 </span>
       </td>
