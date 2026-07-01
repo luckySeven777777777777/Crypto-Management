@@ -2099,6 +2099,51 @@ app.post('/api/admin/create', async (req, res) => {
   }
 });
 
+// 管理员调整用户余额
+app.post('/api/admin/adjust-balance', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { uid, amount } = req.body;
+    if (!uid || amount === undefined || amount === null)
+      return res.status(400).json({ ok: false, error: 'missing uid/amount' });
+
+    if (!isSafeUid(uid))
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount))
+      return res.status(400).json({ ok: false, error: 'invalid amount' });
+
+    const balRef = db.ref(`users/${uid}/balance`);
+    const snap = await balRef.once('value');
+    const current = safeNumber(snap.exists() ? snap.val() : 0, 0);
+    const newBalance = current + numAmount;
+
+    await balRef.set(newBalance);
+
+    // 记录操作日志
+    const logRef = db.ref(`users/${uid}/balance_logs`).push();
+    await logRef.set({
+      previous: current,
+      change: numAmount,
+      after: newBalance,
+      admin: 'admin',
+      timestamp: now()
+    });
+
+    return res.json({ ok: true, newBalance, previous: current, change: numAmount });
+  } catch (e) {
+    console.error('adjust-balance error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
 // 管理员列表
 app.get('/api/admin/list', async (req, res) => {
   try {
