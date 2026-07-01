@@ -1160,8 +1160,8 @@ function filterSidebar(){
       if (page === 'recharge') show = !!perms.recharge;
       if (page === 'withdraw') show = !!perms.withdraw;
       const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
-      if (page === 'members')  show = permCount >= 2;
-      if (page === 'orders')   show = permCount >= 2;
+      if (page === 'members')  show = permCount >= 3;
+      if (page === 'orders')   show = permCount >= 3;
       if (page === 'settings') show = false;
       ic.style.display = show ? '' : 'none';
     });
@@ -1180,7 +1180,7 @@ function filterSidebar(){
 function restoreLoginState(){
   const name = getAdminName();
   if (name && getAdminToken()) {
-    const el = document.getElementById('loginState');
+    const el = document.getElementById('adminUser');
     if (el) el.innerText = name;
   }
 }
@@ -1206,7 +1206,7 @@ async function submitAdminLogin(){
     if (j.ok && j.token) {
       setAdminToken(j.token);
       setAdminPerms(j.permissions || {}, !!j.isSuper);
-      document.getElementById('loginState').innerText = id;
+      document.getElementById('adminUser').innerText = id;
       setAdminName(id);
       closeAdminLogin();
       filterSidebar();
@@ -2817,7 +2817,7 @@ function resetWithdrawPage() {
 /* -----------------------------
    Init
 ------------------------------ */
-  loadDashboard();
+  ensureLoggedIn().then(ok => { if (ok) loadDashboard(); });
 
 </script>
 <script>
