@@ -2294,7 +2294,7 @@ app.post('/api/admin/login', async (req, res) => {
     // 更新状态为在线并记录最后登录时间
     await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
 
-    return res.json({ ok: true, token });  // 返回登录成功的 token
+    return res.json({ ok: true, token, permissions: admin.permissions || {}, isSuper: !!admin.isSuper });  // 返回登录成功的 token 和权限
 
   } catch (e) {
     console.error(e);
