@@ -526,16 +526,13 @@ button {
             <th>货币数量</th>
             <th>币种</th>
             <th>估算 USDT</th>
-            <th>wallet</th>
-            <th>IP</th>
-            <th>TP/SL</th>
             <th>状态</th>
             <th>操作</th>
             <th>备注</th>
           </tr>
         </thead>
 
-        <tbody id="bs_table"><tr><td colspan="12" class="small">点击搜索加载数据</td></tr></tbody>
+        <tbody id="bs_table"><tr><td colspan="10" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -1492,6 +1489,8 @@ function renderBuySellRow(o) {
   const coinQty = Number(o.coinQty || 0);
   const usdtAmt = Number(o.amount || 0); // 前端下单的 USDT
 
+  const isBuy = side === 'buy';
+
   return `
 <tr>
   <!-- 订单号（只留订单号） -->
@@ -1522,16 +1521,14 @@ function renderBuySellRow(o) {
   <!-- USDT（金钱 = 下单 USDT） -->
   <td>${usdtAmt ? usdtAmt.toFixed(2) : '--'}</td>
 
-  <td>${o.wallet || '--'}</td>
-  <td>${o.ip || '--'}</td>
+  <!-- 状态 -->
+  <td><span class="badge">${displayStatus(o.status)}</span></td>
 
-  <td>
-    <span class="badge">${displayStatus(o.status)}</span>
-  </td>
+  <!-- 操作按钮：buy 不显示，sell 显示 -->
+  <td>${isBuy ? '--' : renderActionButtons(o.orderId, 'buysell', o.processed, o.status)}</td>
 
-  <td>
-    ${renderActionButtons(o.orderId, 'buysell', o.processed, o.status)}
-  </td>
+  <!-- 备注：直接显示文字 -->
+  <td>${o.note || '--'}</td>
 </tr>`;
 }
 /* 🔥 加在这里 */
@@ -1619,42 +1616,7 @@ function renderRechargeRow(o) {
   <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
 
   <!-- 备注 -->
-  <td>
-    ${
-      o.note
-        ? (() => {
-            const remarkData = btoa(
-              unescape(
-                encodeURIComponent(
-                  JSON.stringify({
-                    orderId: o.orderId,
-                    type: 'recharge',
-                    time: o.time_us || '',
-                    side: o.side,
-                    amount: o.amount,
-                    coin: o.coin,
-                    estimate: o.estimate,
-                    tp: o.tp,
-                    sl: o.sl,
-                    wallet: o.wallet,
-                    ip: o.ip,
-                    status: o.status,
-                    note: o.note
-                  })
-                )
-              )
-            );
-            return `
-              <span
-                style="color:#1976d2;cursor:pointer"
-                data-remark="${remarkData}"
-                onclick="openRemarkFromRow(this)"
-              >查看</span>
-            `;
-          })()
-        : '--'
-    }
-  </td>
+  <td>${o.note || '--'}</td>
 </tr>`;
 }
 
@@ -1700,42 +1662,7 @@ function renderWithdrawRow(o) {
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
 
   <!-- 备注 -->
-  <td>
-    ${
-      o.note
-        ? (() => {
-            const remarkData = btoa(
-              unescape(
-                encodeURIComponent(
-                  JSON.stringify({
-                    orderId: o.orderId,
-                    type: 'withdraw',
-                    time: o.time_us || '',
-                    side: o.side,
-                    amount: o.amount,
-                    coin: o.coin,
-                    estimate: o.estimate,
-                    tp: o.tp,
-                    sl: o.sl,
-                    wallet: o.wallet,
-                    ip: o.ip,
-                    status: o.status,
-                    note: o.note
-                  })
-                )
-              )
-            );
-            return `
-              <span
-                style="color:#1976d2;cursor:pointer"
-                data-remark="${remarkData}"
-                onclick="openRemarkFromRow(this)"
-              >查看</span>
-            `;
-          })()
-        : '--'
-    }
-  </td>
+  <td>${o.note || '--'}</td>
 </tr>`;
 }
 /* -----------------------------
@@ -1887,7 +1814,7 @@ async function bs_search(){
   if($('#bs_side').value) params.side = $('#bs_side').value;
 
   const tbody = $('#bs_table');
-  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
@@ -1904,7 +1831,7 @@ async function bs_search(){
     });
 
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`;
       window.buySellPNL = 0;   // ✅ 保证变量存在
       return;
     }
@@ -1938,7 +1865,7 @@ async function bs_search(){
 
   }catch(e){
     console.error(e);
-    tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10">加载失败</td></tr>`;
     window.buySellPNL = 0; // 容错
   }
 }
