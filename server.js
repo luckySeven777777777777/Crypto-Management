@@ -87,13 +87,13 @@ app.post('/api/admin/generate-2fa', async (req, res) => {
   const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
 
   // 使用二维码生成库生成二维码 URL
-  qrcode.toDataURL(secret.otpauth_url, async function (err, qr_code) {
+  qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
     if (err) {
       return res.status(500).json({ ok: false, message: '二维码生成失败' });
     }
 
     // 将密钥存储到数据库，方便后续验证
-    await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
+    // 示例：await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
 
     // 返回生成的二维码和密钥
     res.json({
@@ -112,12 +112,9 @@ app.post('/api/admin/verify-2fa', async (req, res) => {
     return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
   }
 
-  // 从数据库获取管理员的 2FA 密钥
-  const snap = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
-  if (!snap.exists()) {
-    return res.status(400).json({ ok: false, message: '2FA 密钥不存在，请先生成二维码' });
-  }
-  const secret = snap.val();
+  // 从数据库获取管理员的 2FA 密钥（此处为假设，实际使用时需从数据库读取）
+  // 例如：const secret = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
+  const secret = '你的2FA密钥';  // 这里需要替换为从数据库中获取的密钥
 
   // 使用 speakeasy 库验证验证码
   const verified = speakeasy.totp.verify({
@@ -127,7 +124,6 @@ app.post('/api/admin/verify-2fa', async (req, res) => {
   });
 
   if (verified) {
-    await db.ref(`admins/${adminId}/2fa_enabled`).set(true);
     return res.json({ ok: true, message: '2FA 验证成功' });
   } else {
     return res.status(400).json({ ok: false, message: '验证码错误' });
@@ -2099,11 +2095,6 @@ app.post('/api/admin/login', async (req, res) => {
     if (!passOk)
       return res.status(401).json({ ok: false, error: 'incorrect password' });
 
-    // 检查 2FA 是否已启用
-    if (admin['2fa_enabled']) {
-      return res.json({ ok: true, needs_2fa: true, adminId: id });
-    }
-
     const token = uuidv4();  // 生成新 token
     await db.ref(`admins_by_token/${token}`).set({
       id,
@@ -2111,40 +2102,6 @@ app.post('/api/admin/login', async (req, res) => {
     });
 
     return res.json({ ok: true, token });  // 返回登录成功的 token
-
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-// 登录时的 2FA 验证
-app.post('/api/admin/verify-login-2fa', async (req, res) => {
-  try {
-    const { adminId, code } = req.body;
-    if (!adminId || !code)
-      return res.status(400).json({ ok: false, error: 'missing adminId/code' });
-
-    const snap = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
-    if (!snap.exists())
-      return res.status(400).json({ ok: false, error: '2FA not set up' });
-
-    const verified = speakeasy.totp.verify({
-      secret: snap.val(),
-      encoding: 'base32',
-      token: code
-    });
-
-    if (!verified)
-      return res.status(400).json({ ok: false, error: '2FA code incorrect' });
-
-    const token = uuidv4();
-    await db.ref(`admins_by_token/${token}`).set({
-      id: adminId,
-      created: now()
-    });
-
-    return res.json({ ok: true, token });
 
   } catch (e) {
     console.error(e);
