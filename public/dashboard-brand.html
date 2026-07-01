@@ -726,9 +726,10 @@ button {
   <div class="filters">
 
     <!-- 校验方式 -->
-    <select id="verifyType">
+    <select id="verifyType" onchange="onVerifyTypeChange()">
       <option value="address">钱包地址</option>
       <option value="order">订单号</option>
+      <option value="userId">用户ID</option>
     </select>
 
     <!-- 已提款的钱包地址 -->
@@ -740,7 +741,15 @@ button {
     <!-- 提款订单号 -->
     <input
       id="searchWithdrawOrder"
-      placeholder="订单号（当选择订单号校验时填写）"
+      placeholder="订单号"
+      style="display:none"
+    >
+
+    <!-- 用户ID -->
+    <input
+      id="searchWithdrawUserId"
+      placeholder="用户ID"
+      style="display:none"
     >
 
     <!-- 新提款密码 -->
@@ -2852,6 +2861,7 @@ async function resetWithdrawPassword() {
   const verifyType = document.getElementById('verifyType').value;
   const wallet = document.getElementById('searchWithdrawWallet').value.trim();
   const orderId = document.getElementById('searchWithdrawOrder').value.trim();
+  const userId = document.getElementById('searchWithdrawUserId').value.trim();
   const newPwd = document.getElementById('newWithdrawPassword').value.trim();
 
   if (!newPwd) {
@@ -2869,6 +2879,11 @@ async function resetWithdrawPassword() {
     return;
   }
 
+  if (verifyType === 'userId' && !userId) {
+    alert('请输入用户ID');
+    return;
+  }
+
   const payload = {
     verifyType,
     newWithdrawPwd: newPwd
@@ -2876,29 +2891,37 @@ async function resetWithdrawPassword() {
 
   if (verifyType === 'order') {
     payload.orderId = orderId;
-  } else {
+  } else if (verifyType === 'address') {
     payload.walletAddress = wallet;
+  } else if (verifyType === 'userId') {
+    payload.userId = userId;
   }
 
-  const res = await fetch('/api/admin/reset-withdraw-password', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  try {
+    const res = await fetch('/api/admin/reset-withdraw-password', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload)
+    });
 
-  const data = await res.json();
+    const data = await res.json();
 
- if (data.success) {
-  // 🔥 同步前端提款密码
-  localStorage.setItem(
-    'withdraw_password',
-    data.newWithdrawPassword
-  );
-
-  alert('提款密码已成功重置');
+    if (data.ok) {
+      alert('提款密码已成功重置');
+    } else {
+      alert(data.error || '校验失败，无法重置');
+    }
+  } catch(e) {
+    alert('请求失败: ' + e.message);
+  }
 }
-else {
-    alert(data.error || '校验失败，无法重置');
+
+function onVerifyTypeChange() {
+  const type = document.getElementById('verifyType').value;
+  document.getElementById('searchWithdrawWallet').style.display = type === 'address' ? '' : 'none';
+  document.getElementById('searchWithdrawOrder').style.display = type === 'order' ? '' : 'none';
+  document.getElementById('searchWithdrawUserId').style.display = type === 'userId' ? '' : 'none';
+}
   }
 }
 
