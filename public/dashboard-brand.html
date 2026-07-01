@@ -1142,7 +1142,7 @@ function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
 function setAdminPerms(p, isSuper){ try{ localStorage.setItem(ADMIN_PERMS_KEY, JSON.stringify(p)); localStorage.setItem(ADMIN_SUPER_KEY, isSuper?'1':'0'); }catch(e){} }
 function getAdminPerms(){ try{ return JSON.parse(localStorage.getItem(ADMIN_PERMS_KEY) || '{}'); }catch(e){ return {}; } }
-function isSuperAdmin(){ try{ return localStorage.getItem(ADMIN_SUPER_KEY) === '1'; }catch(e){ return false; } }
+function isSuperAdmin(){ try{ const v = localStorage.getItem(ADMIN_SUPER_KEY); if(v===null) return true; return v==='1'; }catch(e){ return true; } }
 function setAdminName(n){ try{ localStorage.setItem(ADMIN_NAME_KEY, n); }catch(e){} }
 function getAdminName(){ try{ return localStorage.getItem(ADMIN_NAME_KEY) || ''; }catch(e){ return ''; } }
 function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
@@ -1151,6 +1151,9 @@ function filterSidebar(){
   try {
     if(isSuperAdmin()) return; // 超级管理员显示全部
     const perms = getAdminPerms();
+    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
+    // 权限数据为空时不做过滤（兼容服务端尚未返回权限的场景）
+    if (!permCount) { console.log('[filterSidebar] perms empty, skip'); return; }
     const icons = document.querySelectorAll('.sidebar .icon[data-page]');
     if (!icons.length) return;
     icons.forEach(ic => {
@@ -1159,7 +1162,6 @@ function filterSidebar(){
       if (page === 'buysell')  show = !!perms.buysell;
       if (page === 'recharge') show = !!perms.recharge;
       if (page === 'withdraw') show = !!perms.withdraw;
-      const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
       if (page === 'members')  show = permCount >= 3;
       if (page === 'orders')   show = permCount >= 3;
       if (page === 'settings') show = false;
