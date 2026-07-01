@@ -2137,7 +2137,7 @@ app.get('/api/admin/list', async (req, res) => {
 // 删除管理员
 app.delete('/api/admin/delete', async (req, res) => {
   try {
-    const { id } = req.body;
+    const id = req.query.id || req.body.id;
     if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
 
     const auth = req.headers.authorization || '';
