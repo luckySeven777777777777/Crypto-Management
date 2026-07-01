@@ -2766,14 +2766,21 @@ function resetWithdrawPage() {
 /* -----------------------------
    Init
 ------------------------------ */
-  ensureLoggedIn().then(ok => { if (ok) loadDashboard(); });
-
-  // 检查 URL 中的 login 参数，预填登录表单账号
+  // 检查 URL 中的 login 参数：清除旧登录态，强制显示登录页
   (function prefillLoginFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const loginId = params.get('login');
     if (!loginId) return;
-    // 延迟一下等 DOM 就绪
+
+    // 清除已有的登录态，确保显示登录页面
+    try {
+      localStorage.removeItem('nexbit_admin_token');
+      localStorage.removeItem('nexbit_admin_perms');
+      localStorage.removeItem('nexbit_admin_super');
+      localStorage.removeItem('nexbit_admin_name');
+    } catch(e) {}
+
+    // 延迟等 DOM 就绪后预填账号
     setTimeout(() => {
       const nameInput = document.getElementById('adminName');
       if (nameInput) {
@@ -2787,6 +2794,8 @@ function resetWithdrawPage() {
       }
     }, 300);
   })();
+
+  ensureLoggedIn().then(ok => { if (ok) loadDashboard(); });
 
 </script>
 <script>
