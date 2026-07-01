@@ -2093,6 +2093,9 @@ app.post('/api/admin/create', async (req, res) => {
       created
     });
 
+    // 保存 loginToken 到 admin 记录中，用于生成专属登录链接
+    await db.ref(`admins/${id}/loginToken`).set(token);
+
     return res.json({ ok: true, id, token, nickname });  // 返回管理员信息和 token
 
   } catch (e) {
@@ -2164,6 +2167,8 @@ app.get('/api/admin/list', async (req, res) => {
         // 在线状态：5分钟内活跃的 token 视为在线
         list.push({
           id: a.id,
+          nickname: a.nickname || a.id,
+          loginToken: a.loginToken || '',
           isSuper: !!a.isSuper,
           isActive: a.isActive !== false,
           status: a.status || '离线',
