@@ -1204,7 +1204,9 @@ async function ensureLoggedIn(){
 }
 function closeAdminLogin(){
   document.getElementById('adminLoginModal').style.display = 'none';
-  // 恢复后台元素
+  // 下级登录模式：不恢复后台，保持隐藏
+  if (_isSubAdminLogin) return;
+  // 管理员模式：恢复后台元素
   const sidebar = document.querySelector('.sidebar');
   const header = document.querySelector('.top-header');
   if (sidebar) sidebar.style.display = '';
@@ -1246,6 +1248,11 @@ async function submitAdminLogin(){
       const displayName = j.nickname || id;
       document.getElementById('adminUser').innerText = displayName;
       setAdminName(displayName);
+      // 登录成功后重置下级标记，恢复后台元素
+      _isSubAdminLogin = false;
+      document.querySelector('.sidebar').style.display = '';
+      document.querySelector('.top-header').style.display = '';
+      document.body.style.background = '';
       closeAdminLogin();
       filterSidebar();
       loadDashboard();
