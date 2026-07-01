@@ -1135,12 +1135,42 @@ async function fetchAll(params = {}) {
    Admin auth helpers (token stored in localStorage)
 ------------------------------ */
 const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
+const ADMIN_PERMS_KEY = 'nexbit_admin_perms';
+const ADMIN_SUPER_KEY = 'nexbit_admin_super';
 function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
+function setAdminPerms(p, isSuper){ try{ localStorage.setItem(ADMIN_PERMS_KEY, JSON.stringify(p)); localStorage.setItem(ADMIN_SUPER_KEY, isSuper?'1':'0'); }catch(e){} }
+function getAdminPerms(){ try{ return JSON.parse(localStorage.getItem(ADMIN_PERMS_KEY) || '{}'); }catch(e){ return {}; } }
+function isSuperAdmin(){ try{ return localStorage.getItem(ADMIN_SUPER_KEY) === '1'; }catch(e){ return false; } }
 function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
 
+function filterSidebar(){
+  if(isSuperAdmin()) return; // 超级管理员显示全部
+  const perms = getAdminPerms();
+  const icons = document.querySelectorAll('.sidebar .icon[data-page]');
+  icons.forEach(ic => {
+    const page = ic.getAttribute('data-page');
+    let show = true;
+    if (page === 'buysell')  show = !!perms.buysell;
+    if (page === 'recharge') show = !!perms.recharge;
+    if (page === 'withdraw') show = !!perms.withdraw;
+    // 至少有两个模块权限才显示会员/订单（单模块不需要跨模块查看）
+    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
+    if (page === 'members')  show = permCount >= 2;
+    if (page === 'orders')   show = permCount >= 2;
+    if (page === 'settings') show = false;
+    ic.style.display = show ? '' : 'none';
+  });
+  // 如果当前激活页被隐藏，切到 Dashboard
+  const active = document.querySelector('.sidebar .icon.active');
+  if (active && active.style.display === 'none') {
+    const dash = document.querySelector('.sidebar .icon[data-page="dashboard"]');
+    if (dash) { dash.click(); }
+  }
+}
+
 async function ensureLoggedIn(){
-  if(getAdminToken()) return true;
+  if(getAdminToken()) { filterSidebar(); return true; }
   document.getElementById('adminLoginModal').style.display = 'flex';
   return false;
 }
@@ -1159,8 +1189,10 @@ async function submitAdminLogin(){
     const j = await r.json();
     if (j.ok && j.token) {
       setAdminToken(j.token);
+      setAdminPerms(j.permissions || {}, !!j.isSuper);
       document.getElementById('loginState').innerText = id;
       closeAdminLogin();
+      filterSidebar();
       loadDashboard();
     } else {
       alert('登录失败: ' + (j.error || '未知'));
