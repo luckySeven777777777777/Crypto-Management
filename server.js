@@ -2385,6 +2385,60 @@ app.post('/api/admin/login', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
+
+// 管理员重置用户提款密码
+app.post('/api/admin/reset-withdraw-password', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { verifyType, newWithdrawPwd, walletAddress, orderId, userId } = req.body;
+    if (!newWithdrawPwd)
+      return res.status(400).json({ ok: false, error: '新密码不能为空' });
+
+    let uid = null;
+
+    if (verifyType === 'address' && walletAddress) {
+      const withdrawSnap = await db.ref('orders/withdraw').once('value');
+      const orders = withdrawSnap.val() || {};
+      const found = Object.values(orders).find(o =>
+        o.wallet === walletAddress && o.status === 'success'
+      );
+      if (!found) return res.status(404).json({ ok: false, error: '未找到该钱包地址的成功提款记录' });
+      uid = found.userId;
+    } else if (verifyType === 'order' && orderId) {
+      const orderSnap = await db.ref('orders/withdraw/' + orderId).once('value');
+      if (!orderSnap.exists()) return res.status(404).json({ ok: false, error: '未找到该提款订单' });
+      const order = orderSnap.val();
+      if (order.status !== 'success') return res.status(400).json({ ok: false, error: '该订单尚未成功，无法重置密码' });
+      uid = order.userId;
+    } else if (verifyType === 'userId' && userId) {
+      const withdrawSnap = await db.ref('orders/withdraw').once('value');
+      const orders = withdrawSnap.val() || {};
+      const found = Object.values(orders).find(o =>
+        o.userId === userId && o.status === 'success'
+      );
+      if (!found) return res.status(404).json({ ok: false, error: '未找到该用户ID的成功提款记录' });
+      uid = userId;
+    } else {
+      return res.status(400).json({ ok: false, error: '请提供有效的校验信息' });
+    }
+
+    if (!uid) return res.status(400).json({ ok: false, error: '无法确定用户' });
+
+    await db.ref('users/' + uid + '/settings/withdrawPassword').set(newWithdrawPwd);
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('reset-withdraw-password error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
 /* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
    - prevents double-processing by checking 'processed' flag
