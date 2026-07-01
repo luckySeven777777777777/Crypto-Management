@@ -1182,6 +1182,11 @@ async function ensureLoggedIn(){
     if (sidebar) sidebar.style.display = 'none';
     if (header) header.style.display = 'none';
     document.body.style.background = '#1a1a2e';
+    // 强制清空浏览器自动填充的账号密码
+    setTimeout(() => {
+      document.getElementById('adminName').value = '';
+      document.getElementById('adminPassword').value = '';
+    }, 100);
   } else {
     // 管理员登录：恢复默认样式
     loginModal.style.background = 'rgba(0,0,0,0.6)';
