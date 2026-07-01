@@ -3008,11 +3008,11 @@ async function toggleAdminStatus(id, isActive){
 }
 
 async function deleteAdmin(id){
+  if (!id) { alert('缺少管理员ID'); return; }
   try {
-    const r = await fetch('/api/admin/delete', {
+    const r = await fetch('/api/admin/delete?id=' + encodeURIComponent(id), {
       method: 'DELETE',
-      headers: authHeaders(),
-      body: JSON.stringify({ id })
+      headers: authHeaders()
     });
     const j = await r.json();
     if (!j.ok) { alert('删除失败: ' + (j.error || '未知')); return; }
