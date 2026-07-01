@@ -1011,8 +1011,15 @@ if (end && t && new Date(t) > new Date(end + ' 23:59:59')) return false;
   if (coin !== currency.toUpperCase()) return false;
 }
 
-    // 4️⃣ 状态过滤
-    if (status && o.status !== status) return false;
+    // 4️⃣ 状态过滤（兼容 'failed' / 'rejected' 服务端映射）
+    if (status) {
+      const os = String(o.status || '').toLowerCase();
+      const fs = status.toLowerCase();
+      // 'failed' 和 'rejected' 视为等价（服务端拒绝后统一写为 rejected）
+      const isFail = (fs === 'failed' || fs === 'rejected');
+      const osIsFail = (os === 'failed' || os === 'rejected');
+      if (isFail ? !osIsFail : os !== fs) return false;
+    }
 
     // 5️⃣ 买卖方向（BuySell 专用）
     if (side && o.side !== side) return false;
@@ -2096,16 +2103,52 @@ postRenderDecorate();
 /* -----------------------------
    Members & Dashboard
 ------------------------------ */
+/* ===== 缅甸时间格式化 ===== */
+function formatMyanmarTime(ts) {
+  if (!ts) return '--';
+  // 兼容秒级/毫秒级时间戳：小于 1e12 视为秒级
+  let ms = Number(ts);
+  if (ms < 1e12) ms = ms * 1000;
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Yangon',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(new Date(ms));
+  } catch(e) {
+    // 降级：手动 UTC+6:30
+    const d = new Date(ms);
+    const utc = d.getTime() + d.getTimezoneOffset() * 60000;
+    const mmt = new Date(utc + (6 * 60 + 30) * 60000);
+    const pad = n => String(n).padStart(2, '0');
+    return `${mmt.getFullYear()}-${pad(mmt.getMonth() + 1)}-${pad(mmt.getDate())} ${pad(mmt.getHours())}:${pad(mmt.getMinutes())}:${pad(mmt.getSeconds())}`;
+  }
+}
+
 async function loadMembers(){
   const tbody = $('#m_table');
-  tbody.innerHTML = `<tr><td colspan="6">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="5">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll();
     const users = all.users || {};
+    const withdrawOrders = all.withdraw || [];
+
+    // 取每个会员最后一次提款使用的钱包地址
+    const walletMap = {};
+    withdrawOrders.forEach(o => {
+      if (o.userId && o.wallet && !walletMap[o.userId]) {
+        walletMap[o.userId] = o.wallet;
+      }
+    });
 
     if(!Object.keys(users).length){
-      tbody.innerHTML = `<tr><td colspan="6">暂无数据</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5">暂无数据</td></tr>`;
       return;
     }
 
@@ -2115,16 +2158,16 @@ async function loadMembers(){
       return `
       <tr>
         <td>${uid}</td>
-        <td>${u.wallet || '--'}</td>
-        <td>${u.createdAt || '--'}</td>
-        <td>${u.onlineAt || '--'}</td>
-        <td>${u.lastSeen || u.updated || '--'}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${walletMap[uid] || u.wallet || ''}">${walletMap[uid] || u.wallet || '--'}</td>
+        <td>${formatMyanmarTime(u.created) || '--'}</td>
+        <td>${formatMyanmarTime(u.loginTime) || '--'}</td>
+        <td>${formatMyanmarTime(u.lastOnline || u.updated) || '--'}</td>
       </tr>
       `;
     }).join('');
 
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="6">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">加载失败</td></tr>`;
   }
 }
 // ✅【就插在这里】—— loadDashboard 上面
