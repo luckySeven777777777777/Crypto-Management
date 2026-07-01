@@ -2285,6 +2285,10 @@ app.post('/api/admin/login', async (req, res) => {
     if (!passOk)
       return res.status(401).json({ ok: false, error: 'incorrect password' });
 
+    // 检查是否被禁用
+    if (admin.isActive === false)
+      return res.status(403).json({ ok: false, error: '账号已被禁用，请联系超级管理员' });
+
     const token = uuidv4();  // 生成新 token
     await db.ref(`admins_by_token/${token}`).set({
       id,
