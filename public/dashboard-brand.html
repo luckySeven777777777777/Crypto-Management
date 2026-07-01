@@ -454,7 +454,7 @@ button {
 <div class="card" id="rejectedCard">
   ❌ 已拒绝<br>
   <strong id="todayRejected">--</strong>
-  <div class="small" id="rejectedDetail" style="margin-top:4px"></div>
+  <div class="small" id="rejectedDetail" style="margin-top:4px;min-height:18px;display:block"></div>
 </div>
 
 <div class="card">
@@ -2335,13 +2335,14 @@ $('#todayWithdrawSum').innerText = sumUSDT(wOK).toFixed(2);
     $('#todayWithdraw').innerText += ` ${arrow(wToday.length, wYest.length)}`;
     const rejectedRecharge = rejectedToday.filter(o => o._type === 'recharge').length;
     const rejectedWithdraw = rejectedToday.filter(o => o._type === 'withdraw').length;
-    $('#todayRejected').innerText = rejectedToday.length;
+    const rejEl = document.getElementById('todayRejected');
+    if (rejEl) rejEl.innerText = rejectedToday.length;
     const rdEl = document.getElementById('rejectedDetail');
     if (rdEl) {
-      let parts = [];
-      parts.push('充值：' + rejectedRecharge);
-      parts.push('提款：' + rejectedWithdraw);
+      const parts = ['充值：' + rejectedRecharge, '提款：' + rejectedWithdraw];
       rdEl.innerText = parts.join('  ');
+    } else {
+      console.warn('[loadDashboard] #rejectedDetail 元素未找到');
     }
 $('#todayPending').innerText  = pendingToday.length;
 
@@ -2494,11 +2495,11 @@ function displayStatus(status){
 // ===== 缅甸时间零点自动清零（今日充值 / 今日提款 / 🔥 待处理）=====
 function getMyanmarMidnight() {
   const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const mmtNow = new Date(utc + (6 * 60 + 30) * 60000);
-  const mmtMidnight = new Date(mmtNow.getFullYear(), mmtNow.getMonth(), mmtNow.getDate(), 0, 0, 0);
-  const mmtMidnightUTC = new Date(mmtMidnight.getTime() - (6 * 60 + 30) * 60000);
-  return mmtMidnightUTC.getTime();
+  const mmtOffset = (6 * 60 + 30) * 60000; // UTC+6:30
+  const mmtMs = now.getTime() + now.getTimezoneOffset() * 60000 + mmtOffset;
+  const mmtDate = new Date(mmtMs);
+  // Myanmar 午夜对应 UTC 时间戳
+  return Date.UTC(mmtDate.getFullYear(), mmtDate.getMonth(), mmtDate.getDate()) - mmtOffset;
 }
 
 function scheduleMidnightReset() {
