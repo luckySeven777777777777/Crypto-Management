@@ -1156,25 +1156,20 @@ async function submitAdminLogin(){
       body: JSON.stringify({ id, password: pw }) 
     });
     const j = await r.json();
+    if (j.ok && j.needs_2fa) {
+      // 2FA 已启用，需要验证
+      document.getElementById('adminLoginModal').style.display = 'none';
+      hideAllPages();
+      document.getElementById('page-settings').style.display = 'block';
+      document.getElementById('gaBox').style.display = 'block';
+      document.getElementById('gaBox').setAttribute('data-mode', 'login');
+      document.getElementById('gaAdminId').value = j.adminId;
+      return;
+    }
+
     if (j.ok && j.token) {
-      localStorage.setItem('nexbit_admin_token', j.token); 
-      document.getElementById('loginState').innerText = id; 
-      alert('登录成功'); 
-
-      // 检查是否启用了2FA
-      const has2FA = await checkIf2FAEnabled(id);
-      console.log("2FA是否启用:", has2FA);
-
-      if (has2FA) {
-        // 显示2FA验证码输入框
-        document.getElementById('adminLoginModal').style.display = 'none'; 
-        document.getElementById('gaBox').style.display = 'block'; // 显示2FA输入框
-        document.getElementById('gaAdminId').value = id; // 填充管理员ID
-        return; 
-      }
-
-      // 如果没有启用2FA，直接登录
       setAdminToken(j.token);
+      document.getElementById('loginState').innerText = id;
       closeAdminLogin();
       loadDashboard();
     } else {
