@@ -1178,7 +1178,10 @@ async function submitAdminLogin(){
     
     if (j.ok && j.needs_2fa) {
       // 2FA 已启用，需要验证
-      document.getElementById('adminLoginModal').style.display = 'none'; 
+      document.getElementById('adminLoginModal').style.display = 'none';
+      // 确保 gaBox 所在的 settings 页面可见
+      hideAllPages();
+      document.getElementById('page-settings').style.display = 'block';
       document.getElementById('gaBox').style.display = 'block';
       document.getElementById('gaBox').setAttribute('data-mode', 'login');
       document.getElementById('gaAdminId').value = j.adminId;
