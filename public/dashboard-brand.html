@@ -428,7 +428,7 @@ button {
     <div id="page-dashboard" class="container">
       <div class="page-title">控制台</div>
 
-      <div class="grid">
+      <div class="grid" style="grid-template-columns:repeat(3,1fr)">
   <div class="card">
     今日充值<br>
     <strong id="todayRecharge">--</strong>
@@ -439,38 +439,6 @@ button {
     今日提款<br>
     <strong id="todayWithdraw">--</strong>
     <div class="small">USDT：<span id="todayWithdrawSum">--</span></div>
-  </div>
-<div class="grid" id="buysellSummary">
-  <div class="card">
-    💲 Buy 总额<br>
-    <strong id="sumBuy">0</strong>
-  </div>
-
-  <div class="card">
-    💱 Sell 总额<br>
-    <strong id="sumSell">0</strong>
-  </div>
-
-  <div class="card">
-    📊 盈亏<br>
-    <strong id="sumProfit">0</strong>
-  </div>
-</div>
-
-    <div class="card">
-    BuySell<br>
-
-    <div class="small">
-      Buy：<span id="todayBuySum">--</span>
-    </div>
-
-    <div class="small">
-      Sell：<span id="todaySellSum">--</span>
-    </div>
-
-    <div class="small" style="margin-top:4px">
-      笔数：<strong id="todayOrders">--</strong>
-    </div>
   </div>
 
 <div class="card pnl-card" id="pnlCard">
@@ -483,9 +451,10 @@ button {
     风控预警<br>
     <strong id="alertsCount">--</strong>
   </div>
-<div class="card">
+<div class="card" id="rejectedCard">
   ❌ 已拒绝<br>
   <strong id="todayRejected">--</strong>
+  <div class="small" id="rejectedDetail" style="margin-top:4px"></div>
 </div>
 
 <div class="card">
@@ -2324,13 +2293,6 @@ async function loadDashboard(){
     const sumUSDT = arr =>
       arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
 
-// ===== Dashboard BuySell 总统计（全量）=====
-const allBuySellSuccess = buysell.filter(o =>
-  String(o.status).toLowerCase() === 'success'
-);
-
-renderBuySellSummary(allBuySellSuccess);
-
 
     // ===== 今日数量（只算已通过）=====
 const rOK = rToday.filter(isOrderApproved);
@@ -2361,24 +2323,26 @@ const sellSum = sumUSDT(bSell);
 // 数量（已通过）
 $('#todayRecharge').innerText = rOK.length;
 $('#todayWithdraw').innerText = wOK.length;
-$('#todayOrders').innerText  = bOK.length;
 
 // 金额（已通过）
 $('#todayRechargeSum').innerText = sumUSDT(rOK).toFixed(2);
 $('#todayWithdrawSum').innerText = sumUSDT(wOK).toFixed(2);
-$('#todayBuySum').innerText  = buySum.toFixed(2);
-$('#todaySellSum').innerText = sellSum.toFixed(2);
     // ===== ↑ ↓ 对比 =====
     const arrow = (t,y) =>
       t > y ? '↑' : t < y ? '↓' : '–';
 
     $('#todayRecharge').innerText += ` ${arrow(rToday.length, rYest.length)}`;
     $('#todayWithdraw').innerText += ` ${arrow(wToday.length, wYest.length)}`;
-    $('#todayOrders').innerText += ` ${arrow(
-  bOK.length,
-  bYest.filter(isOrderApproved).length
-)}`;
+    const rejectedRecharge = rejectedToday.filter(o => o._type === 'recharge').length;
+    const rejectedWithdraw = rejectedToday.filter(o => o._type === 'withdraw').length;
     $('#todayRejected').innerText = rejectedToday.length;
+    const rdEl = document.getElementById('rejectedDetail');
+    if (rdEl) {
+      let parts = [];
+      if (rejectedRecharge > 0) parts.push('充值：' + rejectedRecharge);
+      if (rejectedWithdraw > 0) parts.push('提款：' + rejectedWithdraw);
+      rdEl.innerText = parts.join('  ');
+    }
 $('#todayPending').innerText  = pendingToday.length;
 
     // ===== 风控 =====
@@ -2527,49 +2491,41 @@ function displayStatus(status){
   return records;
 }
 
-function resetDataAtMidnightMMT() {
-  // 获取当前缅甸时间（MMT）
-  const mmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Yangon',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(new Date());
+// ===== 缅甸时间零点自动清零（今日充值 / 今日提款 / 🔥 待处理）=====
+function getMyanmarMidnight() {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const mmtNow = new Date(utc + (6 * 60 + 30) * 60000);
+  const mmtMidnight = new Date(mmtNow.getFullYear(), mmtNow.getMonth(), mmtNow.getDate(), 0, 0, 0);
+  const mmtMidnightUTC = new Date(mmtMidnight.getTime() - (6 * 60 + 30) * 60000);
+  return mmtMidnightUTC.getTime();
+}
 
-  // 获取当前缅甸时间的时、分、秒
-  const hour = parseInt(mmt.find(part => part.type === 'hour').value, 10);
-  const minute = parseInt(mmt.find(part => part.type === 'minute').value, 10);
-  const second = parseInt(mmt.find(part => part.type === 'second').value, 10);
-
-  // 如果当前时间已经过了午夜零点（缅甸时间），则重置数据
-  const midnight = new Date();
-  midnight.setHours(0, 0, 0, 0); // 今日零点
-  const nextMidnight = new Date(midnight.getTime() + 24 * 60 * 60 * 1000); // 下一次零点
-
-  // 如果当前时间已经超过了零点，则立即重置数据
-  if (hour === 0 && minute === 0 && second === 0) {
-    resetDashboardData(); // 执行重置数据的操作
+function scheduleMidnightReset() {
+  const now = Date.now();
+  const midnight = getMyanmarMidnight();
+  let nextMidnight = midnight;
+  if (now >= midnight) {
+    nextMidnight = midnight + 24 * 60 * 60 * 1000;
   }
-
-  // 设置定时器，在下一个缅甸时间零点时重置数据
+  const delay = nextMidnight - now;
   setTimeout(() => {
-    resetDashboardData(); // 执行重置数据的操作
-  }, nextMidnight - new Date()); // 距离下一次缅甸时间零点的时间间隔
+    var el1 = document.getElementById('todayRecharge');
+    var el2 = document.getElementById('todayWithdraw');
+    var el3 = document.getElementById('todayPending');
+    if (el1) el1.innerText = '0';
+    if (el2) el2.innerText = '0';
+    if (el3) el3.innerText = '0';
+    var el1s = document.getElementById('todayRechargeSum');
+    var el2s = document.getElementById('todayWithdrawSum');
+    if (el1s) el1s.innerText = '0.00';
+    if (el2s) el2s.innerText = '0.00';
+    var rd = document.getElementById('rejectedDetail');
+    if (rd) rd.innerText = '';
+    scheduleMidnightReset();
+  }, delay);
 }
-
-function resetDashboardData() {
-  // 重置页面上的数据
-  $('#todayRecharge').textContent = 0;
-  $('#todayWithdraw').textContent = 0;
-  $('#todayBuySum').textContent = 0;
-  $('#todaySellSum').textContent = 0;
-  $('#todayOrders').textContent = 0;
-  // 其他需要重置的数据...
-}
-
-// 页面加载时检查时间并重置数据
-// 页面加载时检查时间并重置数据
-resetDataAtMidnightMMT();
+scheduleMidnightReset();
 
 // 获取昨日数据并展示
 function loadYesterdayData() {
@@ -3065,55 +3021,7 @@ async function resetAdminLoginPassword(){
   }
 }
 </script>
-<script>
-/**
- * 今日统计自动清零 & 自动恢复
- * 不影响任何现有功能
- */
 
-(function () {
-  const TODAY_KEY = 'dashboard_today_date';
-
-  function getToday() {
-    const d = new Date();
-    return d.getFullYear() + '-' +
-      String(d.getMonth() + 1).padStart(2, '0') + '-' +
-      String(d.getDate()).padStart(2, '0');
-  }
-
-  function resetTodayStats() {
-    //⚠️ 只清“今日相关”
-    localStorage.setItem('today_recharge', '0');
-    localStorage.setItem('today_withdraw', '0');
-
-    // 若你是用 innerText 渲染
-    const rechargeEl = document.querySelector('[data-today-recharge]');
-    const withdrawEl = document.querySelector('[data-today-withdraw]');
-
-    if (rechargeEl) rechargeEl.innerText = '0';
-    if (withdrawEl) withdrawEl.innerText = '0';
-
-    console.log('[Dashboard] 已跨天，今日统计已清零');
-  }
-
-  function checkDayChange() {
-    const today = getToday();
-    const saved = localStorage.getItem(TODAY_KEY);
-
-    if (saved !== today) {
-      localStorage.setItem(TODAY_KEY, today);
-      resetTodayStats();
-    }
-  }
-
-  // 页面加载立即检查一次
-  checkDayChange();
-
-  // 每 60 秒检查一次是否跨天（不用刷新页面）
-  setInterval(checkDayChange, 60 * 1000);
-
-})();
-</script>
 
 </body>
 </html>
