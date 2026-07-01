@@ -2055,12 +2055,34 @@ app.post('/api/admin/create', async (req, res) => {
     const token = uuidv4();  // 生成管理员 token
     const created = now();   // 获取当前时间戳
 
+    // 提取创建人（当前登录管理员）
+    let createdBy = 'system';
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+      const callerToken = authHeader.slice(7);
+      const callerSnap = await db.ref(`admins_by_token/${callerToken}`).once('value');
+      if (callerSnap.exists()) {
+        createdBy = callerSnap.val().id;
+      }
+    }
+
+    // 权限处理
+    const permissions = {
+      recharge: req.body.recharge === true || req.body.recharge === 'true',
+      withdraw: req.body.withdraw === true || req.body.withdraw === 'true',
+      buysell:  req.body.buysell  === true || req.body.buysell  === 'true'
+    };
+
     // 保存管理员信息到 Firebase 数据库
     await db.ref(`admins/${id}`).set({
       id,
       hashed,
       created,
-      isSuper: false   // 设置为普通管理员，修改为 true 则为超级管理员
+      isSuper: false,   // 设置为普通管理员，修改为 true 则为超级管理员
+      isActive: true,   // 默认启用
+      status: '离线',   // 初始状态离线
+      permissions,
+      createdBy
     });
 
     // 生成管理员 token
@@ -2073,6 +2095,174 @@ app.post('/api/admin/create', async (req, res) => {
 
   } catch (e) {
     console.error('admin create error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 管理员列表
+app.get('/api/admin/list', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref('admins').once('value');
+    const list = [];
+    if (snap.exists()) {
+      snap.forEach(child => {
+        const a = child.val();
+        // 在线状态：5分钟内活跃的 token 视为在线
+        list.push({
+          id: a.id,
+          isSuper: !!a.isSuper,
+          isActive: a.isActive !== false,
+          status: a.status || '离线',
+          permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
+          createdBy: a.createdBy || 'system',
+          created: a.created || 0,
+          lastLogin: a.lastLogin || 0
+        });
+      });
+    }
+    return res.json({ ok: true, admins: list });
+  } catch (e) {
+    console.error('admin list error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 删除管理员
+app.delete('/api/admin/delete', async (req, res) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    // 清理相关 token
+    const tokenSnap = await db.ref('admins_by_token').once('value');
+    if (tokenSnap.exists()) {
+      const deletions = [];
+      tokenSnap.forEach(child => {
+        if (child.val().id === id) deletions.push(child.key);
+      });
+      for (const tk of deletions) {
+        await db.ref(`admins_by_token/${tk}`).remove();
+      }
+    }
+
+    await db.ref(`admins/${id}`).remove();
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin delete error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 启用/禁用管理员
+app.post('/api/admin/toggle-status', async (req, res) => {
+  try {
+    const { id, isActive } = req.body;
+    if (!id || isActive === undefined)
+      return res.status(400).json({ ok: false, error: 'missing id/isActive' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    await db.ref(`admins/${id}`).update({ isActive });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin toggle-status error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 更新管理员权限
+app.post('/api/admin/update-permissions', async (req, res) => {
+  try {
+    const { id, permissions } = req.body;
+    if (!id || !permissions)
+      return res.status(400).json({ ok: false, error: 'missing id/permissions' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    await db.ref(`admins/${id}/permissions`).set({
+      recharge: !!permissions.recharge,
+      withdraw: !!permissions.withdraw,
+      buysell:  !!permissions.buysell
+    });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin update-permissions error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 重置管理员登录密码
+app.post('/api/admin/reset-password', async (req, res) => {
+  try {
+    const { id, newPassword } = req.body;
+    if (!id || !newPassword)
+      return res.status(400).json({ ok: false, error: 'missing id/newPassword' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await db.ref(`admins/${id}/hashed`).set(hashed);
+
+    // 使其所有现有 token 失效
+    const tokenSnap = await db.ref('admins_by_token').once('value');
+    if (tokenSnap.exists()) {
+      const deletions = [];
+      tokenSnap.forEach(child => {
+        if (child.val().id === id) deletions.push(child.key);
+      });
+      for (const tk of deletions) {
+        await db.ref(`admins_by_token/${tk}`).remove();
+      }
+    }
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin reset-password error', e);
     return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
@@ -2100,6 +2290,9 @@ app.post('/api/admin/login', async (req, res) => {
       id,
       created: now()  // 保存 token 和创建时间
     });
+
+    // 更新状态为在线并记录最后登录时间
+    await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
 
     return res.json({ ok: true, token });  // 返回登录成功的 token
 
