@@ -1543,14 +1543,18 @@ function calcSummary(list, type){
 function renderRechargeRow(o) {
   return `
 <tr>
-  <!-- 订单ID + 用户ID -->
+  <!-- 订单号 -->
   <td>
     <div class="order-id">${o.orderId || '--'}</div>
-    <div class="small" style="color:#1976d2; font-weight:600">${o.userId || '--'}</div>
   </td>
 
   <!-- 时间 -->
   <td>${o.time_us || '--'}</td>
+
+  <!-- 用户ID -->
+  <td>
+    <span style="font-weight:600;color:#1976d2">${o.userId || '--'}</span>
+  </td>
 
   <!-- 类型 -->
   <td>充值</td>
@@ -1620,14 +1624,18 @@ function renderRechargeRow(o) {
 function renderWithdrawRow(o) {
   return `
 <tr>
-  <!-- 订单ID + 用户ID -->
+  <!-- 订单号 -->
   <td>
     <div class="order-id">${o.orderId || '--'}</div>
-    <div class="small" style="color:#1976d2; font-weight:600">${o.userId || '--'}</div>
   </td>
 
   <!-- 时间 -->
   <td>${o.time_us || '--'}</td>
+
+  <!-- 用户ID -->
+  <td>
+    <span style="font-weight:600;color:#1976d2">${o.userId || '--'}</span>
+  </td>
 
   <!-- 类型 -->
   <td>提款</td>
@@ -2054,11 +2062,9 @@ const pageList = paginate(rows, pageState.o);
 // ✅ 渲染表格（分页后的数据）
 tbody.innerHTML =
   pageList.map(o => {
-    const typeText = {
-      recharge: '充值',
-      withdraw: '提款',
-      buysell: '买卖'
-    }[o._type] || o._type;
+    const typeText = o._type === 'buysell'
+      ? (String(o.side || '').toLowerCase() || '--')
+      : ({ recharge: '充值', withdraw: '提款' }[o._type] || o._type);
 
     return `<tr>
       <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
