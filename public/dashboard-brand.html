@@ -729,6 +729,7 @@ button {
     <select id="verifyType">
       <option value="address">钱包地址</option>
       <option value="order">订单号</option>
+      <option value="userid">用户ID</option>
     </select>
 
     <!-- 已提款的钱包地址 -->
@@ -741,6 +742,12 @@ button {
     <input
       id="searchWithdrawOrder"
       placeholder="订单号（当选择订单号校验时填写）"
+    >
+
+    <!-- 用户ID（新增） -->
+    <input
+      id="searchWithdrawUserId"
+      placeholder="用户ID"
     >
 
     <!-- 新提款密码 -->
@@ -2852,6 +2859,7 @@ async function resetWithdrawPassword() {
   const verifyType = document.getElementById('verifyType').value;
   const wallet = document.getElementById('searchWithdrawWallet').value.trim();
   const orderId = document.getElementById('searchWithdrawOrder').value.trim();
+  const userId = document.getElementById('searchWithdrawUserId').value.trim();
   const newPwd = document.getElementById('newWithdrawPassword').value.trim();
 
   if (!newPwd) {
@@ -2859,45 +2867,38 @@ async function resetWithdrawPassword() {
     return;
   }
 
-  if (verifyType === 'order' && !orderId) {
-    alert('请输入提款订单号');
-    return;
-  }
-
-  if (verifyType === 'address' && !wallet) {
-    alert('请输入已提款的钱包地址');
+  // 至少填一个校验字段
+  if (!wallet && !orderId && !userId) {
+    alert('请至少填写一个校验信息（钱包地址 / 订单号 / 用户ID）');
     return;
   }
 
   const payload = {
-    verifyType,
     newWithdrawPwd: newPwd
   };
 
-  if (verifyType === 'order') {
-    payload.orderId = orderId;
-  } else {
-    payload.walletAddress = wallet;
-  }
+  if (wallet) payload.walletAddress = wallet;
+  if (orderId) payload.orderId = orderId;
+  if (userId) payload.userId = userId;
 
   const res = await fetch('/api/admin/reset-withdraw-password', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + (localStorage.getItem('nexbit_admin_token') || '')
+    },
     body: JSON.stringify(payload)
   });
 
   const data = await res.json();
 
- if (data.success) {
-  // 🔥 同步前端提款密码
-  localStorage.setItem(
-    'withdraw_password',
-    data.newWithdrawPassword
-  );
-
-  alert('提款密码已成功重置');
-}
-else {
+  if (data.success) {
+    localStorage.setItem(
+      'withdraw_password',
+      data.newWithdrawPassword
+    );
+    alert('提款密码已成功重置');
+  } else {
     alert(data.error || '校验失败，无法重置');
   }
 }
