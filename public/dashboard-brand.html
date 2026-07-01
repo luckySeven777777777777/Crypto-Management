@@ -1167,6 +1167,7 @@ function restoreLoginState(){
 
 async function ensureLoggedIn(){
   if(getAdminToken()) { restoreLoginState(); filterSidebar(); return true; }
+  hideAllPages();
   document.getElementById('adminLoginModal').style.display = 'flex';
   return false;
 }
