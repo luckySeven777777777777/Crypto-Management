@@ -664,6 +664,7 @@ button {
 
     <div class="filters">
       <input id="newAdminId" placeholder="管理员账号">
+      <input id="newAdminNickname" placeholder="昵称（显示用）">
       <input id="newAdminPassword" placeholder="初始密码">
 
       <label><input type="checkbox" value="recharge"> 充值</label>
@@ -678,12 +679,13 @@ button {
         <tr>
           <th>账号</th>
           <th>权限</th>
+          <th>登录链接</th>
           <th>状态</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="4">加载中...</td></tr>
+        <tr><td colspan="5">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -1201,8 +1203,9 @@ async function submitAdminLogin(){
         } catch(e) { console.error('[submitAdminLogin] 补拉权限失败', e); }
       }
       setAdminPerms(perms, isSuper);
-      document.getElementById('adminUser').innerText = id;
-      setAdminName(id);
+      const displayName = j.nickname || id;
+      document.getElementById('adminUser').innerText = displayName;
+      setAdminName(displayName);
       closeAdminLogin();
       filterSidebar();
       loadDashboard();
@@ -2842,8 +2845,10 @@ async function loadAdmins(){
 
 function renderAdminTable(admins){
   const tbody = document.getElementById('adminTable');
+  // 过滤掉空白ID的异常账号
+  admins = admins.filter(a => a.id && a.id.trim());
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="4">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5">暂无管理员</td></tr>';
     return;
   }
   let html = '';
@@ -2854,6 +2859,7 @@ function renderAdminTable(admins){
     const toggleLabel = a.isActive ? '禁用' : '启用';
     const toggleClass = a.isActive ? 'secondary' : 'primary';
     const star = a.isSuper ? ' <span style="color:gold">★</span>' : '';
+    const loginUrl = window.location.origin + window.location.pathname;
 
     html += '<tr>' +
       '<td>' + escHtml1(a.id) + star + '</td>' +
@@ -2861,6 +2867,10 @@ function renderAdminTable(admins){
         '<label><input type="checkbox" data-field="recharge" ' + (perms.recharge ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 充值</label> ' +
         '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
         '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label>' +
+      '</td>' +
+      '<td>' +
+        '<span class="small" style="word-break:break-all">' + escHtml1(loginUrl) + '</span>' +
+        '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(a.id) + '\')">复制登录链接</button>' +
       '</td>' +
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
       '<td>' +
@@ -2881,8 +2891,10 @@ function escHtml1(s){
 
 async function createAdmin(){
   const idEl = document.getElementById('newAdminId');
+  const nickEl = document.getElementById('newAdminNickname');
   const pwEl = document.getElementById('newAdminPassword');
   const id = idEl.value.trim();
+  const nickname = nickEl.value.trim();
   const password = pwEl.value;
   if (!id || !password) return alert('请输入管理员账号和密码');
 
@@ -2896,7 +2908,7 @@ async function createAdmin(){
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({
-        id, password,
+        id, nickname: nickname || id, password,
         recharge: cb('recharge'),
         withdraw: cb('withdraw'),
         buysell:  cb('buysell')
@@ -2905,7 +2917,10 @@ async function createAdmin(){
     const j = await r.json();
     if (!j.ok) { alert('创建失败: ' + (j.error || '未知')); return; }
     idEl.value = '';
+    nickEl.value = '';
     pwEl.value = '';
+    const uniqueUrl = window.location.origin + window.location.pathname + '?admin_token=' + j.token;
+    alert('创建成功！\n账号：' + id + '\n昵称：' + (nickname || id) + '\n专属登录链接：\n' + uniqueUrl);
     loadAdmins();
   } catch(e) {
     alert('创建失败: ' + e.message);
@@ -2984,6 +2999,45 @@ async function resetAdminLoginPassword(){
     alert('重置失败: ' + e.message);
   }
 }
+
+function copyLoginLink(id) {
+  const url = window.location.origin + window.location.pathname;
+  navigator.clipboard.writeText(url).then(() => {
+    alert('登录链接已复制！\n\n账号：' + id + '\n\n请将链接和账号密码一起发给下级管理员。');
+  }).catch(() => {
+    prompt('请手动复制登录链接：', url);
+  });
+}
+
+// 自动登录：检查 URL 中的 admin_token 参数
+(async function autoLoginFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('admin_token');
+  if (!token) return;
+
+  try {
+    setAdminToken(token);
+    const r = await fetch('/api/admin/me', { headers: authHeaders() });
+    const j = await r.json();
+    if (j.ok) {
+      setAdminPerms(j.permissions || {}, !!j.isSuper);
+      const displayName = j.nickname || j.id || '管理员';
+      document.getElementById('adminUser').innerText = displayName;
+      setAdminName(displayName);
+      // 清除 URL 中的 token 参数
+      if (window.history && window.history.replaceState) {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+      filterSidebar();
+      loadDashboard();
+    } else {
+      localStorage.removeItem('nexbit_admin_token');
+    }
+  } catch(e) {
+    localStorage.removeItem('nexbit_admin_token');
+  }
+})();
 </script>
 
 
