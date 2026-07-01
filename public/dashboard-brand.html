@@ -2766,14 +2766,27 @@ function resetWithdrawPage() {
 /* -----------------------------
    Init
 ------------------------------ */
-  // 自动登录：先于 ensureLoggedIn 检查 admin_token
-  const _autoToken = new URLSearchParams(window.location.search).get('admin_token');
-  if (_autoToken) {
-    setAdminToken(_autoToken);
-    // 不调用 ensureLoggedIn，由 autoLoginFromUrl IIFE 处理后续
-  } else {
-    ensureLoggedIn().then(ok => { if (ok) loadDashboard(); });
-  }
+  ensureLoggedIn().then(ok => { if (ok) loadDashboard(); });
+
+  // 检查 URL 中的 login 参数，预填登录表单账号
+  (function prefillLoginFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const loginId = params.get('login');
+    if (!loginId) return;
+    // 延迟一下等 DOM 就绪
+    setTimeout(() => {
+      const nameInput = document.getElementById('adminName');
+      if (nameInput) {
+        nameInput.value = loginId;
+        document.getElementById('adminPassword')?.focus();
+      }
+      // 清除 URL 参数
+      if (window.history && window.history.replaceState) {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    }, 300);
+  })();
 
 </script>
 <script>
@@ -2866,10 +2879,7 @@ function renderAdminTable(admins){
     const toggleLabel = a.isActive ? '禁用' : '启用';
     const toggleClass = a.isActive ? 'secondary' : 'primary';
     const star = a.isSuper ? ' <span style="color:gold">★</span>' : '';
-    const loginToken = a.loginToken || '';
-    const uniqueUrl = loginToken
-      ? window.location.origin + window.location.pathname + '?admin_token=' + loginToken
-      : window.location.origin + window.location.pathname;
+    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(a.id);
 
     html += '<tr>' +
       '<td>' + escHtml1(a.id) + star + '</td>' +
@@ -2929,8 +2939,8 @@ async function createAdmin(){
     idEl.value = '';
     nickEl.value = '';
     pwEl.value = '';
-    const uniqueUrl = window.location.origin + window.location.pathname + '?admin_token=' + j.token;
-    alert('创建成功！\n账号：' + id + '\n昵称：' + (nickname || id) + '\n专属登录链接：\n' + uniqueUrl);
+    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(id);
+    alert('创建成功！\n账号：' + id + '\n昵称：' + (nickname || id) + '\n初始密码：' + password + '\n专属登录链接：\n' + uniqueUrl);
     loadAdmins();
   } catch(e) {
     alert('创建失败: ' + e.message);
@@ -3012,50 +3022,11 @@ async function resetAdminLoginPassword(){
 
 function copyLoginLink(url) {
   navigator.clipboard.writeText(url).then(() => {
-    alert('专属登录链接已复制！\n\n请将此链接发给下级管理员，点击即可自动登录。');
+    alert('专属登录链接已复制！\n\n下级打开链接后输入密码即可登录。');
   }).catch(() => {
     prompt('请手动复制登录链接：', url);
   });
 }
-
-// 自动登录：检查 URL 中的 admin_token 参数
-(async function autoLoginFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('admin_token');
-  if (!token) return;
-
-  try {
-    setAdminToken(token);
-    const r = await fetch('/api/admin/me', { headers: authHeaders() });
-    const j = await r.json();
-    if (j.ok) {
-      setAdminPerms(j.permissions || {}, !!j.isSuper);
-      const displayName = j.nickname || j.id || '管理员';
-      document.getElementById('adminUser').innerText = displayName;
-      setAdminName(displayName);
-      // 关闭可能弹出的登录窗口
-      const loginModal = document.getElementById('adminLoginModal');
-      if (loginModal) loginModal.style.display = 'none';
-      // 清除 URL 中的 token 参数
-      if (window.history && window.history.replaceState) {
-        const cleanUrl = window.location.origin + window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
-      }
-      filterSidebar();
-      loadDashboard();
-    } else {
-      localStorage.removeItem('nexbit_admin_token');
-      localStorage.removeItem('nexbit_admin_perms');
-      localStorage.removeItem('nexbit_admin_super');
-      alert('自动登录失败，链接可能已过期。请联系管理员获取新链接。');
-    }
-  } catch(e) {
-    localStorage.removeItem('nexbit_admin_token');
-    localStorage.removeItem('nexbit_admin_perms');
-    localStorage.removeItem('nexbit_admin_super');
-    alert('自动登录失败：' + e.message);
-  }
-})();
 </script>
 
 
