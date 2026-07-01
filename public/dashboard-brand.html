@@ -1137,40 +1137,56 @@ async function fetchAll(params = {}) {
 const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
 const ADMIN_PERMS_KEY = 'nexbit_admin_perms';
 const ADMIN_SUPER_KEY = 'nexbit_admin_super';
+const ADMIN_NAME_KEY  = 'nexbit_admin_name';
 function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
 function setAdminPerms(p, isSuper){ try{ localStorage.setItem(ADMIN_PERMS_KEY, JSON.stringify(p)); localStorage.setItem(ADMIN_SUPER_KEY, isSuper?'1':'0'); }catch(e){} }
 function getAdminPerms(){ try{ return JSON.parse(localStorage.getItem(ADMIN_PERMS_KEY) || '{}'); }catch(e){ return {}; } }
 function isSuperAdmin(){ try{ return localStorage.getItem(ADMIN_SUPER_KEY) === '1'; }catch(e){ return false; } }
+function setAdminName(n){ try{ localStorage.setItem(ADMIN_NAME_KEY, n); }catch(e){} }
+function getAdminName(){ try{ return localStorage.getItem(ADMIN_NAME_KEY) || ''; }catch(e){ return ''; } }
 function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
 
 function filterSidebar(){
-  if(isSuperAdmin()) return; // 超级管理员显示全部
-  const perms = getAdminPerms();
-  const icons = document.querySelectorAll('.sidebar .icon[data-page]');
-  icons.forEach(ic => {
-    const page = ic.getAttribute('data-page');
-    let show = true;
-    if (page === 'buysell')  show = !!perms.buysell;
-    if (page === 'recharge') show = !!perms.recharge;
-    if (page === 'withdraw') show = !!perms.withdraw;
-    // 至少有两个模块权限才显示会员/订单（单模块不需要跨模块查看）
-    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
-    if (page === 'members')  show = permCount >= 2;
-    if (page === 'orders')   show = permCount >= 2;
-    if (page === 'settings') show = false;
-    ic.style.display = show ? '' : 'none';
-  });
-  // 如果当前激活页被隐藏，切到 Dashboard
-  const active = document.querySelector('.sidebar .icon.active');
-  if (active && active.style.display === 'none') {
-    const dash = document.querySelector('.sidebar .icon[data-page="dashboard"]');
-    if (dash) { dash.click(); }
+  try {
+    if(isSuperAdmin()) return; // 超级管理员显示全部
+    const perms = getAdminPerms();
+    const icons = document.querySelectorAll('.sidebar .icon[data-page]');
+    if (!icons.length) return;
+    icons.forEach(ic => {
+      const page = ic.getAttribute('data-page');
+      let show = true;
+      if (page === 'buysell')  show = !!perms.buysell;
+      if (page === 'recharge') show = !!perms.recharge;
+      if (page === 'withdraw') show = !!perms.withdraw;
+      const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
+      if (page === 'members')  show = permCount >= 2;
+      if (page === 'orders')   show = permCount >= 2;
+      if (page === 'settings') show = false;
+      ic.style.display = show ? '' : 'none';
+    });
+    // 如果当前激活页被隐藏，切到 Dashboard
+    const active = document.querySelector('.sidebar .icon.active');
+    if (active && active.style.display === 'none') {
+      const dash = document.querySelector('.sidebar .icon[data-page="dashboard"]');
+      if (dash) { dash.click(); }
+    }
+    console.log('[filterSidebar] perms=', perms, 'isSuper=', isSuperAdmin());
+  } catch(e) {
+    console.error('[filterSidebar] error', e);
+  }
+}
+
+function restoreLoginState(){
+  const name = getAdminName();
+  if (name && getAdminToken()) {
+    const el = document.getElementById('loginState');
+    if (el) el.innerText = name;
   }
 }
 
 async function ensureLoggedIn(){
-  if(getAdminToken()) { filterSidebar(); return true; }
+  if(getAdminToken()) { restoreLoginState(); filterSidebar(); return true; }
   document.getElementById('adminLoginModal').style.display = 'flex';
   return false;
 }
@@ -1191,6 +1207,7 @@ async function submitAdminLogin(){
       setAdminToken(j.token);
       setAdminPerms(j.permissions || {}, !!j.isSuper);
       document.getElementById('loginState').innerText = id;
+      setAdminName(id);
       closeAdminLogin();
       filterSidebar();
       loadDashboard();
