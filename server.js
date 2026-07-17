@@ -2311,6 +2311,50 @@ app.post('/api/admin/update-permissions', async (req, res) => {
   }
 });
 
+// 推送配置更新给下级管理员
+app.post('/api/admin/push-update', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { id } = req.body;
+    if (!id)
+      return res.status(400).json({ ok: false, error: 'missing id' });
+
+    await db.ref(`admins/${id}/configVersion`).set(now());
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin push-update error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 检查是否有配置更新
+app.get('/api/admin/check-update', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const id = req.query.id || '';
+    if (!id)
+      return res.status(400).json({ ok: false, error: 'missing id' });
+
+    const snap = await db.ref(`admins/${id}/configVersion`).once('value');
+    return res.json({ ok: true, configVersion: snap.exists() ? snap.val() : 0 });
+  } catch (e) {
+    console.error('admin check-update error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
 // 重置管理员登录密码
 app.post('/api/admin/reset-password', async (req, res) => {
   try {
