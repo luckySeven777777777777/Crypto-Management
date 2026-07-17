@@ -3195,7 +3195,7 @@ function renderAdminTable(admins){
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
       '<td>' +
         '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
-        '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\')">更新</button> ' +
+        '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
         '<button class="danger" onclick="if(confirm(\'确认删除管理员 ' + escHtml1(a.id) + '？\'))deleteAdmin(\'' + escHtml1(a.id) + '\')">删除</button>' +
         '<div class="small">创建人: ' + escHtml1(a.createdBy || 'system') + '</div>' +
       '</td>' +
@@ -3330,8 +3330,25 @@ function copyLoginLink(url) {
 }
 
 // 推送配置更新给下级管理员
-async function pushAdminUpdate(id) {
+async function pushAdminUpdate(id, btn) {
   if (!id) return;
+
+  // 先保存当前复选框权限到 Firebase（确保点击更新时权限已落库）
+  if (btn) {
+    const tr = btn.closest('tr');
+    const cbs = tr.querySelectorAll('input[data-field]');
+    const perms = { recharge: false, withdraw: false, buysell: false };
+    cbs.forEach(cb => {
+      perms[cb.getAttribute('data-field')] = cb.checked;
+    });
+
+    await fetch('/api/admin/update-permissions', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id, permissions: perms })
+    });
+  }
+
   try {
     const r = await fetch('/api/admin/push-update', {
       method: 'POST',
