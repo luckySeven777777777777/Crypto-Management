@@ -396,6 +396,88 @@ button {
   100%{box-shadow:0 0 10px rgba(255,255,255,.15)}
 }
 
+/* ===== 会员标签颜色 ===== */
+.member-row-yellow { background: #fffde7 !important; }
+.member-row-green  { background: #e8f5e9 !important; }
+.member-row-black  { background: #f5f5f5 !important; }
+.member-row-red    { background: #ffebee !important; }
+
+.member-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.dot-yellow { background: #ffbb33; }
+.dot-green  { background: #00c851; }
+.dot-black  { background: #333; }
+.dot-red    { background: #ff4444; }
+
+.member-tag-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  margin-right: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.tag-new     { background: #ffbb33; color: #111; }
+.tag-normal  { background: #00c851; }
+.tag-abnormal{ background: #ff4444; }
+.tag-test    { background: #333; }
+
+.tag-edit-popup {
+  position: fixed;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  padding: 12px;
+  z-index: 6000;
+  min-width: 180px;
+}
+.tag-edit-popup .color-options {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.tag-edit-popup .color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.tag-edit-popup .color-swatch.selected { border-color: #1976d2; }
+.tag-edit-popup .tag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.tag-edit-popup .tag-btn {
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  background: #fafafa;
+}
+.tag-edit-popup .tag-btn.active {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1976d2;
+}
+.tag-edit-popup .save-row {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 </style>
 </head>
 
@@ -636,15 +718,17 @@ button {
        <thead>
 <tr>
 <th>会员ID</th>
+<th>Gmail</th>
 <th>wallet</th>
 <th>Account Balance</th>
 <th>加减操作</th>
 <th>注册时间</th>
 <th>上线时间</th>
 <th>最后在线时间</th>
+<th>备注标签</th>
 </tr>
 </thead>
-        <tbody id="m_table"><tr><td colspan="7" class="small">暂无数据</td></tr></tbody>
+        <tbody id="m_table"><tr><td colspan="9" class="small">暂无数据</td></tr></tbody>
       </table>
     </div>
 
@@ -1815,6 +1899,18 @@ function connectOrderSSE(){
     orderEventSource.onmessage = function(ev){
       try{
         const d = JSON.parse(ev.data);
+
+        // 【新增】新会员注册实时刷新
+        if(d && (d.type === 'new_member' || d.type === 'member_updated')){
+          const active = document
+            .querySelector('.sidebar .icon.active')
+            ?.getAttribute('data-page');
+          if(active === 'members'){
+            loadMembers(true);
+          }
+          return;
+        }
+
         if(d && d.order){
 
           // flash alert if locked/failed
@@ -2163,11 +2259,130 @@ function formatMyanmarTime(ts) {
 let memberPage = 1;
 const MEMBER_PAGE_SIZE = 20;
 
+// 颜色映射
+const COLOR_CLASS_MAP = { yellow:'member-row-yellow', green:'member-row-green', black:'member-row-black', red:'member-row-red' };
+const DOT_CLASS_MAP   = { yellow:'dot-yellow', green:'dot-green', black:'dot-black', red:'dot-red' };
+const TAG_CLASS_MAP   = { '新成员':'tag-new', '正常会员':'tag-normal', '异常会员':'tag-abnormal', '测试账号':'tag-test' };
+const TAG_OPTIONS = ['新成员','正常会员','异常会员','测试账号'];
+const COLOR_OPTIONS = ['yellow','green','black','red'];
+
+function getAutoColor(createdTs) {
+  if (!createdTs) return '';
+  let ts = Number(createdTs);
+  if (ts < 1e12) ts *= 1000;
+  const now = Date.now();
+  const createdDate = new Date(ts).toDateString();
+  const todayDate = new Date().toDateString();
+  if (createdDate === todayDate) return 'yellow';
+  if (now - ts > 30 * 24 * 60 * 60 * 1000) return 'green';
+  return '';
+}
+
+function getEffectiveColor(createdTs, manualColor) {
+  if (manualColor) return manualColor;
+  return getAutoColor(createdTs);
+}
+
+function getEffectiveTag(createdTs, manualTag, manualColor, effectiveColor) {
+  if (manualTag) return manualTag;
+  if (!manualColor) {
+    const auto = getAutoColor(createdTs);
+    if (auto === 'yellow') return '新成员';
+    if (auto === 'green') return '正常会员';
+  }
+  if (effectiveColor === 'black') return '异常会员';
+  if (effectiveColor === 'red') return '异常会员';
+  return '';
+}
+
+let tagEditUid = null;
+
+function showTagPopup(uid, ev) {
+  ev.stopPropagation();
+  tagEditUid = uid;
+  closeTagPopup();
+  const popup = document.createElement('div');
+  popup.className = 'tag-edit-popup';
+  popup.id = 'tagEditPopup';
+
+  const rect = ev.target.getBoundingClientRect();
+  popup.style.top = Math.min(rect.bottom + 4, window.innerHeight - 260) + 'px';
+  popup.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+
+  let html = '<div class="color-options"><span style="font-size:12px;color:#666;margin-right:4px">颜色：</span>';
+  COLOR_OPTIONS.forEach(c => {
+    html += `<span class="color-swatch dot-${c}" data-color="${c}" onclick="selectMemberColor(this,'${c}')" title="${c}"></span>`;
+  });
+  html += '<span class="color-swatch" style="background:#fff;border:2px dashed #ccc" data-color="" onclick="selectMemberColor(this,\'\')" title="清除"></span>';
+  html += '</div>';
+
+  html += '<div class="tag-options"><span style="font-size:12px;color:#666;display:block;margin-bottom:4px">备注：</span>';
+  TAG_OPTIONS.forEach(t => {
+    html += `<span class="tag-btn" data-tag="${t}" onclick="selectMemberTag(this,'${t}')">${t}</span>`;
+  });
+  html += '</div>';
+
+  html += '<div class="save-row"><button class="primary" style="padding:4px 12px;font-size:12px" onclick="saveMemberTag()">保存</button><button style="padding:4px 12px;font-size:12px" onclick="closeTagPopup()">取消</button></div>';
+
+  popup.innerHTML = html;
+  document.body.appendChild(popup);
+
+  setTimeout(() => {
+    document.addEventListener('click', closeTagPopupOnOutside);
+  }, 0);
+}
+
+function closeTagPopup() {
+  const p = document.getElementById('tagEditPopup');
+  if (p) p.remove();
+  document.removeEventListener('click', closeTagPopupOnOutside);
+}
+
+function closeTagPopupOnOutside(e) {
+  const p = document.getElementById('tagEditPopup');
+  if (p && !p.contains(e.target)) closeTagPopup();
+}
+
+function selectMemberColor(el, color) {
+  const p = document.getElementById('tagEditPopup');
+  if (p) p.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+  el.setAttribute('data-selected', color);
+}
+
+function selectMemberTag(el, tag) {
+  const p = document.getElementById('tagEditPopup');
+  if (p) p.querySelectorAll('.tag-btn').forEach(b => b.classList.remove('active'));
+  el.classList.toggle('active');
+}
+
+async function saveMemberTag() {
+  const p = document.getElementById('tagEditPopup');
+  if (!p || !tagEditUid) return;
+
+  const colorSwatch = p.querySelector('.color-swatch.selected');
+  const color = colorSwatch ? colorSwatch.getAttribute('data-selected') || '' : '';
+
+  const activeTags = p.querySelectorAll('.tag-btn.active');
+  const tag = activeTags.length > 0 ? Array.from(activeTags).map(b => b.getAttribute('data-tag')).join(',') : '';
+
+  try {
+    await fetch('/api/members/update-tag', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ uid: tagEditUid, color: color || null, tag: tag || null })
+    });
+  } catch(e) {}
+
+  closeTagPopup();
+  loadMembers(false);
+}
+
 async function loadMembers(resetPage = true){
   if (resetPage) memberPage = 1;
-  
+
   const tbody = $('#m_table');
-  tbody.innerHTML = `<tr><td colspan="7">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="9">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll();
@@ -2198,7 +2413,7 @@ async function loadMembers(resetPage = true){
     });
 
     if(!Object.keys(users).length){
-      tbody.innerHTML = `<tr><td colspan="7">暂无数据</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9">暂无数据</td></tr>`;
       return;
     }
 
@@ -2206,15 +2421,23 @@ async function loadMembers(resetPage = true){
     let rows = Object.keys(users).map(uid => {
       const u = users[uid];
       const activityTs = lastActivityMap[uid];
-      // 上线时间/最后在线时间：优先用订单活动时间，其次用 DB 里的 loginTime/lastOnline
       const loginTime = activityTs || u.loginTime;
       const lastOnline = activityTs || u.lastOnline || u.updated;
-      // 排序键：用最后活动时间，没有则用注册时间
       const sortKey = activityTs || u.created || 0;
-      return { uid, u, walletMap, loginTime, lastOnline, sortKey };
+
+      // 会员元数据（颜色、标签）
+      const meta = u.memberMeta || {};
+      const manualColor = meta.color || '';
+      const manualTag = meta.tag || '';
+      const effectiveColor = getEffectiveColor(u.created, manualColor);
+      const effectiveTag = getEffectiveTag(u.created, manualTag, manualColor, effectiveColor);
+
+      // Gmail
+      const email = u.email || u.gmail || '';
+
+      return { uid, u, walletMap, loginTime, lastOnline, sortKey, effectiveColor, effectiveTag, manualColor, manualTag, email };
     });
 
-    // 降序：最新的在最上面
     rows.sort((a, b) => b.sortKey - a.sortKey);
 
     // 分页
@@ -2228,15 +2451,31 @@ async function loadMembers(resetPage = true){
       const uid = r.uid;
       const u  = r.u;
       const bal = u.balance !== undefined && u.balance !== null ? Number(u.balance) : 0;
+      const rowClass = COLOR_CLASS_MAP[r.effectiveColor] || '';
+      const dotClass = DOT_CLASS_MAP[r.effectiveColor] || '';
+
+      // 标签徽章
+      let tagHtml = '';
+      if (r.effectiveTag) {
+        const tags = r.effectiveTag.split(',');
+        tagHtml = tags.map(t => {
+          const tc = TAG_CLASS_MAP[t.trim()] || '';
+          return `<span class="member-tag-badge ${tc}">${t.trim()}</span>`;
+        }).join('');
+      }
+      tagHtml += `<span class="member-tag-badge" style="background:#90a4ae;cursor:pointer" onclick="showTagPopup('${uid}',event)" title="编辑标签">✎</span>`;
+
       return `
-      <tr>
-        <td>${uid}</td>
+      <tr class="${rowClass}">
+        <td>${dotClass ? `<span class="member-color-dot ${dotClass}"></span>` : ''}${uid}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.email}">${r.email || '--'}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${walletMap[uid] || u.wallet || ''}">${walletMap[uid] || u.wallet || '--'}</td>
         <td>${bal.toFixed(2)}</td>
         <td><button class="primary" style="margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','add')">+</button> <button class="primary" style="background:#ff4444;margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','deduct')">-</button></td>
         <td>${formatMyanmarTime(u.created)}</td>
         <td>${formatMyanmarTime(r.loginTime)}</td>
         <td>${formatMyanmarTime(r.lastOnline)}</td>
+        <td style="white-space:nowrap">${tagHtml}</td>
       </tr>
       `;
     }).join('');
@@ -2245,7 +2484,7 @@ async function loadMembers(resetPage = true){
     if (totalPages > 1) {
       tbody.innerHTML += `
       <tr>
-        <td colspan="7" style="text-align:center;padding:12px 0">
+        <td colspan="9" style="text-align:center;padding:12px 0">
           <button ${memberPage<=1?'disabled':''} onclick="memberPage--;loadMembers(false)">上一页</button>
           <span class="small" style="margin:0 12px">第 ${memberPage} / ${totalPages} 页（共 ${total} 个会员）</span>
           <button ${memberPage>=totalPages?'disabled':''} onclick="memberPage++;loadMembers(false)">下一页</button>
@@ -2254,7 +2493,7 @@ async function loadMembers(resetPage = true){
     }
 
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="7">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9">加载失败</td></tr>`;
   }
 }
 
