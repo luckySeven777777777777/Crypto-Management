@@ -1353,7 +1353,7 @@ async function submitAdminLogin(){
 /* -----------------------------
    Render action buttons (all orders)
 ------------------------------ */
-function renderActionButtons(orderId, type, processed, status){
+function renderActionButtons(orderId, type, processed, status, lockedBy){
   try{
     const active = document.querySelector('.sidebar .icon.active')?.getAttribute('data-page') || '';
     if(active === 'orders') return '';
@@ -1373,6 +1373,15 @@ function renderActionButtons(orderId, type, processed, status){
   const lockDisabled =
     isLocked ? 'disabled' : '';
 
+  // 解锁按钮：只有锁定者或超级管理员可以解锁
+  let unlockDisabled = '';
+  if (isLocked && lockedBy) {
+    const myName = getAdminName();
+    if (!isSuperAdmin() && lockedBy !== myName) {
+      unlockDisabled = 'disabled';
+    }
+  }
+
   return `
     <button class="small-btn confirm-btn" ${approveRejectDisabled}
       onclick="txAction(this,'${orderId}','${type}','approve')">
@@ -1389,7 +1398,7 @@ function renderActionButtons(orderId, type, processed, status){
       锁定🔒
     </button>
 
-    <button class="small-btn unlock-btn"
+    <button class="small-btn unlock-btn" ${unlockDisabled}
       onclick="txAction(this,'${orderId}','${type}','unlock')">
       已解锁🔓
     </button>
@@ -1662,7 +1671,7 @@ function renderBuySellRow(o) {
   <td><span class="badge">${displayStatus(o.status)}</span></td>
 
   <!-- 操作按钮：buy 不显示，sell 显示 -->
-  <td>${isBuy ? '--' : renderActionButtons(o.orderId, 'buysell', o.processed, o.status)}</td>
+  <td>${isBuy ? '--' : renderActionButtons(o.orderId, 'buysell', o.processed, o.status, o.lockedBy || '')}</td>
 
   <!-- 操作人 -->
   <td>${o.operatorNickname || '--'}</td>
@@ -1753,7 +1762,7 @@ function renderRechargeRow(o) {
   <td><span class="badge">${displayStatus(o.status)}</span></td>
 
   <!-- 操作按钮 -->
-  <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
+  <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status, o.lockedBy || '')}</td>
 
   <!-- 操作人 -->
   <td>${o.operatorNickname || '--'}</td>
@@ -1802,7 +1811,7 @@ function renderWithdrawRow(o) {
   <td><span class="badge">${displayStatus(o.status)}</span></td>
 
   <!-- 操作按钮 -->
-  <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
+  <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status, o.lockedBy || '')}</td>
 
   <!-- 操作人 -->
   <td>${o.operatorNickname || '--'}</td>
