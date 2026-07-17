@@ -2145,7 +2145,8 @@ if (!await isValidAdminToken(token))
 await ref.update({
   status,
   note: note || null,
-  updated: now()
+  updated: now(),
+  operator: adminId
 });
 
 // 2️⃣ 统一计算状态
