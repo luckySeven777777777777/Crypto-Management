@@ -192,9 +192,13 @@ button.primary{
 
 /* 会员标签相关 */
 .member-tag-cell{cursor:pointer;position:relative;user-select:none}
-.member-tag-dot{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:middle;margin-right:6px;border:2px solid #fff;box-shadow:0 0 0 1px #ccc;transition:transform .15s}
-.member-tag-cell:hover .member-tag-dot{transform:scale(1.25)}
-.member-tag-remark{vertical-align:middle;font-size:13px;color:#333}
+.member-tag-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.2);white-space:nowrap}
+.member-tag-badge.yellow{background:#f5c518;color:#111;text-shadow:none}
+.member-tag-badge.green{background:#22bb33}
+.member-tag-badge.black{background:#333}
+.member-tag-badge.red{background:#e60000}
+.member-tag-badge.no-color{background:#bbb;text-shadow:none}
+.member-tag-cell:hover .member-tag-badge{filter:brightness(1.1)}
 .member-tag-empty{color:#bbb;font-size:12px}
 
 /* 标签编辑弹窗 */
@@ -210,9 +214,13 @@ button.primary{
 .tag-editor-panel .tag-color-btn.red{background:#e60000}
 .tag-editor-panel .tag-color-btn.selected{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.15)}
 .tag-editor-panel .tag-presets{display:flex;flex-wrap:wrap;gap:8px}
-.tag-editor-panel .tag-preset-btn{padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#f5f5f5;cursor:pointer;font-size:13px;transition:all .15s}
-.tag-editor-panel .tag-preset-btn:hover{background:#e8e8e8}
-.tag-editor-panel .tag-preset-btn.selected{background:var(--top-blue);color:#fff;border-color:var(--top-blue)}
+.tag-editor-panel .tag-preset-btn{padding:6px 14px;border-radius:20px;border:2px solid transparent;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.2)}
+.tag-editor-panel .tag-preset-btn:hover{filter:brightness(1.1)}
+.tag-editor-panel .tag-preset-btn.selected{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.15)}
+.tag-editor-panel .tag-preset-btn.preset-yellow{background:#f5c518;color:#111;text-shadow:none}
+.tag-editor-panel .tag-preset-btn.preset-green{background:#22bb33}
+.tag-editor-panel .tag-preset-btn.preset-black{background:#333}
+.tag-editor-panel .tag-preset-btn.preset-red{background:#e60000}
 .tag-editor-panel .tag-custom-input{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin-top:6px}
 .tag-editor-panel .tag-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 .tag-editor-panel .tag-actions button{padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600}
@@ -695,10 +703,10 @@ button {
       <div class="tag-section">
         <div class="tag-section-title">快捷备注</div>
         <div class="tag-presets" id="tagPresetGroup">
-          <button class="tag-preset-btn" data-remark="新成员" onclick="selectTagRemark('新成员',this)">新成员</button>
-          <button class="tag-preset-btn" data-remark="正常会员" onclick="selectTagRemark('正常会员',this)">正常会员</button>
-          <button class="tag-preset-btn" data-remark="异常会员" onclick="selectTagRemark('异常会员',this)">异常会员</button>
-          <button class="tag-preset-btn" data-remark="测试账号" onclick="selectTagRemark('测试账号',this)">测试账号</button>
+          <button class="tag-preset-btn preset-yellow" data-remark="新成员" data-color="yellow" onclick="selectTagPreset(this)">新成员</button>
+          <button class="tag-preset-btn preset-green"  data-remark="正常会员" data-color="green"  onclick="selectTagPreset(this)">正常会员</button>
+          <button class="tag-preset-btn preset-black"  data-remark="测试账号" data-color="black"  onclick="selectTagPreset(this)">测试账号</button>
+          <button class="tag-preset-btn preset-red"    data-remark="异常会员" data-color="red"    onclick="selectTagPreset(this)">异常会员</button>
         </div>
         <input class="tag-custom-input" id="tagCustomRemark" placeholder="或输入自定义备注..." oninput="onCustomRemarkInput()">
       </div>
@@ -2318,20 +2326,16 @@ function selectTagColor(color, el) {
   }
 }
 
-function selectTagRemark(remark, el) {
-  tagEditorRemark = remark;
+function selectTagPreset(el) {
+  tagEditorColor = el.dataset.color;
+  tagEditorRemark = el.dataset.remark;
   document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(b => b.classList.remove('selected'));
   el.classList.add('selected');
   $('#tagCustomRemark').value = '';
-
-  // 自动匹配颜色
-  const mapColor = TAG_PRESET_MAP[remark];
-  if (mapColor) {
-    tagEditorColor = mapColor;
-    document.querySelectorAll('#tagColorGroup .tag-color-btn').forEach(btn => {
-      btn.classList.toggle('selected', btn.dataset.color === mapColor);
-    });
-  }
+  // 同步颜色按钮选中态
+  document.querySelectorAll('#tagColorGroup .tag-color-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.color === tagEditorColor);
+  });
 }
 
 function onCustomRemarkInput() {
@@ -2463,10 +2467,10 @@ async function loadMembers(resetPage = true){
 
       // 标签：优先使用手动设置的标签，否则自动计算
       const tag = getMemberTag(u);
-      const tagColor = tag.color || '#ccc';
+      const tagColor = tag.color || '';
       const tagRemark = tag.remark || '';
       const tagCell = tagRemark
-        ? `<span class="member-tag-cell" onclick="openTagEditor('${uid}','${tagColor}','${escapeHtml(tagRemark)}')"><span class="member-tag-dot" style="background:${tagColor}"></span><span class="member-tag-remark">${tagRemark}</span></span>`
+        ? `<span class="member-tag-cell" onclick="openTagEditor('${uid}','${tagColor}','${escapeHtml(tagRemark)}')"><span class="member-tag-badge ${tagColor || 'no-color'}">${tagRemark}</span></span>`
         : `<span class="member-tag-cell member-tag-empty" onclick="openTagEditor('${uid}','','')">点击设置...</span>`;
 
       return `
