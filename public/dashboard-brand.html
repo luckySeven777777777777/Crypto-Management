@@ -190,6 +190,36 @@ button.primary{
 .label-first-withdraw{background:var(--yellow); color:#111}
 .label-vip{background:var(--purple)}
 
+/* 会员标签相关 */
+.member-tag-cell{cursor:pointer;position:relative;user-select:none}
+.member-tag-dot{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:middle;margin-right:6px;border:2px solid #fff;box-shadow:0 0 0 1px #ccc;transition:transform .15s}
+.member-tag-cell:hover .member-tag-dot{transform:scale(1.25)}
+.member-tag-remark{vertical-align:middle;font-size:13px;color:#333}
+.member-tag-empty{color:#bbb;font-size:12px}
+
+/* 标签编辑弹窗 */
+.tag-editor-overlay{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.3);z-index:9998;display:none}
+.tag-editor-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:24px;z-index:9999;width:340px;box-shadow:0 8px 32px rgba(0,0,0,.18)}
+.tag-editor-panel .tag-section{margin-bottom:16px}
+.tag-editor-panel .tag-section-title{font-size:14px;font-weight:600;margin-bottom:8px;color:#333}
+.tag-editor-panel .tag-colors{display:flex;gap:10px}
+.tag-editor-panel .tag-color-btn{width:52px;height:36px;border-radius:8px;border:3px solid transparent;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+.tag-editor-panel .tag-color-btn.yellow{background:#f5c518;color:#111;text-shadow:none}
+.tag-editor-panel .tag-color-btn.green{background:#22bb33}
+.tag-editor-panel .tag-color-btn.black{background:#333}
+.tag-editor-panel .tag-color-btn.red{background:#e60000}
+.tag-editor-panel .tag-color-btn.selected{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.15)}
+.tag-editor-panel .tag-presets{display:flex;flex-wrap:wrap;gap:8px}
+.tag-editor-panel .tag-preset-btn{padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#f5f5f5;cursor:pointer;font-size:13px;transition:all .15s}
+.tag-editor-panel .tag-preset-btn:hover{background:#e8e8e8}
+.tag-editor-panel .tag-preset-btn.selected{background:var(--blue);color:#fff;border-color:var(--blue)}
+.tag-editor-panel .tag-custom-input{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin-top:6px}
+.tag-editor-panel .tag-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.tag-editor-panel .tag-actions button{padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600}
+.tag-editor-panel .tag-btn-save{background:var(--blue);color:#fff}
+.tag-editor-panel .tag-btn-cancel{background:#eee;color:#333}
+.tag-editor-panel .tag-btn-clear{background:#ff4444;color:#fff;margin-right:auto}
+
 .small{font-size:12px; color:#666}
 .actions button{margin-right:6px}
 .footer-note{margin-top:10px; color:#888; font-size:12px}
@@ -643,10 +673,40 @@ button {
 <th>注册时间</th>
 <th>上线时间</th>
 <th>最后在线时间</th>
+<th>标签</th>
 </tr>
 </thead>
-        <tbody id="m_table"><tr><td colspan="7" class="small">暂无数据</td></tr></tbody>
+        <tbody id="m_table"><tr><td colspan="8" class="small">暂无数据</td></tr></tbody>
       </table>
+    </div>
+
+    <!-- 标签编辑弹窗 -->
+    <div class="tag-editor-overlay" id="tagEditorOverlay" onclick="closeTagEditor()"></div>
+    <div class="tag-editor-panel" id="tagEditorPanel" style="display:none">
+      <div class="tag-section">
+        <div class="tag-section-title">选择颜色</div>
+        <div class="tag-colors" id="tagColorGroup">
+          <button class="tag-color-btn yellow" data-color="yellow" onclick="selectTagColor('yellow',this)">黄</button>
+          <button class="tag-color-btn green"  data-color="green"  onclick="selectTagColor('green',this)">绿</button>
+          <button class="tag-color-btn black"  data-color="black"  onclick="selectTagColor('black',this)">黑</button>
+          <button class="tag-color-btn red"    data-color="red"    onclick="selectTagColor('red',this)">红</button>
+        </div>
+      </div>
+      <div class="tag-section">
+        <div class="tag-section-title">快捷备注</div>
+        <div class="tag-presets" id="tagPresetGroup">
+          <button class="tag-preset-btn" data-remark="新成员" onclick="selectTagRemark('新成员',this)">新成员</button>
+          <button class="tag-preset-btn" data-remark="正常会员" onclick="selectTagRemark('正常会员',this)">正常会员</button>
+          <button class="tag-preset-btn" data-remark="异常会员" onclick="selectTagRemark('异常会员',this)">异常会员</button>
+          <button class="tag-preset-btn" data-remark="测试账号" onclick="selectTagRemark('测试账号',this)">测试账号</button>
+        </div>
+        <input class="tag-custom-input" id="tagCustomRemark" placeholder="或输入自定义备注..." oninput="onCustomRemarkInput()">
+      </div>
+      <div class="tag-actions">
+        <button class="tag-btn-clear" onclick="clearMemberTag()">清除标签</button>
+        <button class="tag-btn-cancel" onclick="closeTagEditor()">取消</button>
+        <button class="tag-btn-save" onclick="saveMemberTag()">保存</button>
+      </div>
     </div>
 
     <!-- Orders page -->
@@ -2169,6 +2229,168 @@ function formatMyanmarTime(ts) {
   }
 }
 
+// ========= 会员标签相关 =========
+
+// 预设备注与颜色的映射
+const TAG_PRESET_MAP = {
+  '新成员': 'yellow',
+  '正常会员': 'green',
+  '测试账号': 'black',
+  '异常会员': 'red'
+};
+
+// 获取会员标签（手动优先，否则自动计算）
+function getMemberTag(u) {
+  const manual = u.tag;
+  if (manual && manual.color) {
+    return { color: manual.color, remark: manual.remark || '', manual: true };
+  }
+  if (manual && manual.remark) {
+    return { color: '', remark: manual.remark, manual: true };
+  }
+  // 自动计算
+  const created = u.created || 0;
+  if (!created) return { color: '', remark: '' };
+  let ms = Number(created);
+  if (ms < 1e12) ms = ms * 1000;
+  const diffDays = (Date.now() - ms) / (1000 * 60 * 60 * 24);
+  if (diffDays < 1) return { color: 'yellow', remark: '新成员' };
+  if (diffDays > 30) return { color: 'green', remark: '正常会员' };
+  return { color: '', remark: '' };
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// 标签编辑器状态
+let tagEditorUid = '';
+let tagEditorColor = '';
+let tagEditorRemark = '';
+
+function openTagEditor(uid, currentColor, currentRemark) {
+  tagEditorUid = uid;
+  tagEditorColor = currentColor;
+  tagEditorRemark = currentRemark;
+
+  $('#tagEditorOverlay').style.display = 'block';
+  $('#tagEditorPanel').style.display = 'block';
+
+  // 选中颜色按钮
+  document.querySelectorAll('#tagColorGroup .tag-color-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.color === currentColor);
+  });
+
+  // 选中预设备注按钮
+  document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.remark === currentRemark);
+  });
+
+  // 自定义输入
+  const isPreset = currentRemark && Object.keys(TAG_PRESET_MAP).includes(currentRemark);
+  $('#tagCustomRemark').value = isPreset ? '' : (currentRemark || '');
+}
+
+function closeTagEditor() {
+  $('#tagEditorOverlay').style.display = 'none';
+  $('#tagEditorPanel').style.display = 'none';
+}
+
+function selectTagColor(color, el) {
+  tagEditorColor = color;
+  document.querySelectorAll('#tagColorGroup .tag-color-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+
+  // 如果选择了颜色且当前已选了预设备注，自动匹配对应的备注
+  const currentRemark = tagEditorRemark;
+  if (currentRemark && TAG_PRESET_MAP[currentRemark] === color) return;
+
+  // 查找匹配该颜色的预设备注
+  for (const [remark, c] of Object.entries(TAG_PRESET_MAP)) {
+    if (c === color) {
+      tagEditorRemark = remark;
+      document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(btn => {
+        btn.classList.toggle('selected', btn.dataset.remark === remark);
+      });
+      $('#tagCustomRemark').value = '';
+      return;
+    }
+  }
+}
+
+function selectTagRemark(remark, el) {
+  tagEditorRemark = remark;
+  document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  $('#tagCustomRemark').value = '';
+
+  // 自动匹配颜色
+  const mapColor = TAG_PRESET_MAP[remark];
+  if (mapColor) {
+    tagEditorColor = mapColor;
+    document.querySelectorAll('#tagColorGroup .tag-color-btn').forEach(btn => {
+      btn.classList.toggle('selected', btn.dataset.color === mapColor);
+    });
+  }
+}
+
+function onCustomRemarkInput() {
+  const val = $('#tagCustomRemark').value;
+  if (val) {
+    tagEditorRemark = val;
+    document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(b => b.classList.remove('selected'));
+  }
+}
+
+async function saveMemberTag() {
+  const uid = tagEditorUid;
+  if (!uid) return;
+
+  // 获取当前 remark（优先取自定义输入）
+  const customVal = $('#tagCustomRemark').value.trim();
+  const remark = customVal || tagEditorRemark || '';
+  const color = tagEditorColor || '';
+  const tagPayload = tagEditorColor ? { color, remark } : (remark ? { color: '', remark } : { color: '', remark: '' });
+
+  try {
+    const res = await fetch('/api/admin/member-tag', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ uid, color: tagPayload.color, remark: tagPayload.remark })
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      closeTagEditor();
+      loadMembers(false);
+    } else {
+      alert('保存失败：' + ((data && data.error) || '未知错误'));
+    }
+  } catch(e) {
+    alert('网络错误：' + e.message);
+  }
+}
+
+async function clearMemberTag() {
+  const uid = tagEditorUid;
+  if (!uid) return;
+  try {
+    const res = await fetch('/api/admin/member-tag', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ uid, color: '', remark: '' })
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      closeTagEditor();
+      loadMembers(false);
+    } else {
+      alert('清除失败：' + ((data && data.error) || '未知错误'));
+    }
+  } catch(e) {
+    alert('网络错误：' + e.message);
+  }
+}
+
 // 会员列表分页状态
 let memberPage = 1;
 const MEMBER_PAGE_SIZE = 20;
@@ -2177,7 +2399,7 @@ async function loadMembers(resetPage = true){
   if (resetPage) memberPage = 1;
   
   const tbody = $('#m_table');
-  tbody.innerHTML = `<tr><td colspan="7">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="8">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll();
@@ -2208,7 +2430,7 @@ async function loadMembers(resetPage = true){
     });
 
     if(!Object.keys(users).length){
-      tbody.innerHTML = `<tr><td colspan="7">暂无数据</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8">暂无数据</td></tr>`;
       return;
     }
 
@@ -2238,6 +2460,15 @@ async function loadMembers(resetPage = true){
       const uid = r.uid;
       const u  = r.u;
       const bal = u.balance !== undefined && u.balance !== null ? Number(u.balance) : 0;
+
+      // 标签：优先使用手动设置的标签，否则自动计算
+      const tag = getMemberTag(u);
+      const tagColor = tag.color || '#ccc';
+      const tagRemark = tag.remark || '';
+      const tagCell = tagRemark
+        ? `<span class="member-tag-cell" onclick="openTagEditor('${uid}','${tagColor}','${escapeHtml(tagRemark)}')"><span class="member-tag-dot" style="background:${tagColor}"></span><span class="member-tag-remark">${tagRemark}</span></span>`
+        : `<span class="member-tag-cell member-tag-empty" onclick="openTagEditor('${uid}','','')">点击设置...</span>`;
+
       return `
       <tr>
         <td>${uid}</td>
@@ -2247,6 +2478,7 @@ async function loadMembers(resetPage = true){
         <td>${formatMyanmarTime(u.created)}</td>
         <td>${formatMyanmarTime(r.loginTime)}</td>
         <td>${formatMyanmarTime(r.lastOnline)}</td>
+        <td>${tagCell}</td>
       </tr>
       `;
     }).join('');
@@ -2255,7 +2487,7 @@ async function loadMembers(resetPage = true){
     if (totalPages > 1) {
       tbody.innerHTML += `
       <tr>
-        <td colspan="7" style="text-align:center;padding:12px 0">
+        <td colspan="8" style="text-align:center;padding:12px 0">
           <button ${memberPage<=1?'disabled':''} onclick="memberPage--;loadMembers(false)">上一页</button>
           <span class="small" style="margin:0 12px">第 ${memberPage} / ${totalPages} 页（共 ${total} 个会员）</span>
           <button ${memberPage>=totalPages?'disabled':''} onclick="memberPage++;loadMembers(false)">下一页</button>
@@ -2264,7 +2496,7 @@ async function loadMembers(resetPage = true){
     }
 
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="7">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8">加载失败</td></tr>`;
   }
 }
 
