@@ -692,15 +692,6 @@ button {
     <div class="tag-editor-overlay" id="tagEditorOverlay" onclick="closeTagEditor()"></div>
     <div class="tag-editor-panel" id="tagEditorPanel" style="display:none">
       <div class="tag-section">
-        <div class="tag-section-title">选择颜色</div>
-        <div class="tag-colors" id="tagColorGroup">
-          <button class="tag-color-btn yellow" data-color="yellow" onclick="selectTagColor('yellow',this)">黄</button>
-          <button class="tag-color-btn green"  data-color="green"  onclick="selectTagColor('green',this)">绿</button>
-          <button class="tag-color-btn black"  data-color="black"  onclick="selectTagColor('black',this)">黑</button>
-          <button class="tag-color-btn red"    data-color="red"    onclick="selectTagColor('red',this)">红</button>
-        </div>
-      </div>
-      <div class="tag-section">
         <div class="tag-section-title">快捷备注</div>
         <div class="tag-presets" id="tagPresetGroup">
           <button class="tag-preset-btn preset-yellow" data-remark="新成员" data-color="yellow" onclick="selectTagPreset(this)">新成员</button>
@@ -1197,6 +1188,7 @@ const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
 const ADMIN_PERMS_KEY = 'nexbit_admin_perms';
 const ADMIN_SUPER_KEY = 'nexbit_admin_super';
 const ADMIN_NAME_KEY  = 'nexbit_admin_name';
+const ADMIN_ID_KEY    = 'nexbit_admin_id';
 function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
 function setAdminPerms(p, isSuper){ try{ localStorage.setItem(ADMIN_PERMS_KEY, JSON.stringify(p)); localStorage.setItem(ADMIN_SUPER_KEY, isSuper?'1':'0'); }catch(e){} }
@@ -1204,6 +1196,8 @@ function getAdminPerms(){ try{ return JSON.parse(localStorage.getItem(ADMIN_PERM
 function isSuperAdmin(){ try{ const v = localStorage.getItem(ADMIN_SUPER_KEY); if(v===null) return true; return v==='1'; }catch(e){ return true; } }
 function setAdminName(n){ try{ localStorage.setItem(ADMIN_NAME_KEY, n); }catch(e){} }
 function getAdminName(){ try{ return localStorage.getItem(ADMIN_NAME_KEY) || ''; }catch(e){ return ''; } }
+function setAdminId(n){ try{ localStorage.setItem(ADMIN_ID_KEY, n); }catch(e){} }
+function getAdminId(){ try{ return localStorage.getItem(ADMIN_ID_KEY) || ''; }catch(e){ return ''; } }
 function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
 
 function filterSidebar(){
@@ -1336,6 +1330,9 @@ async function submitAdminLogin(){
       const displayName = j.nickname || id;
       document.getElementById('adminUser').innerText = displayName;
       setAdminName(displayName);
+      setAdminId(id);
+      // 启动配置更新轮询
+      startConfigPolling();
       // 登录成功后重置下级标记，恢复后台元素
       _isSubAdminLogin = false;
       sessionStorage.removeItem('is_sub_admin_login');
@@ -2284,11 +2281,6 @@ function openTagEditor(uid, currentColor, currentRemark) {
   $('#tagEditorOverlay').style.display = 'block';
   $('#tagEditorPanel').style.display = 'block';
 
-  // 选中颜色按钮
-  document.querySelectorAll('#tagColorGroup .tag-color-btn').forEach(btn => {
-    btn.classList.toggle('selected', btn.dataset.color === currentColor);
-  });
-
   // 选中预设备注按钮
   document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(btn => {
     btn.classList.toggle('selected', btn.dataset.remark === currentRemark);
@@ -2332,10 +2324,6 @@ function selectTagPreset(el) {
   document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(b => b.classList.remove('selected'));
   el.classList.add('selected');
   $('#tagCustomRemark').value = '';
-  // 同步颜色按钮选中态
-  document.querySelectorAll('#tagColorGroup .tag-color-btn').forEach(btn => {
-    btn.classList.toggle('selected', btn.dataset.color === tagEditorColor);
-  });
 }
 
 function onCustomRemarkInput() {
@@ -3207,6 +3195,7 @@ function renderAdminTable(admins){
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
       '<td>' +
         '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
+        '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\')">更新</button> ' +
         '<button class="danger" onclick="if(confirm(\'确认删除管理员 ' + escHtml1(a.id) + '？\'))deleteAdmin(\'' + escHtml1(a.id) + '\')">删除</button>' +
         '<div class="small">创建人: ' + escHtml1(a.createdBy || 'system') + '</div>' +
       '</td>' +
@@ -3339,6 +3328,60 @@ function copyLoginLink(url) {
     prompt('请手动复制登录链接：', url);
   });
 }
+
+// 推送配置更新给下级管理员
+async function pushAdminUpdate(id) {
+  if (!id) return;
+  try {
+    const r = await fetch('/api/admin/push-update', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      alert('已推送更新给 ' + id + '，下级管理后台将自动刷新。');
+    } else {
+      alert('推送失败: ' + (j.error || '未知'));
+    }
+  } catch(e) {
+    alert('推送失败: ' + e.message);
+  }
+}
+
+// 每 5 秒检查是否有配置更新，如有则刷新页面
+let _lastConfigVersion = 0;
+let _configPollTimer = null;
+async function checkConfigUpdate() {
+  const myId = getAdminId();
+  if (!myId) return;
+  try {
+    const r = await fetch('/api/admin/check-update?id=' + encodeURIComponent(myId), {
+      headers: authHeaders()
+    });
+    const j = await r.json();
+    if (!j.ok) return;
+    const ver = j.configVersion || 0;
+    if (_lastConfigVersion === 0) {
+      _lastConfigVersion = ver;
+    } else if (ver > _lastConfigVersion) {
+      clearInterval(_configPollTimer);
+      alert('配置已更新，页面将自动刷新以生效。');
+      location.reload();
+    }
+  } catch(e) { /* 静默忽略 */ }
+}
+function startConfigPolling() {
+  if (_configPollTimer) clearInterval(_configPollTimer);
+  _lastConfigVersion = 0;
+  _configPollTimer = setInterval(checkConfigUpdate, 5000);
+}
+
+// 页面加载后启动轮询
+document.addEventListener('DOMContentLoaded', () => {
+  const myId = getAdminId();
+  if (myId) startConfigPolling();
+});
 </script>
 
 
