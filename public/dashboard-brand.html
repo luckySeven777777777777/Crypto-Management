@@ -622,12 +622,13 @@ button {
             <th>币种</th>
             <th>估算 USDT</th>
             <th>状态</th>
+            <th>操作人</th>
             <th>操作</th>
             <th>备注</th>
           </tr>
         </thead>
 
-        <tbody id="bs_table"><tr><td colspan="10" class="small">点击搜索加载数据</td></tr></tbody>
+        <tbody id="bs_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -664,8 +665,8 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></tr></thead>
-        <tbody id="r_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作人</th><th>操作</th><th>备注</th></tr></thead>
+        <tbody id="r_table"><tr><td colspan="12" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -702,8 +703,8 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>备注</th></thead>
-        <tbody id="w_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作人</th><th>操作</th><th>备注</th></thead>
+        <tbody id="w_table"><tr><td colspan="12" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -1679,6 +1680,9 @@ function renderBuySellRow(o) {
   <!-- 状态 -->
   <td><span class="badge">${displayStatus(o.status)}</span></td>
 
+  <!-- 操作人 -->
+  <td>${o.operator || '--'}</td>
+
   <!-- 操作按钮：buy 不显示，sell 显示 -->
   <td>${isBuy ? '--' : renderActionButtons(o.orderId, 'buysell', o.processed, o.status)}</td>
 
@@ -1767,6 +1771,9 @@ function renderRechargeRow(o) {
   <!-- 状态 -->
   <td><span class="badge">${displayStatus(o.status)}</span></td>
 
+  <!-- 操作人 -->
+  <td>${o.operator || '--'}</td>
+
   <!-- 操作按钮 -->
   <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status)}</td>
 
@@ -1812,6 +1819,9 @@ function renderWithdrawRow(o) {
 
   <!-- 状态 -->
   <td><span class="badge">${displayStatus(o.status)}</span></td>
+
+  <!-- 操作人 -->
+  <td>${o.operator || '--'}</td>
 
   <!-- 操作按钮 -->
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status)}</td>
@@ -1981,7 +1991,7 @@ async function bs_search(){
   if($('#bs_side').value) params.side = $('#bs_side').value;
 
   const tbody = $('#bs_table');
-  tbody.innerHTML = `<tr><td colspan="10">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="11">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
@@ -1998,7 +2008,7 @@ async function bs_search(){
     });
 
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11">没有记录</td></tr>`;
       window.buySellPNL = 0;   // ✅ 保证变量存在
       return;
     }
@@ -2046,7 +2056,7 @@ async function r_search(){
   if($('#r_status').value) params.status = $('#r_status').value;
 
   const tbody = $('#r_table');
-  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="13">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
@@ -2063,7 +2073,7 @@ async function r_search(){
     });
 
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`;
       window.rechargeProfit = 0;   // ✅ 保证变量存在
       return;
     }
@@ -2099,7 +2109,7 @@ async function w_search(){
   if($('#w_status').value) params.status = $('#w_status').value;
 
   const tbody = $('#w_table');
-  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="13">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
@@ -2116,7 +2126,7 @@ async function w_search(){
     });
 
  if(!list.length){
-  tbody.innerHTML = `<tr><td colspan="9">没有记录</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`;
   return;
 }
 
