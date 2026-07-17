@@ -2598,13 +2598,27 @@ if (!await isValidAdminToken(token))
       const uSnap = await userRef.once('value');
       let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
       const amt = Number(order.estimate || 0);
+// 锁定/解锁权限控制：只有锁定的下级或超级管理员才能解锁
+const isLockAction = status === 'locked';
+const isUnlockAction = order.status === 'locked' && status !== 'locked';
+if (isUnlockAction) {
+  const lockedBy = order.lockedBy || '';
+  const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+  const isSuper = adminSnap.exists() && adminSnap.val().isSuper === true;
+  if (!isSuper && lockedBy !== adminId && lockedBy !== operatorNickname) {
+    return res.status(403).json({ ok: false, error: '该订单已被 ' + (lockedBy || '其他管理员') + ' 锁定，只有锁定者或超级管理员才能解锁' });
+  }
+}
+
 // 1️⃣ 先更新状态（不 processed）
-await ref.update({
+const updateData = {
   status,
   note: note || null,
   updated: now(),
   operatorNickname
-});
+};
+if (isLockAction) updateData.lockedBy = operatorNickname;
+await ref.update(updateData);
 
 // 2️⃣ 统一计算状态
 const statusNorm = String(status || '').toLowerCase();
