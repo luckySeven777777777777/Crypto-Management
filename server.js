@@ -2062,6 +2062,38 @@ app.post('/api/admin/login', async (req, res) => {
   }
 });
 /* ---------------------------------------------------------
+   Admin: list all admins
+--------------------------------------------------------- */
+app.get('/api/admin/list', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer ')) return res.status(403).json({ ok: false });
+    const token = auth.slice(7);
+    if (!await isValidAdminToken(token)) return res.status(403).json({ ok: false });
+
+    const snap = await db.ref('admins').once('value');
+    const data = snap.val() || {};
+    const admins = Object.entries(data).map(([id, val]) => {
+      const v = val || {};
+      return {
+        id,
+        isSuper: v.isSuper || false,
+        isActive: v.isActive !== false,
+        permissions: v.permissions || {},
+        status: v.status || '离线',
+        createdBy: v.createdBy || 'system',
+        createdAt: v.createdAt || 0
+      };
+    });
+
+    return res.json({ ok: true, admins });
+  } catch (e) {
+    return res.json({ ok: false, error: e.message });
+  }
+});
+
+/* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
    - prevents double-processing by checking 'processed' flag
 --------------------------------------------------------- */
