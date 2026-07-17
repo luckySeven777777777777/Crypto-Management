@@ -2149,6 +2149,38 @@ app.post('/api/admin/adjust-balance', async (req, res) => {
   }
 });
 
+// 会员标签/备注
+app.post('/api/admin/member-tag', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { uid, color, remark } = req.body;
+    if (!uid)
+      return res.status(400).json({ ok: false, error: 'missing uid' });
+
+    if (!isSafeUid(uid))
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+
+    const tagRef = db.ref(`users/${uid}/tag`);
+    await tagRef.set({
+      color: color || '',
+      remark: remark || '',
+      updatedBy: 'admin',
+      updatedAt: now()
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('member-tag error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
 // 管理员列表
 app.get('/api/admin/list', async (req, res) => {
   try {
