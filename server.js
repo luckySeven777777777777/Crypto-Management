@@ -356,6 +356,36 @@ function broadcastSSE(payloadObj){
   global.__sseClients = toKeep;
 }
 
+async function calcPortfolio(uid){
+  const port = {};
+  const orderTypes = ['buysell', 'swap'];
+  for (const t of orderTypes) {
+    const osnap = await db.ref(`orders/${t}`).once('value');
+    const orders = osnap.val() || {};
+    for (const [, o] of Object.entries(orders)) {
+      if (String(o.userId) !== uid) continue;
+      if (t === 'buysell') {
+        const coin = o.coin || '';
+        const qty = Number(o.coinQty || 0);
+        const isBuy = String(o.side || o.tradeType || '').toLowerCase() === 'buy';
+        if (coin && qty > 0) port[coin] = (port[coin] || 0) + (isBuy ? qty : -qty);
+      }
+      if (t === 'swap') {
+        const scoin = o.coin || '';
+        const samt = Number(o.amount || 0);
+        const uamt = Number(o.usdtAmount || 0);
+        if (scoin && samt > 0) port[scoin] = (port[scoin] || 0) - samt;
+        if (uamt > 0) port['USDT'] = (port['USDT'] || 0) + uamt;
+      }
+    }
+  }
+  const filtered = {};
+  for (const [coin, qty] of Object.entries(port)) {
+    if (qty > 0.0000001) filtered[coin] = Number(qty.toFixed(6));
+  }
+  return filtered;
+}
+
 function objToSortedArray(objOrNull){
   if(!objOrNull) return [];
   try {
@@ -450,11 +480,6 @@ if (
         uid
     );
 }
-
-    // 新用户注册时广播SSE，让管理后台实时刷新
-    if (!createdSnap.exists()) {
-      broadcastSSE({ type:'new_member', userId: uid });
-    }
 
     return res.json({ ok:true });
   } catch(e){
@@ -692,6 +717,18 @@ app.get('/api/sync/:uid', async (req, res) => {
             portfolioMap[coin] = (portfolioMap[coin] || 0) + (isBuy ? coinQty : -coinQty);
           }
         }
+        // swap 订单：卖出coin → 获得USDT，反映到持仓
+        if (t === 'swap') {
+          const scoin = o.coin || '';
+          const samt = Number(o.amount || 0);
+          const uamt = Number(o.usdtAmount || 0);
+          if (scoin && samt > 0) {
+            portfolioMap[scoin] = (portfolioMap[scoin] || 0) - samt;
+          }
+          if (uamt > 0) {
+            portfolioMap['USDT'] = (portfolioMap['USDT'] || 0) + uamt;
+          }
+        }
       }
 
       grouped[t] = sortByTimeDesc(orders);
@@ -876,10 +913,11 @@ app.get('/wallet/:uid/balance', async (req, res) => {
   try {
     const uid = String(req.params.uid || '').trim();
     if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    if (!db) return res.json({ ok:true, uid, balance: 0 });
+    if (!db) return res.json({ ok:true, uid, balance: 0, portfolio: {} });
     const snap = await db.ref(`users/${uid}/balance`).once('value');
     const balance = safeNumber(snap.exists() ? snap.val() : 0, 0);
-    return res.json({ ok:true, uid, balance });
+    const portfolio = await calcPortfolio(uid);
+    return res.json({ ok:true, uid, balance, portfolio });
   } catch (e) {
     console.error('/wallet/:uid/balance error', e);
     return res.status(500).json({ ok:false, error: e.message });
@@ -1373,7 +1411,10 @@ async function saveOrder(type, data) {
     'deducted',
     'wallet',
     'ip',
-    'currency'
+    'currency',
+    'second',
+    'priceRangePercent',
+    'originalAmount'
   ];
 
   const clean = {};
@@ -1503,7 +1544,10 @@ async function handleBuySellRequest(req, res){
       sl,
       orderId,
       wallet,
-      ip
+      ip,
+      second,
+      priceRangePercent,
+      originalAmount
     } = req.body;
 
     const uid = userId || user;
@@ -1563,6 +1607,9 @@ const id = await saveOrder('buysell', {
   deducted: (sideLower === 'buy'),
   wallet: wallet || null,
   ip: ip || null,
+  second: second ?? null,
+  priceRangePercent: priceRangePercent ?? null,
+  originalAmount: originalAmount ?? null,
   processed: false
 });
 
@@ -2008,12 +2055,36 @@ app.post('/api/admin/create', async (req, res) => {
     const token = uuidv4();  // 生成管理员 token
     const created = now();   // 获取当前时间戳
 
+    // 提取创建人（当前登录管理员）
+    let createdBy = 'system';
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+      const callerToken = authHeader.slice(7);
+      const callerSnap = await db.ref(`admins_by_token/${callerToken}`).once('value');
+      if (callerSnap.exists()) {
+        createdBy = callerSnap.val().id;
+      }
+    }
+
+    // 权限处理
+    const permissions = {
+      recharge: req.body.recharge === true || req.body.recharge === 'true',
+      withdraw: req.body.withdraw === true || req.body.withdraw === 'true',
+      buysell:  req.body.buysell  === true || req.body.buysell  === 'true'
+    };
+
     // 保存管理员信息到 Firebase 数据库
+    const nickname = req.body.nickname || id;
     await db.ref(`admins/${id}`).set({
       id,
+      nickname,
       hashed,
       created,
-      isSuper: false   // 设置为普通管理员，修改为 true 则为超级管理员
+      isSuper: false,   // 设置为普通管理员，修改为 true 则为超级管理员
+      isActive: true,   // 默认启用
+      status: '离线',   // 初始状态离线
+      permissions,
+      createdBy
     });
 
     // 生成管理员 token
@@ -2022,10 +2093,338 @@ app.post('/api/admin/create', async (req, res) => {
       created
     });
 
-    return res.json({ ok: true, id, token });  // 返回管理员信息和 token
+    // 保存 loginToken 到 admin 记录中，用于生成专属登录链接
+    await db.ref(`admins/${id}/loginToken`).set(token);
+
+    return res.json({ ok: true, id, token, nickname });  // 返回管理员信息和 token
 
   } catch (e) {
     console.error('admin create error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 管理员调整用户余额
+app.post('/api/admin/adjust-balance', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { uid, amount } = req.body;
+    if (!uid || amount === undefined || amount === null)
+      return res.status(400).json({ ok: false, error: 'missing uid/amount' });
+
+    if (!isSafeUid(uid))
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount))
+      return res.status(400).json({ ok: false, error: 'invalid amount' });
+
+    const balRef = db.ref(`users/${uid}/balance`);
+    const snap = await balRef.once('value');
+    const current = safeNumber(snap.exists() ? snap.val() : 0, 0);
+    const newBalance = current + numAmount;
+
+    await balRef.set(newBalance);
+
+    // 记录操作日志
+    const logRef = db.ref(`users/${uid}/balance_logs`).push();
+    await logRef.set({
+      previous: current,
+      change: numAmount,
+      after: newBalance,
+      admin: 'admin',
+      timestamp: now()
+    });
+
+    return res.json({ ok: true, newBalance, previous: current, change: numAmount });
+  } catch (e) {
+    console.error('adjust-balance error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 管理员列表
+app.get('/api/admin/list', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref('admins').once('value');
+    const list = [];
+    if (snap.exists()) {
+      snap.forEach(child => {
+        const a = child.val();
+        // 在线状态：5分钟内活跃的 token 视为在线
+        list.push({
+          id: a.id,
+          nickname: a.nickname || a.id,
+          loginToken: a.loginToken || '',
+          isSuper: !!a.isSuper,
+          isActive: a.isActive !== false,
+          status: a.status || '离线',
+          permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
+          createdBy: a.createdBy || 'system',
+          created: a.created || 0,
+          lastLogin: a.lastLogin || 0
+        });
+      });
+    }
+    return res.json({ ok: true, admins: list });
+  } catch (e) {
+    console.error('admin list error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 删除管理员
+app.delete('/api/admin/delete', async (req, res) => {
+  try {
+    const id = req.query.id || req.body.id;
+    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    // 清理相关 token
+    const tokenSnap = await db.ref('admins_by_token').once('value');
+    if (tokenSnap.exists()) {
+      const deletions = [];
+      tokenSnap.forEach(child => {
+        if (child.val().id === id) deletions.push(child.key);
+      });
+      for (const tk of deletions) {
+        await db.ref(`admins_by_token/${tk}`).remove();
+      }
+    }
+
+    await db.ref(`admins/${id}`).remove();
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin delete error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 启用/禁用管理员
+app.post('/api/admin/toggle-status', async (req, res) => {
+  try {
+    const { id, isActive } = req.body;
+    if (!id || isActive === undefined)
+      return res.status(400).json({ ok: false, error: 'missing id/isActive' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    await db.ref(`admins/${id}`).update({ isActive });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin toggle-status error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 更新管理员权限
+app.post('/api/admin/update-permissions', async (req, res) => {
+  try {
+    const { id, permissions } = req.body;
+    if (!id || !permissions)
+      return res.status(400).json({ ok: false, error: 'missing id/permissions' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    await db.ref(`admins/${id}/permissions`).set({
+      recharge: !!permissions.recharge,
+      withdraw: !!permissions.withdraw,
+      buysell:  !!permissions.buysell
+    });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin update-permissions error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 重置管理员登录密码
+app.post('/api/admin/reset-password', async (req, res) => {
+  try {
+    const { id, newPassword } = req.body;
+    if (!id || !newPassword)
+      return res.status(400).json({ ok: false, error: 'missing id/newPassword' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await db.ref(`admins/${id}/hashed`).set(hashed);
+
+    // 使其所有现有 token 失效
+    const tokenSnap = await db.ref('admins_by_token').once('value');
+    if (tokenSnap.exists()) {
+      const deletions = [];
+      tokenSnap.forEach(child => {
+        if (child.val().id === id) deletions.push(child.key);
+      });
+      for (const tk of deletions) {
+        await db.ref(`admins_by_token/${tk}`).remove();
+      }
+    }
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin reset-password error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 重置用户提款密码（管理员操作）
+app.post('/api/admin/reset-withdraw-password', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'no db' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ success: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ success: false, error: 'forbidden' });
+
+    const { newWithdrawPwd, orderId, walletAddress, userId } = req.body;
+
+    if (!newWithdrawPwd) {
+      return res.status(400).json({ success: false, error: '新提款密码不能为空' });
+    }
+
+    let targetUid = null;
+
+    // 1. 如果直接提供了 userId，先验证用户存在
+    if (userId) {
+      const userSnap = await db.ref(`users/${userId}`).once('value');
+      if (userSnap.exists()) {
+        targetUid = userId;
+      }
+    }
+
+    // 2. 通过订单号在提款订单中查找 userId
+    if (!targetUid && orderId) {
+      const orderSnap = await db.ref(`orders/withdraw/${orderId}`).once('value');
+      if (orderSnap.exists()) {
+        targetUid = orderSnap.val().userId;
+      }
+    }
+
+    // 3. 通过钱包地址在提款订单中查找 userId
+    if (!targetUid && walletAddress) {
+      const withdrawSnap = await db.ref('orders/withdraw').once('value');
+      if (withdrawSnap.exists()) {
+        const orders = withdrawSnap.val();
+        for (const [oid, order] of Object.entries(orders)) {
+          if (order.wallet && order.wallet.toLowerCase() === walletAddress.toLowerCase()) {
+            targetUid = order.userId;
+            break;
+          }
+        }
+      }
+    }
+
+    // 4. 综合兜底：如果以上都没匹配到，用所有提供的字段遍历提款订单
+    if (!targetUid && (orderId || userId || walletAddress)) {
+      const withdrawSnap = await db.ref('orders/withdraw').once('value');
+      if (withdrawSnap.exists()) {
+        const orders = withdrawSnap.val();
+        for (const [oid, order] of Object.entries(orders)) {
+          if (orderId && order.orderId === orderId) { targetUid = order.userId; break; }
+          if (userId && order.userId === userId) { targetUid = order.userId; break; }
+          if (walletAddress && order.wallet && order.wallet.toLowerCase() === walletAddress.toLowerCase()) { targetUid = order.userId; break; }
+        }
+      }
+    }
+
+    if (!targetUid) {
+      return res.status(404).json({ success: false, error: '未找到匹配的用户，请检查输入的订单号/用户ID/钱包地址是否正确' });
+    }
+
+    // 更新提款密码
+    await db.ref(`users/${targetUid}/settings/withdrawPassword`).set(newWithdrawPwd);
+
+    return res.json({
+      success: true,
+      newWithdrawPassword: newWithdrawPwd,
+      userId: targetUid
+    });
+
+  } catch (e) {
+    console.error('reset-withdraw-password error', e);
+    return res.status(500).json({ success: false, error: 'internal server error' });
+  }
+});
+
+// 根据 token 获取当前管理员信息（用于自动登录）
+app.get('/api/admin/me', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const token = auth.slice(7);
+    const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
+    if (!tokenSnap.exists())
+      return res.status(403).json({ ok: false, error: 'invalid token' });
+    const adminId = tokenSnap.val().id;
+    const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+    if (!adminSnap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+    const admin = adminSnap.val();
+    return res.json({
+      ok: true,
+      id: admin.id,
+      nickname: admin.nickname || admin.id,
+      permissions: admin.permissions || {},
+      isSuper: !!admin.isSuper
+    });
+  } catch (e) {
+    console.error('admin me error', e);
     return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
@@ -2048,51 +2447,26 @@ app.post('/api/admin/login', async (req, res) => {
     if (!passOk)
       return res.status(401).json({ ok: false, error: 'incorrect password' });
 
+    // 检查是否被禁用
+    if (admin.isActive === false)
+      return res.status(403).json({ ok: false, error: '账号已被禁用，请联系超级管理员' });
+
     const token = uuidv4();  // 生成新 token
     await db.ref(`admins_by_token/${token}`).set({
       id,
       created: now()  // 保存 token 和创建时间
     });
 
-    return res.json({ ok: true, token });  // 返回登录成功的 token
+    // 更新状态为在线并记录最后登录时间
+    await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
+
+    return res.json({ ok: true, token, nickname: admin.nickname || admin.id, permissions: admin.permissions || {}, isSuper: !!admin.isSuper });  // 返回登录成功的 token 和权限
 
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
-/* ---------------------------------------------------------
-   Admin: list all admins
---------------------------------------------------------- */
-app.get('/api/admin/list', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer ')) return res.status(403).json({ ok: false });
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token)) return res.status(403).json({ ok: false });
-
-    const snap = await db.ref('admins').once('value');
-    const data = snap.val() || {};
-    const admins = Object.entries(data).map(([id, val]) => {
-      const v = val || {};
-      return {
-        id,
-        isSuper: v.isSuper || false,
-        isActive: v.isActive !== false,
-        permissions: v.permissions || {},
-        status: v.status || '离线',
-        createdBy: v.createdBy || 'system',
-        createdAt: v.createdAt || 0
-      };
-    });
-
-    return res.json({ ok: true, admins });
-  } catch (e) {
-    return res.json({ ok: false, error: e.message });
-  }
-});
-
 /* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
    - prevents double-processing by checking 'processed' flag
@@ -2112,6 +2486,13 @@ if (!await isValidAdminToken(token))
 
     const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
     const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
+    let operatorNickname = adminId;
+    try {
+      const nickSnap = await db.ref(`admins/${adminId}`).once('value');
+      if (nickSnap.exists()) {
+        operatorNickname = nickSnap.val().nickname || adminId;
+      }
+    } catch(e) { operatorNickname = adminId; }
 
     const { type, orderId, status, note } = req.body;
     if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
@@ -2126,13 +2507,13 @@ if (!await isValidAdminToken(token))
     if (order.processed === true) {
       // still record admin action but don't apply balance changes again
       const actIdSkip = uuidv4();
-      await db.ref(`admin_actions/${actIdSkip}`).set({ id: actIdSkip, admin: adminId, type, orderId, status, note, time: now(), skipped:true });
+      await db.ref(`admin_actions/${actIdSkip}`).set({ id: actIdSkip, admin: adminId, operatorNickname, type, orderId, status, note, time: now(), skipped:true });
       return res.json({ ok:true, message:'already processed' });
     }
 
     // update order status and mark processed after applying business logic
     const actId = uuidv4();
-    await db.ref(`admin_actions/${actId}`).set({ id: actId, admin: adminId, type, orderId, status, note, time: now() });
+    await db.ref(`admin_actions/${actId}`).set({ id: actId, admin: adminId, operatorNickname, type, orderId, status, note, time: now() });
 
     // handle balance effects
     const userId = order && order.userId ? order.userId : null;
@@ -2146,7 +2527,7 @@ await ref.update({
   status,
   note: note || null,
   updated: now(),
-  operator: adminId
+  operatorNickname
 });
 
 // 2️⃣ 统一计算状态
@@ -2293,11 +2674,12 @@ app.get('/wallet/:uid/sse', async (req, res) => {
   const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
   global.__sseClients.push({ res, uid, ka });
   try {
-    if (!db) sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: 0 }), 'balance');
+    if (!db) sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: 0, portfolio: {} }), 'balance');
     else {
       const snap = await db.ref(`users/${uid}/balance`).once('value');
       const bal = safeNumber(snap.exists() ? snap.val() : 0, 0);
-      sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: bal }), 'balance');
+      const pf = await calcPortfolio(uid);
+      sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: bal, portfolio: pf }), 'balance');
     }
   } catch(e){}
   req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
@@ -2325,11 +2707,14 @@ try {
     });
 
     const usersRef = db.ref('users');
-    usersRef.on('child_changed', (snap) => {
+    usersRef.on('child_changed', async (snap) => {
       try {
         const uid = snap.key;
         const data = snap.val() || {};
-        broadcastSSE({ type:'member_updated', userId: uid, balance: data.balance });
+        if (data.balance !== undefined) {
+          const pf = await calcPortfolio(uid);
+          broadcastSSE({ type:'balance', userId: uid, balance: safeNumber(data.balance,0), portfolio: pf });
+        }
       } catch(e){}
     });
   }
@@ -3277,70 +3662,6 @@ app.get('/api/referrals/:uid', async (req,res)=>{
     }
 
 });
-/* ---------------------------------------------------------
-   Admin: adjust user balance
---------------------------------------------------------- */
-app.post('/api/admin/adjust-balance', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer ')) return res.status(403).json({ ok: false });
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token)) return res.status(403).json({ ok: false });
-
-    const { uid, amount } = req.body;
-    const adj = safeNumber(amount, 0);
-    if (!uid || adj === 0) return res.status(400).json({ ok: false, error: 'missing uid/amount' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-    const newBal = Number((curBal + adj).toFixed(4));
-
-    await userRef.update({ balance: newBal, lastUpdate: now() });
-
-    broadcastSSE({ type: 'balance', userId: uid, balance: newBal, source: 'admin_adjust' });
-
-    return res.json({ ok: true, newBalance: newBal });
-  } catch (e) {
-    console.error('adjust-balance error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-/* ---------------------------------------------------------
-   Members: update tag / color
---------------------------------------------------------- */
-app.post('/api/members/update-tag', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer ')) return res.status(403).json({ ok: false });
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token)) return res.status(403).json({ ok: false });
-
-    const { uid, color, tag } = req.body;
-    if (!uid) return res.status(400).json({ ok: false, error: 'missing uid' });
-
-    const metaRef = db.ref(`users/${uid}/memberMeta`);
-    const snap = await metaRef.once('value');
-    const oldMeta = snap.val() || {};
-    const newMeta = {};
-    if (color !== undefined) newMeta.color = color;
-    if (tag !== undefined) newMeta.tag = tag;
-    Object.assign(newMeta, { updatedAt: now() });
-
-    await metaRef.update(newMeta);
-
-    broadcastSSE({ type: 'member_tag', userId: uid, memberMeta: { ...oldMeta, ...newMeta } });
-
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('update-tag error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
