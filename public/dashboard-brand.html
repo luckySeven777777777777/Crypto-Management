@@ -2053,15 +2053,13 @@ function connectOrderSSE(){
     };
 
     // Named SSE events (backend uses new / buysell / update / swap)
+    let sseReadyTime = Date.now() + 5000; // ignore first 5s (Firebase replay)
     function handleOrderSSE(ev){
       try{
+        if(Date.now() < sseReadyTime) return;
         const d = JSON.parse(ev.data);
         const order = d && d.order;
         if(!order) return;
-        // Filter: only orders after page load (ignore Firebase replay)
-        let orderMs = Number(order.time_us || order.time || order.createdAt || 0);
-        if(orderMs && orderMs < 1e12) orderMs *= 1000; // seconds → ms
-        if(orderMs && orderMs < window.__bellPageLoadMs) return;
         const oid = order.orderId || order.id || order._id;
         if(oid) updateBellForNewOrder(oid);
       }catch(e){}
