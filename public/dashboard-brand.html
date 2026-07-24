@@ -547,6 +547,7 @@ button {
   </select>
   <button class="primary" onclick="bs_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
+  <button class="primary" onclick="showToday('bs')">今日数据</button>
 <button class="primary view-yesterday-btn">查看昨日数据</button>
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_buysell"style="
@@ -603,6 +604,7 @@ button {
         <select id="r_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="r_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
+  <button class="primary" onclick="showToday('r')">今日数据</button>
 <button class="primary view-yesterday-btn">查看昨日数据</button>
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_recharge"style="
@@ -641,6 +643,7 @@ button {
         <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
         <button class="primary" onclick="w_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
+  <button class="primary" onclick="showToday('w')">今日数据</button>
 <button class="primary view-yesterday-btn">查看昨日数据</button>
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_draw"style="
@@ -2053,15 +2056,19 @@ function connectOrderSSE(){
     };
 
     // Named SSE events (backend uses new / buysell / update / swap)
-    let sseReadyTime = Date.now() + 5000; // ignore first 5s (Firebase replay)
+    let sseReadyTime = Date.now() + 10000; // 10s silence for Firebase replay
     function handleOrderSSE(ev){
       try{
-        if(Date.now() < sseReadyTime) return;
         const d = JSON.parse(ev.data);
         const order = d && d.order;
         if(!order) return;
         const oid = order.orderId || order.id || order._id;
-        if(oid) updateBellForNewOrder(oid);
+        if(!oid) return;
+        if(Date.now() < sseReadyTime){
+          knownOrderIds.add(oid); // record but don't count
+          return;
+        }
+        updateBellForNewOrder(oid);
       }catch(e){}
     }
     ['new','buysell','update','swap'].forEach(t => {
@@ -2083,6 +2090,13 @@ connectOrderSSE();
    Search functions (bs_search / r_search / w_search / o_search)
    Each will call postRenderDecorate() after rendering
 ------------------------------ */
+/* 今日数据：设置日期为今天并触发搜索 */
+function showToday(type){
+  const today = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+  if(type==='bs'){ document.getElementById('bs_start').value=today; document.getElementById('bs_end').value=today; bs_search(); }
+  else if(type==='r'){ document.getElementById('r_start').value=today; document.getElementById('r_end').value=today; r_search(); }
+  else if(type==='w'){ document.getElementById('w_start').value=today; document.getElementById('w_end').value=today; w_search(); }
+}
 async function bs_search(){
   // ✅ 确保每次搜索时，页码从 1 开始
   pageState.bs = pageState.bs || 1;
