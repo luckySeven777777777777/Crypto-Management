@@ -1046,8 +1046,8 @@ function applyFilters(list, {
     // 1️⃣ 时间过滤（兼容所有时间字段）
 const t = o.time_us || o.time || o.createdAt;
 
-if (start && t && new Date(t) < new Date(start)) return false;
-if (end && t && new Date(t) > new Date(end + ' 23:59:59')) return false;
+if (start && t && new Date(t) < new Date(start + 'T00:00:00Z')) return false;
+if (end && t && new Date(t) > new Date(end + 'T23:59:59Z')) return false;
 
 
     // 2️⃣ 关键字搜索（订单 / 会员 / 钱包）
@@ -1993,7 +1993,19 @@ window.__bellPageLoadMs = Date.now();
 ------------------------------ */
 let orderEventSource = null;
 
-function connectOrderSSE(){
+async function connectOrderSSE(){
+  // Pre-fill knownOrderIds from API to prevent Firebase replay from inflating bell count
+  if(knownOrderIds.size === 0){
+    try{
+      const all = await fetchAll({});
+      const orders = [...(all.buysell||[]), ...(all.recharge||[]), ...(all.withdraw||[])];
+      orders.forEach(o => {
+        const id = o.orderId || o.id || o._id;
+        if(id) knownOrderIds.add(id);
+      });
+    }catch(e){}
+  }
+
   try{
     if(orderEventSource) orderEventSource.close();
 
@@ -2003,14 +2015,8 @@ function connectOrderSSE(){
       try{
         const d = JSON.parse(ev.data);
 
-        // Bell: detect new order (兼容 orderId / id / _id)
-        if(d && d.order){
-          const oid = d.order.orderId || d.order.id || d.order._id;
-          if(oid) updateBellForNewOrder(oid);
-        }else if(d && (d.orderId || d.id || d._id)){
-          const oid = d.orderId || d.id || d._id;
-          updateBellForNewOrder(oid);
-        }
+        // Bell logic moved to named event handler only (see handleOrderSSE below)
+        // to avoid bypassing the silence window + dedup filter
 
         if(d && d.order){
 
