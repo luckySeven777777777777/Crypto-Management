@@ -1046,8 +1046,8 @@ function applyFilters(list, {
     // 1️⃣ 时间过滤（兼容所有时间字段）
 const t = o.time_us || o.time || o.createdAt;
 
-if (start && t && new Date(t) < new Date(start + 'T00:00:00Z')) return false;
-if (end && t && new Date(t) > new Date(end + 'T23:59:59Z')) return false;
+if (start && t && new Date(t) < new Date(start + 'T00:00:00')) return false;
+if (end && t && new Date(t) > new Date(end + 'T23:59:59')) return false;
 
 
     // 2️⃣ 关键字搜索（订单 / 会员 / 钱包）
