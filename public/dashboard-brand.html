@@ -553,6 +553,7 @@ button {
       <table class="table table-sm">
         <thead>
           <tr>
+            <th></th>
             <th>订单/会员/钱包</th>
             <th>时间 (US/Eastern)</th>
             <th>用户ID</th>
@@ -567,7 +568,7 @@ button {
           </tr>
         </thead>
 
-        <tbody id="bs_table"><tr><td colspan="11" class="small">点击搜索加载数据</td></tr></tbody>
+        <tbody id="bs_table"><tr><td colspan="12" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -604,8 +605,8 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th></tr></thead>
-        <tbody id="r_table"><tr><td colspan="13" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th></tr></thead>
+        <tbody id="r_table"><tr><td colspan="14" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -642,8 +643,8 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th></thead>
-        <tbody id="w_table"><tr><td colspan="13" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th></tr></thead>
+        <tbody id="w_table"><tr><td colspan="14" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -1786,7 +1787,7 @@ function renderWithdrawRow(o) {
   return `
 <tr>
   <!-- 全选框 -->
-  <td><input type="checkbox" class="batch-check" data-key="r" data-orderid="${o.orderId}" data-type="recharge"></td>
+  <td><input type="checkbox" class="batch-check" data-key="w" data-orderid="${o.orderId}" data-type="withdraw"></td>
   <!-- 订单号 -->
   <td>
     <div class="order-id">${o.orderId || '--'}</div>
