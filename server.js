@@ -1990,11 +1990,33 @@ app.get('/api/transactions', async (req, res) => {
         db.ref('users').once('value')
       ]);
 
+    // 获取当前管理员信息，非超级管理员仅显示创建时间之后的订单
+    let adminCreated = 0;
+    const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
+    if (tokenSnap.exists()) {
+      const adminId = tokenSnap.val().id;
+      const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+      if (adminSnap.exists()) {
+        const adminData = adminSnap.val();
+        if (!adminData.isSuper) {
+          adminCreated = adminData.created || 0;
+        }
+      }
+    }
+
+    const filterByTime = (arr) => {
+      if (adminCreated === 0) return arr;
+      return arr.filter(o => {
+        const t = o.time_us || o.time || o.created_at || o.createdAt || 0;
+        return Number(t) >= Number(adminCreated);
+      });
+    };
+
     return res.json({
       ok: true,
-      recharge: sortByTimeDesc(Object.values(rechargeSnap.val() || {})),
-      withdraw: sortByTimeDesc(Object.values(withdrawSnap.val() || {})),
-      buysell:  sortByTimeDesc(Object.values(buysellSnap.val() || {})),
+      recharge: sortByTimeDesc(filterByTime(Object.values(rechargeSnap.val() || {}))),
+      withdraw: sortByTimeDesc(filterByTime(Object.values(withdrawSnap.val() || {}))),
+      buysell:  sortByTimeDesc(filterByTime(Object.values(buysellSnap.val() || {}))),
       users: usersSnap.val() || {}
     });
 
@@ -2070,7 +2092,8 @@ app.post('/api/admin/create', async (req, res) => {
     const permissions = {
       recharge: req.body.recharge === true || req.body.recharge === 'true',
       withdraw: req.body.withdraw === true || req.body.withdraw === 'true',
-      buysell:  req.body.buysell  === true || req.body.buysell  === 'true'
+      buysell:  req.body.buysell  === true || req.body.buysell  === 'true',
+      admin:    req.body.admin    === true || req.body.admin    === 'true'
     };
 
     // 保存管理员信息到 Firebase 数据库
@@ -2302,7 +2325,8 @@ app.post('/api/admin/update-permissions', async (req, res) => {
     await db.ref(`admins/${id}/permissions`).set({
       recharge: !!permissions.recharge,
       withdraw: !!permissions.withdraw,
-      buysell:  !!permissions.buysell
+      buysell:  !!permissions.buysell,
+      admin:    !!permissions.admin
     });
     return res.json({ ok: true });
   } catch (e) {
