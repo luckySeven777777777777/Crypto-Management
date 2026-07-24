@@ -1699,7 +1699,7 @@ function renderBuySellRow(o) {
   <td>${usdtAmt ? usdtAmt.toFixed(2) : '--'}</td>
 
   <!-- 状态 -->
-  <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
+  <td><span class="badge" style="background:${isBuy?'#00c851':(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${isBuy?'成功':displayStatus(o.status)}</span></td>
 
   <!-- 操作按钮：buy 不显示，sell 显示 -->
   <td>${isBuy ? '--' : renderActionButtons(o.orderId, 'buysell', o.processed, o.status, o.lockedBy || '')}</td>
