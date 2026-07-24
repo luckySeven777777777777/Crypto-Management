@@ -97,6 +97,15 @@ body{
 }
 #adminUser{color:#fff;font-size:16px;}
 
+/* ----------- 铃铛通知 ----------- */
+.bell-icon{cursor:pointer;font-size:20px;margin:0 8px;position:relative;display:inline-flex;align-items:center;transition:transform .2s;user-select:none}
+.bell-icon:hover{transform:scale(1.15)}
+.bell-icon.muted{opacity:.45}
+.bell-badge{position:absolute;top:-7px;right:-10px;background:#ff4444;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.bell-badge.show{display:flex}
+@keyframes bell-ring{0%,100%{transform:rotate(0)}10%{transform:rotate(12deg)}20%{transform:rotate(-10deg)}30%{transform:rotate(8deg)}40%{transform:rotate(-6deg)}50%{transform:rotate(3deg)}60%{transform:rotate(-2deg)}70%{transform:rotate(0)}}
+.bell-icon.ring{animation:bell-ring .6s ease-in-out}
+
 /* ----------- LAYOUT ---------- */
 .app{
   display:flex;
@@ -461,6 +470,7 @@ button {
   </div>
   <div class="user">
     <span id="adminUser">admin</span>
+    <span id="bellIcon" class="bell-icon" title="新订单通知（已开启）">🔔<span class="bell-badge" id="bellBadge">0</span></span>
     <button id="logoutBtn">Logout</button>
   </div>
 </div>
@@ -1907,6 +1917,74 @@ function postRenderDecorate(){
 }
 
 /* -----------------------------
+   Bell notification
+------------------------------ */
+let bellSoundOn   = localStorage.getItem('bellSoundOn') !== 'false';
+let newOrderCount = 0;
+let knownOrderIds = new Set();
+
+(function initBell(){
+  const icon  = document.getElementById('bellIcon');
+  const badge = document.getElementById('bellBadge');
+  if(!icon || !badge) return;
+
+  function updateBadge(){
+    if(newOrderCount > 0){
+      badge.textContent = newOrderCount > 99 ? '99+' : newOrderCount;
+      badge.classList.add('show');
+    }else{
+      badge.classList.remove('show');
+    }
+  }
+
+  function updateIconState(){
+    if(bellSoundOn){
+      icon.classList.remove('muted');
+      icon.title = '新订单通知（已开启）';
+    }else{
+      icon.classList.add('muted');
+      icon.title = '新订单通知（已关闭）';
+    }
+  }
+
+  icon.addEventListener('click', () => {
+    bellSoundOn = !bellSoundOn;
+    localStorage.setItem('bellSoundOn', bellSoundOn);
+    updateIconState();
+    if(bellSoundOn){
+      newOrderCount = 0;
+      updateBadge();
+    }
+  });
+
+  window.playNewOrderSound = function(){
+    if(!bellSoundOn) return;
+    try{
+      const u = new SpeechSynthesisUtterance('你有新的订单请及时处理');
+      u.lang = 'zh-CN'; u.rate = 1.0; u.pitch = 1.1;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }catch(e){}
+  };
+
+  window.updateBellForNewOrder = function(orderId){
+    if(orderId && !knownOrderIds.has(orderId)){
+      knownOrderIds.add(orderId);
+      newOrderCount++;
+      updateBadge();
+      if(bellSoundOn){
+        icon.classList.add('ring');
+        setTimeout(() => icon.classList.remove('ring'), 600);
+        playNewOrderSound();
+      }
+    }
+  };
+
+  updateIconState();
+  updateBadge();
+})();
+
+/* -----------------------------
    SSE realtime orders
 ------------------------------ */
 let orderEventSource = null;
@@ -1920,6 +1998,12 @@ function connectOrderSSE(){
     orderEventSource.onmessage = function(ev){
       try{
         const d = JSON.parse(ev.data);
+
+        // Bell: detect new order
+        if(d && d.order && d.order.orderId){
+          updateBellForNewOrder(d.order.orderId);
+        }
+
         if(d && d.order){
 
           // flash alert if locked/failed
