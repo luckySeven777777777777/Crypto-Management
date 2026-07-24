@@ -200,6 +200,15 @@ button.primary{
 .member-tag-badge.no-color{background:#bbb;text-shadow:none}
 .member-tag-cell:hover .member-tag-badge{filter:brightness(1.1)}
 .member-tag-empty{color:#bbb;font-size:12px}
+/* 会员行标签背景色 */
+tr.row-tag-yellow td{background:rgba(245,197,24,.12)}
+tr.row-tag-green td{background:rgba(34,187,51,.1)}
+tr.row-tag-black td{background:rgba(51,51,51,.07)}
+tr.row-tag-red td{background:rgba(230,0,0,.08)}
+tr.row-tag-yellow td:first-child{border-left:3px solid #f5c518}
+tr.row-tag-green td:first-child{border-left:3px solid #22bb33}
+tr.row-tag-black td:first-child{border-left:3px solid #333}
+tr.row-tag-red td:first-child{border-left:3px solid #e60000}
 
 /* 标签编辑弹窗 */
 .tag-editor-overlay{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.3);z-index:9998;display:none}
@@ -2489,7 +2498,7 @@ async function loadMembers(resetPage = true){
         : `<span class="member-tag-cell member-tag-empty" onclick="openTagEditor('${uid}','','')">点击设置...</span>`;
 
       return `
-      <tr>
+      <tr class="row-tag-${tagColor}">
         <td>${uid}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${walletMap[uid] || u.wallet || ''}">${walletMap[uid] || u.wallet || '--'}</td>
         <td>${bal.toFixed(2)}</td>
