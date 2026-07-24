@@ -1990,33 +1990,11 @@ app.get('/api/transactions', async (req, res) => {
         db.ref('users').once('value')
       ]);
 
-    // 获取当前管理员信息，非超级管理员仅显示创建时间之后的订单
-    let adminCreated = 0;
-    const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (tokenSnap.exists()) {
-      const adminId = tokenSnap.val().id;
-      const adminSnap = await db.ref(`admins/${adminId}`).once('value');
-      if (adminSnap.exists()) {
-        const adminData = adminSnap.val();
-        if (!adminData.isSuper) {
-          adminCreated = adminData.created || 0;
-        }
-      }
-    }
-
-    const filterByTime = (arr) => {
-      if (adminCreated === 0) return arr;
-      return arr.filter(o => {
-        const t = o.time_us || o.time || o.created_at || o.createdAt || 0;
-        return Number(t) >= Number(adminCreated);
-      });
-    };
-
     return res.json({
       ok: true,
-      recharge: sortByTimeDesc(filterByTime(Object.values(rechargeSnap.val() || {}))),
-      withdraw: sortByTimeDesc(filterByTime(Object.values(withdrawSnap.val() || {}))),
-      buysell:  sortByTimeDesc(filterByTime(Object.values(buysellSnap.val() || {}))),
+      recharge: sortByTimeDesc(Object.values(rechargeSnap.val() || {})),
+      withdraw: sortByTimeDesc(Object.values(withdrawSnap.val() || {})),
+      buysell:  sortByTimeDesc(Object.values(buysellSnap.val() || {})),
       users: usersSnap.val() || {}
     });
 
