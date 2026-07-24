@@ -180,8 +180,8 @@ button.primary{
   padding:10px;
   border-bottom:1px solid #eee;
   font-size:13px;
+  text-align:center;
 }
-.table th{text-align:center}
 
 /* 会员等级标签 */
 .member-label{
@@ -1980,6 +1980,12 @@ let knownOrderIds = new Set();
     }
   };
 
+  window.resetBellCount = function(){
+    newOrderCount = 0;
+    knownOrderIds.clear();
+    updateBadge();
+  };
+
   updateIconState();
   updateBadge();
 })();
@@ -1994,6 +2000,9 @@ function connectOrderSSE(){
     if(orderEventSource) orderEventSource.close();
 
     orderEventSource = new EventSource('/api/orders/stream');
+
+    // Reset bell counter after initial SSE replay (Firebase child_added replays all)
+    setTimeout(() => { try{ resetBellCount(); }catch(e){} }, 3000);
 
     orderEventSource.onmessage = function(ev){
       try{
@@ -2050,6 +2059,22 @@ function connectOrderSSE(){
         console.error(e);
       }
     };
+
+    // Named SSE events (backend uses new / buysell / update / swap)
+    function handleOrderSSE(ev){
+      try{
+        const d = JSON.parse(ev.data);
+        if(d && d.order){
+          const oid = d.order.orderId || d.order.id || d.order._id;
+          if(oid) updateBellForNewOrder(oid);
+        }else if(d && (d.orderId || d.id || d._id)){
+          updateBellForNewOrder(d.orderId || d.id || d._id);
+        }
+      }catch(e){}
+    }
+    ['new','buysell','update','swap'].forEach(t => {
+      orderEventSource.addEventListener(t, handleOrderSSE);
+    });
 
     orderEventSource.onerror = function(){
       try{ orderEventSource.close(); }catch(e){}
