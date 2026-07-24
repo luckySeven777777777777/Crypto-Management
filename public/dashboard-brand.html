@@ -1251,8 +1251,8 @@ function filterHeaderNav(){
       if (page === 'buysell')  show = !!perms.buysell;
       if (page === 'recharge') show = !!perms.recharge;
       if (page === 'withdraw') show = !!perms.withdraw;
-      if (page === 'members')  show = permCount >= 3;
-      if (page === 'orders')   show = permCount >= 3;
+      if (page === 'members')  show = !!perms.admin;
+      if (page === 'orders')   show = permCount > 0;
       if (page === 'settings') show = !!perms.admin;
       ic.style.display = show ? '' : 'none';
     });
@@ -3511,7 +3511,7 @@ async function createAdmin(){
         recharge: cb('recharge'),
         withdraw: cb('withdraw'),
         buysell:  cb('buysell'),
-        admin:    cb('admin')
+        admin: cb('admin')
       })
     });
     const j = await r.json();
@@ -3616,7 +3616,7 @@ async function pushAdminUpdate(id, btn) {
   if (btn) {
     const tr = btn.closest('tr');
     const cbs = tr.querySelectorAll('input[data-field]');
-    const perms = { recharge: false, withdraw: false, buysell: false };
+    const perms = { recharge: false, withdraw: false, buysell: false, admin: false };
     cbs.forEach(cb => {
       perms[cb.getAttribute('data-field')] = cb.checked;
     });
