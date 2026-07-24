@@ -748,6 +748,7 @@ button {
       <label><input type="checkbox" value="recharge"> 充值</label>
       <label><input type="checkbox" value="withdraw"> 提款</label>
       <label><input type="checkbox" value="buysell"> BuySell</label>
+      <label><input type="checkbox" value="admin"> Admin</label>
 
       <button class="primary" onclick="createAdmin()">新增管理员</button>
     </div>
@@ -1232,7 +1233,7 @@ function filterHeaderNav(){
   try {
     if(isSuperAdmin()) return; // 超级管理员显示全部
     const perms = getAdminPerms();
-    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
+    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0)+(perms.admin?1:0);
     const icons = document.querySelectorAll('.header-nav .icon[data-page]');
     if (!icons.length) return;
     if (!permCount) {
@@ -1252,7 +1253,7 @@ function filterHeaderNav(){
       if (page === 'withdraw') show = !!perms.withdraw;
       if (page === 'members')  show = permCount >= 3;
       if (page === 'orders')   show = permCount >= 3;
-      if (page === 'settings') show = false;
+      if (page === 'settings') show = !!perms.admin;
       ic.style.display = show ? '' : 'none';
     });
     // 如果当前激活页被隐藏，切到 Dashboard
@@ -3462,7 +3463,8 @@ function renderAdminTable(admins){
       '<td style="white-space:nowrap">' +
         '<label><input type="checkbox" data-field="recharge" ' + (perms.recharge ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 充值</label> ' +
         '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
-        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label>' +
+        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
+        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label>' +
       '</td>' +
       '<td>' +
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
@@ -3508,7 +3510,8 @@ async function createAdmin(){
         id, nickname: nickname || id, password,
         recharge: cb('recharge'),
         withdraw: cb('withdraw'),
-        buysell:  cb('buysell')
+        buysell:  cb('buysell'),
+        admin:    cb('admin')
       })
     });
     const j = await r.json();
@@ -3557,7 +3560,7 @@ async function deleteAdmin(id){
 async function updateAdminPermissions(id, ev){
   const tr = ev.target.closest('tr');
   const cbs = tr.querySelectorAll('input[data-field]');
-  const perms = { recharge: false, withdraw: false, buysell: false };
+  const perms = { recharge: false, withdraw: false, buysell: false, admin: false };
   cbs.forEach(cb => {
     perms[cb.getAttribute('data-field')] = cb.checked;
   });
