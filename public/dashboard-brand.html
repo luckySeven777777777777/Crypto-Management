@@ -53,10 +53,47 @@ body{
 .top-header .brand{
   font-weight:700;
   font-size:18px;
+  white-space:nowrap;
+}
+.header-nav{
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+.header-nav .icon{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  padding:6px 10px;
+  border-radius:6px;
+  color:#cfe6ff;
+  cursor:pointer;
+  font-size:14px;
+  white-space:nowrap;
+  transition:background 0.2s;
+}
+.header-nav .icon:hover{
+  background:rgba(255,255,255,0.15);
+}
+.header-nav .icon.active{
+  background:rgba(255,255,255,0.25);
+  color:#fff;
+}
+.header-nav .icon.buysell{
+  background:rgba(255,255,255,0.12);
+}
+.header-nav .icon span{
+  font-size:12px;
+  margin-left:2px;
 }
 .top-header .user{
   font-size:16px;
   color:#fff;
+  white-space:nowrap;
+  margin-left:auto;
 }
 #adminUser{color:#fff;font-size:16px;}
 
@@ -65,50 +102,13 @@ body{
   display:flex;
   padding-top:64px;
 }
-.sidebar{
-  width:88px;
-  background:var(--deep-blue);
-  color:#fff;
-  min-height:calc(100vh - 64px);
-  padding-top:20px;
-  position:fixed;
-  top:64px; left:0;
-}
-.sidebar .icon{
-  display:block;
-  padding:16px;
-  text-align:center;
-  color:#cdd6f4;
-  cursor:pointer;
-}
-.sidebar .icon.active{
-  background:var(--top-blue);
-  color:#fff;
-  border-radius:8px;
-  margin:4px;
-}
-.sidebar .buysell{
-  background:linear-gradient(90deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02));
-  border-radius:8px;
-  margin:6px;
-  padding:12px 6px;
-  text-align:center;
-}
-
 .main{
-  margin-left:88px;
   flex:1;
   padding:22px 26px;
 }
 /* ====== FIX CLICK ISSUE ====== */
 
 /* header 不挡点击，只给内部按钮 */
-
-/* sidebar 必须可点 */
-.sidebar{
-  pointer-events: auto;
-  z-index: 900;
-}
 
 /* 主内容必须在最上层 */
 .main {
@@ -266,10 +266,11 @@ button.primary{
   cursor: not-allowed;
   pointer-events: none;
 }
-.confirm-btn{ background:#00c851; color:#fff; }
-.cancel-btn{ background:#ff4444; color:#fff; }
-.lock-btn{ background:#ffbb33; color:#111; }
-.unlock-btn{ background:#6c757d; color:#fff; }
+.confirm-btn{ background:transparent; color:#00c851; border:1px solid transparent; }
+.cancel-btn{ background:transparent; color:#ff4444; border:1px solid transparent; }
+.lock-btn{ background:transparent; color:#ffbb33; border:1px solid transparent; }
+.unlock-btn{ background:transparent; color:#6c757d; border:1px solid transparent; }
+.small-btn:not(.confirm-btn):not(.cancel-btn):not(.lock-btn):not(.unlock-btn){ background:transparent; color:#1976d2; border:1px solid transparent; }
 
 /* Modal */
 .modal{
@@ -439,40 +440,22 @@ button {
 
 <body>
 <div class="top-header">
-  <div class="brand">NEXBIT 管理后台（代理）</div>
+  <div class="brand">管理后台</div>
+  <div class="header-nav">
+    <div class="icon active" data-page="dashboard" title="控制台">🏠<span>Dashboard</span></div>
+    <div class="icon buysell" data-page="buysell" title="Buy/Sell">💱<span>Buy/Sell</span></div>
+    <div class="icon" data-page="recharge" title="充值管理">💳<span>充值</span></div>
+    <div class="icon" data-page="withdraw" title="提款管理">💸<span>提款</span></div>
+    <div class="icon" data-page="members" title="会员管理">👥<span>会员</span></div>
+    <div class="icon" data-page="orders" title="订单记录">📜<span>订单</span></div>
+    <div class="icon" data-page="settings" title="系统设置">⚙️<span>设置</span></div>
+  </div>
   <div class="user">
     <span id="adminUser">admin</span>
     <button id="logoutBtn">Logout</button>
   </div>
 </div>
-
-
 <div class="app">
-
-  <div class="sidebar">
-    <div class="icon active" data-page="dashboard" title="控制台">🏠</div>
-
-    <div class="icon buysell" data-page="buysell" title="BuySell（常显）">💱
-      <div style="font-size:11px;margin-top:6px;color:#cfe6ff">BuySell</div>
-    </div>
-
-    <div class="icon" data-page="recharge" title="充值管理">💳
-      <div style="font-size:11px;margin-top:6px;color:#cfe6ff">Deposit</div>
-    </div>
-    <div class="icon" data-page="withdraw" title="提款管理">💸
-      <div style="font-size:11px;margin-top:6px;color:#cfe6ff">Withdrawal</div>
-    </div>
-    <div class="icon" data-page="members" title="会员管理">👥
-      <div style="font-size:11px;margin-top:6px;color:#cfe6ff">Member</div>
-    </div>
-    <div class="icon" data-page="orders" title="订单记录">📜
-      <div style="font-size:11px;margin-top:6px;color:#cfe6ff">Order</div>
-    </div>
-    <div class="icon" data-page="settings" title="系统设置">⚙️
-      <div style="font-size:11px;margin-top:6px;color:#cfe6ff">Setting</div>
-    </div>
-  </div>
-
   <div class="main">
 
     <!-- Dashboard -->
@@ -1095,7 +1078,22 @@ function paginate(list, page){
 
 function renderPager(total, page, key, onChange){
   const pages = Math.ceil(total / PAGE_SIZE);
-  if(pages <= 1) return '';
+
+  const batchBar = (key==='bs'||key==='r'||key==='w') ? `
+    <div style="margin-top:6px;display:flex;gap:12px;align-items:center;border-top:1px solid #e0e0e0;padding-top:8px">
+      <label style="cursor:pointer;font-size:13px;color:#555;">
+        <input type="checkbox" class="batch-select-all" data-key="${key}" onchange="batchSelectAll(this,'${key}')"> 全选当页
+      </label>
+      <select class="batch-action-select" data-key="${key}" data-fn="${onChange}" onchange="batchAction(this,'${key}','${onChange}')" style="padding:4px 8px;border-radius:4px;border:1px solid #ccc;">
+        <option value="">批量操作...</option>
+        <option value="approve">批量通过</option>
+        <option value="reject">批量拒绝</option>
+        <option value="remark">批量备注</option>
+      </select>
+    </div>
+  ` : '';
+
+  if(pages <= 1) return batchBar;
 
   return `
     <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
@@ -1109,6 +1107,7 @@ function renderPager(total, page, key, onChange){
         下一页
       </button>
     </div>
+    ${batchBar}
   `;
 }
 
@@ -1149,9 +1148,9 @@ function updateTickSummary(){ $('#tickersSummary').innerText = watchedSymbols.ma
 /* -----------------------------
    Page control
 ------------------------------ */
-$all(".sidebar .icon").forEach(ic=>{
+$all(".header-nav .icon").forEach(ic=>{
   ic.addEventListener("click", ()=>{
-    $all(".sidebar .icon").forEach(x=>x.classList.remove("active"));
+    $all(".header-nav .icon").forEach(x=>x.classList.remove("active"));
     ic.classList.add("active");
     const page = ic.getAttribute("data-page");
     hideAllPages();
@@ -1200,12 +1199,12 @@ function setAdminId(n){ try{ localStorage.setItem(ADMIN_ID_KEY, n); }catch(e){} 
 function getAdminId(){ try{ return localStorage.getItem(ADMIN_ID_KEY) || ''; }catch(e){ return ''; } }
 function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
 
-function filterSidebar(){
+function filterHeaderNav(){
   try {
     if(isSuperAdmin()) return; // 超级管理员显示全部
     const perms = getAdminPerms();
     const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0);
-    const icons = document.querySelectorAll('.sidebar .icon[data-page]');
+    const icons = document.querySelectorAll('.header-nav .icon[data-page]');
     if (!icons.length) return;
     if (!permCount) {
       // 权限数据为空时仅显示控制台
@@ -1228,9 +1227,9 @@ function filterSidebar(){
       ic.style.display = show ? '' : 'none';
     });
     // 如果当前激活页被隐藏，切到 Dashboard
-    const active = document.querySelector('.sidebar .icon.active');
+    const active = document.querySelector('.header-nav .icon.active');
     if (active && active.style.display === 'none') {
-      const dash = document.querySelector('.sidebar .icon[data-page="dashboard"]');
+      const dash = document.querySelector('.header-nav .icon[data-page="dashboard"]');
       if (dash) { dash.click(); }
     }
     console.log('[filterSidebar] perms=', perms, 'isSuper=', isSuperAdmin());
@@ -1248,7 +1247,7 @@ function restoreLoginState(){
 }
 
 async function ensureLoggedIn(){
-  if(getAdminToken()) { restoreLoginState(); filterSidebar(); return true; }
+  if(getAdminToken()) { restoreLoginState(); filterHeaderNav(); return true; }
 
   hideAllPages();
 
@@ -1259,7 +1258,7 @@ async function ensureLoggedIn(){
     loginModal.style.background = '#1a1a2e';
     document.getElementById('loginModalTitle').innerText = 'Login';
     document.getElementById('loginModalHint').style.display = 'none';
-    const sidebar = document.querySelector('.sidebar');
+    const sidebar = document.querySelector('.header-nav');
     const header = document.querySelector('.top-header');
     if (sidebar) sidebar.style.display = 'none';
     if (header) header.style.display = 'none';
@@ -1274,7 +1273,7 @@ async function ensureLoggedIn(){
     loginModal.style.background = 'rgba(0,0,0,0.6)';
     document.getElementById('loginModalTitle').innerText = '管理员登录';
     document.getElementById('loginModalHint').style.display = '';
-    const sidebar = document.querySelector('.sidebar');
+    const sidebar = document.querySelector('.header-nav');
     const header = document.querySelector('.top-header');
     if (sidebar) sidebar.style.display = '';
     if (header) header.style.display = '';
@@ -1289,7 +1288,7 @@ function closeAdminLogin(){
   // 下级登录模式：不恢复后台，保持隐藏
   if (_isSubAdminLogin) return;
   // 管理员模式：恢复后台元素
-  const sidebar = document.querySelector('.sidebar');
+  const sidebar = document.querySelector('.header-nav');
   const header = document.querySelector('.top-header');
   if (sidebar) sidebar.style.display = '';
   if (header) header.style.display = '';
@@ -1336,11 +1335,11 @@ async function submitAdminLogin(){
       // 登录成功后重置下级标记，恢复后台元素
       _isSubAdminLogin = false;
       sessionStorage.removeItem('is_sub_admin_login');
-      document.querySelector('.sidebar').style.display = '';
+      document.querySelector('.header-nav').style.display = '';
       document.querySelector('.top-header').style.display = '';
       document.body.style.background = '';
       closeAdminLogin();
-      filterSidebar();
+      filterHeaderNav();
       loadDashboard();
     } else {
       alert('登录失败: ' + (j.error || '未知'));
@@ -1355,7 +1354,7 @@ async function submitAdminLogin(){
 ------------------------------ */
 function renderActionButtons(orderId, type, processed, status, lockedBy){
   try{
-    const active = document.querySelector('.sidebar .icon.active')?.getAttribute('data-page') || '';
+    const active = document.querySelector('.header-nav .icon.active')?.getAttribute('data-page') || '';
     if(active === 'orders') return '';
   }catch(e){}
 
@@ -1471,7 +1470,7 @@ const body = {
     const j = await r.json();
 
     if(j.ok){
-      const active = document.querySelector('.sidebar .icon.active').dataset.page;
+      const active = document.querySelector('.header-nav .icon.active').dataset.page;
       if(active==='recharge') r_search();
       else if(active==='withdraw') w_search();
       else if(active==='buysell') bs_search();
@@ -1516,7 +1515,7 @@ async function addRemark(orderId, type, currentStatus){
     if(j.ok){
       alert('备注已保存');
 
-      const active = document.querySelector('.sidebar .icon.active')?.dataset.page;
+      const active = document.querySelector('.header-nav .icon.active')?.dataset.page;
       if(active === 'recharge') r_search();
       else if(active === 'withdraw') w_search();
       else if(active === 'buysell') bs_search();
@@ -1639,6 +1638,8 @@ function renderBuySellRow(o) {
 
   return `
 <tr>
+  <!-- 全选框 -->
+  <td><input type="checkbox" class="batch-check" data-key="bs" data-orderid="${o.orderId}" data-type="buysell"></td>
   <!-- 订单号（只留订单号） -->
   <td>
     <div class="order-id">${o.orderId || ''}</div>
@@ -1668,7 +1669,7 @@ function renderBuySellRow(o) {
   <td>${usdtAmt ? usdtAmt.toFixed(2) : '--'}</td>
 
   <!-- 状态 -->
-  <td><span class="badge">${displayStatus(o.status)}</span></td>
+  <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
 
   <!-- 操作按钮：buy 不显示，sell 显示 -->
   <td>${isBuy ? '--' : renderActionButtons(o.orderId, 'buysell', o.processed, o.status, o.lockedBy || '')}</td>
@@ -1727,6 +1728,8 @@ function calcSummary(list, type){
 function renderRechargeRow(o) {
   return `
 <tr>
+  <!-- 全选框 -->
+  <td><input type="checkbox" class="batch-check" data-key="r" data-orderid="${o.orderId}" data-type="recharge"></td>
   <!-- 订单号 -->
   <td>
     <div class="order-id">${o.orderId || '--'}</div>
@@ -1759,7 +1762,7 @@ function renderRechargeRow(o) {
   <td>${o.ip || '--'}</td>
 
   <!-- 状态 -->
-  <td><span class="badge">${displayStatus(o.status)}</span></td>
+  <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
 
   <!-- 操作按钮 -->
   <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status, o.lockedBy || '')}</td>
@@ -1776,6 +1779,8 @@ function renderRechargeRow(o) {
 function renderWithdrawRow(o) {
   return `
 <tr>
+  <!-- 全选框 -->
+  <td><input type="checkbox" class="batch-check" data-key="r" data-orderid="${o.orderId}" data-type="recharge"></td>
   <!-- 订单号 -->
   <td>
     <div class="order-id">${o.orderId || '--'}</div>
@@ -1808,7 +1813,7 @@ function renderWithdrawRow(o) {
   <td>${o.ip || '--'}</td>
 
   <!-- 状态 -->
-  <td><span class="badge">${displayStatus(o.status)}</span></td>
+  <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
 
   <!-- 操作按钮 -->
   <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status, o.lockedBy || '')}</td>
@@ -1917,7 +1922,7 @@ function connectOrderSSE(){
 
           // refresh active page
           const active = document
-            .querySelector('.sidebar .icon.active')
+            .querySelector('.header-nav .icon.active')
             ?.getAttribute('data-page');
 
           if(active === 'recharge'){
@@ -1969,7 +1974,7 @@ async function bs_search(){
   if($('#bs_side').value) params.side = $('#bs_side').value;
 
   const tbody = $('#bs_table');
-  tbody.innerHTML = `<tr><td colspan="11">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="12">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
@@ -1986,7 +1991,7 @@ async function bs_search(){
     });
 
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="11">没有记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
       window.buySellPNL = 0;   // ✅ 保证变量存在
       return;
     }
@@ -2020,12 +2025,13 @@ async function bs_search(){
 
   }catch(e){
     console.error(e);
-    tbody.innerHTML = `<tr><td colspan="11">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12">加载失败</td></tr>`;
     window.buySellPNL = 0; // 容错
   }
 }
 
 async function r_search(){
+  pageState.r = pageState.r || 1;
   const params = {};
   if($('#r_start').value) params.start = $('#r_start').value;
   if($('#r_end').value) params.end = $('#r_end').value;
@@ -2034,7 +2040,7 @@ async function r_search(){
   if($('#r_status').value) params.status = $('#r_status').value;
 
   const tbody = $('#r_table');
-  tbody.innerHTML = `<tr><td colspan="13">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="14">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
@@ -2051,13 +2057,18 @@ async function r_search(){
     });
 
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`;
-      window.rechargeProfit = 0;   // ✅ 保证变量存在
+      tbody.innerHTML = `<tr><td colspan="14">没有记录</td></tr>`;
+      window.rechargeProfit = 0;
       return;
     }
 
-    // ===== 渲染表格 =====
-    tbody.innerHTML = list.map(o => renderRechargeRow(o)).join('');
+    // ✅ 分页
+    pageState.r = pageState.r || 1;
+    const rPageList = paginate(list, pageState.r);
+
+    // ===== 渲染表格（分页后） =====
+    tbody.innerHTML = rPageList.map(o => renderRechargeRow(o)).join('') +
+      renderPager(list.length, pageState.r, 'r', 'r_search');
     postRenderDecorate();
 
     // ===============================
@@ -2074,7 +2085,7 @@ console.log('【充值金额】USDT:', summary.total.toFixed(2));
 
   }catch(e){
     console.error(e);
-    tbody.innerHTML = `<tr><td colspan="13">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="14">加载失败</td></tr>`;
     window.rechargeProfit = 0; // 容错
   }
 }
@@ -2087,7 +2098,7 @@ async function w_search(){
   if($('#w_status').value) params.status = $('#w_status').value;
 
   const tbody = $('#w_table');
-  tbody.innerHTML = `<tr><td colspan="13">加载中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="14">加载中...</td></tr>`;
 
   try{
     const all = await fetchAll(params);
@@ -2104,7 +2115,7 @@ async function w_search(){
     });
 
  if(!list.length){
-  tbody.innerHTML = `<tr><td colspan="10">没有记录</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="14">没有记录</td></tr>`;
   return;
 }
 
@@ -2131,7 +2142,7 @@ console.log('【提款支出】USDT:', summary.total.toFixed(2));
 
   }catch(e){
     console.error(e);
-    tbody.innerHTML = `<tr><td colspan="13">加载失败</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="14">加载失败</td></tr>`;
     window.withdrawLoss = 0; // 容错
   }
 }
@@ -2778,6 +2789,115 @@ function getMyanmarMidnight() {
   return Date.UTC(mmtDate.getFullYear(), mmtDate.getMonth(), mmtDate.getDate()) - mmtOffset;
 }
 
+
+/* ===============================
+   批量操作：全选 / 批量通过 / 拒绝 / 备注
+=============================== */
+function batchSelectAll(cb, key) {
+  document.querySelectorAll('.batch-check[data-key="' + key + '"]').forEach(c => {
+    c.checked = cb.checked;
+  });
+}
+
+async function batchAction(select, key, searchFn) {
+  const action = select.value;
+  if (!action) return;
+  
+  const checked = document.querySelectorAll('.batch-check[data-key="' + key + '"]:checked');
+  if (checked.length === 0) {
+    alert('请至少选择一条记录');
+    select.value = '';
+    return;
+  }
+  
+  if (!getAdminToken()) {
+    await ensureLoggedIn();
+    if (!getAdminToken()) { select.value = ''; return; }
+  }
+  
+  let note = '';
+  if (action === 'reject') {
+    note = prompt('请输入批量拒绝原因（必填）');
+    if (!note) { select.value = ''; return; }
+  }
+  if (action === 'remark') {
+    note = prompt('请输入批量备注内容（必填）');
+    if (!note) { select.value = ''; return; }
+  }
+  
+  if (!confirm('确定对选中的 ' + checked.length + ' 条记录执行：' + (action==='approve'?'通过':action==='reject'?'拒绝':'备注') + '？')) {
+    select.value = '';
+    return;
+  }
+  
+  const finalStatus = action === 'approve' ? 'success' : action === 'reject' ? 'failed' : undefined;
+  
+  let count = 0;
+  for (const cb of checked) {
+    const orderId = cb.dataset.orderid;
+    const type = cb.dataset.type;
+    if (!orderId || !type) continue;
+    
+    const body = { orderId, type, note };
+    if (finalStatus) body.status = finalStatus;
+    
+    try {
+      const r = await fetch(API_UPDATE, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body)
+      });
+      const j = await r.json();
+      if (j && j.ok) count++;
+    } catch(e) { console.error(e); }
+  }
+  
+  select.value = '';
+  alert('批量操作完成：' + count + ' / ' + checked.length + ' 条记录');
+  window[searchFn]();
+}
+
+/* ===============================
+   缅甸时间零点自动刷新页面
+   - buysell / recharge / withdraw 到达缅甸 0 点自动重新查询
+=============================== */
+function getMyanmarMidnightMs() {
+  const now = new Date();
+  const mmtOffset = (6 * 60 + 30) * 60000; // UTC+6:30
+  const mmtMs = now.getTime() + now.getTimezoneOffset() * 60000 + mmtOffset;
+  const mmtDate = new Date(mmtMs);
+  return Date.UTC(mmtDate.getFullYear(), mmtDate.getMonth(), mmtDate.getDate()) - mmtOffset;
+}
+
+let _midnightTimer = null;
+function schedulePageMidnightRefresh() {
+  if (_midnightTimer) clearTimeout(_midnightTimer);
+  const now = Date.now();
+  const midnight = getMyanmarMidnightMs();
+  let nextMidnight = midnight;
+  if (now >= midnight) {
+    nextMidnight = midnight + 24 * 60 * 60 * 1000;
+  }
+  const delay = nextMidnight - now;
+  _midnightTimer = setTimeout(() => {
+    // 缅甸时间零点到了，自动刷新当前页面数据
+    const active = document.querySelector('.header-nav .icon.active')?.getAttribute('data-page') || '';
+    if (active === 'buysell') {
+      pageState.bs = 1;
+      if (typeof bs_search === 'function') bs_search();
+    } else if (active === 'recharge') {
+      pageState.r = 1;
+      if (typeof r_search === 'function') r_search();
+    } else if (active === 'withdraw') {
+      pageState.w = 1;
+      if (typeof w_search === 'function') w_search();
+    }
+    // 递归调度下一天
+    schedulePageMidnightRefresh();
+  }, delay);
+}
+schedulePageMidnightRefresh();
+
 function scheduleMidnightReset() {
   const now = Date.now();
   const midnight = getMyanmarMidnight();
@@ -2944,7 +3064,7 @@ document.addEventListener('click', function (e) {
   if (!btn) return;
 
   const activePage =
-    document.querySelector('.sidebar .icon.active')?.dataset.page;
+    document.querySelector('.header-nav .icon.active')?.dataset.page;
 
   if (!activePage) return;
 
