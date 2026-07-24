@@ -3346,6 +3346,7 @@ function resetWithdrawPage() {
 
     _isSubAdminLogin = true;
     sessionStorage.setItem('is_sub_admin_login', '1');
+    sessionStorage.setItem('nexbit_sub_login_id', loginId);
 
     // 清除已有的登录态，确保显示登录页面
     try {
@@ -3369,7 +3370,12 @@ function resetWithdrawPage() {
 document.getElementById('logoutBtn')?.addEventListener('click', () => {
   localStorage.removeItem('nexbit_admin_token');
   localStorage.removeItem('admin_user');
-  location.href = 'login.html';
+  const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
+  if (subLoginId) {
+    location.href = 'dashboard-brand.html?login=' + encodeURIComponent(subLoginId);
+  } else {
+    location.href = 'login.html';
+  }
 });
 async function resetWithdrawPassword() {
   const verifyType = document.getElementById('verifyType').value;
@@ -3653,6 +3659,17 @@ async function checkConfigUpdate() {
       _lastConfigVersion = ver;
     } else if (ver > _lastConfigVersion) {
       clearInterval(_configPollTimer);
+      // 先从服务器拉取最新权限，确保刷新后权限生效
+      try {
+        const listRes = await fetch('/api/admin/list', { headers: authHeaders() });
+        const listData = await listRes.json();
+        if (listData.ok && Array.isArray(listData.admins)) {
+          const me = listData.admins.find(a => a.id === myId);
+          if (me) {
+            setAdminPerms(me.permissions || {}, !!me.isSuper);
+          }
+        }
+      } catch(e) { /* 静默忽略 */ }
       alert('配置已更新，页面将自动刷新以生效。');
       location.reload();
     }
