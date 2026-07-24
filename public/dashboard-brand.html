@@ -179,9 +179,9 @@ button.primary{
 .table th,.table td{
   padding:10px;
   border-bottom:1px solid #eee;
-  text-align:left;
   font-size:13px;
 }
+.table th{text-align:center}
 
 /* 会员等级标签 */
 .member-label{
@@ -1999,9 +1999,13 @@ function connectOrderSSE(){
       try{
         const d = JSON.parse(ev.data);
 
-        // Bell: detect new order
-        if(d && d.order && d.order.orderId){
-          updateBellForNewOrder(d.order.orderId);
+        // Bell: detect new order (兼容 orderId / id / _id)
+        if(d && d.order){
+          const oid = d.order.orderId || d.order.id || d.order._id;
+          if(oid) updateBellForNewOrder(oid);
+        }else if(d && (d.orderId || d.id || d._id)){
+          const oid = d.orderId || d.id || d._id;
+          updateBellForNewOrder(oid);
         }
 
         if(d && d.order){
