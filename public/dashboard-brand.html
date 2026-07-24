@@ -1078,6 +1078,7 @@ function paginate(list, page){
 
 function renderPager(total, page, key, onChange){
   const pages = Math.ceil(total / PAGE_SIZE);
+  const colspan = key==='bs'?12:key==='r'||key==='w'?14:12;
 
   const batchBar = (key==='bs'||key==='r'||key==='w') ? `
     <div style="margin-top:6px;display:flex;gap:12px;align-items:center;border-top:1px solid #e0e0e0;padding-top:8px">
@@ -1093,21 +1094,26 @@ function renderPager(total, page, key, onChange){
     </div>
   ` : '';
 
-  if(pages <= 1) return batchBar;
+  if(pages <= 1){
+    if(!batchBar) return '';
+    return `<tr><td colspan="${colspan}">${batchBar}</td></tr>`;
+  }
 
   return `
-    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-      <button ${page<=1?'disabled':''}
-        onclick="pageState.${key}--; ${onChange}()">
-        上一页
-      </button>
-      <span class="small">第 ${page} / ${pages} 页</span>
-      <button ${page>=pages?'disabled':''}
-        onclick="pageState.${key}++; ${onChange}()">
-        下一页
-      </button>
-    </div>
-    ${batchBar}
+    <tr><td colspan="${colspan}">
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button ${page<=1?'disabled':''}
+          onclick="pageState.${key}--; ${onChange}()">
+          上一页
+        </button>
+        <span class="small">第 ${page} / ${pages} 页</span>
+        <button ${page>=pages?'disabled':''}
+          onclick="pageState.${key}++; ${onChange}()">
+          下一页
+        </button>
+      </div>
+      ${batchBar}
+    </td></tr>
   `;
 }
 
