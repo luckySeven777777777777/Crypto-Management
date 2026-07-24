@@ -1922,6 +1922,7 @@ function postRenderDecorate(){
 let bellSoundOn   = localStorage.getItem('bellSoundOn') !== 'false';
 let newOrderCount = 0;
 let knownOrderIds = new Set();
+window.__bellPageLoadMs = Date.now();
 
 (function initBell(){
   const icon  = document.getElementById('bellIcon');
@@ -1980,12 +1981,6 @@ let knownOrderIds = new Set();
     }
   };
 
-  window.resetBellCount = function(){
-    newOrderCount = 0;
-    knownOrderIds.clear();
-    updateBadge();
-  };
-
   updateIconState();
   updateBadge();
 })();
@@ -2000,9 +1995,6 @@ function connectOrderSSE(){
     if(orderEventSource) orderEventSource.close();
 
     orderEventSource = new EventSource('/api/orders/stream');
-
-    // Reset bell counter after initial SSE replay (Firebase child_added replays all)
-    setTimeout(() => { try{ resetBellCount(); }catch(e){} }, 3000);
 
     orderEventSource.onmessage = function(ev){
       try{
@@ -2064,12 +2056,14 @@ function connectOrderSSE(){
     function handleOrderSSE(ev){
       try{
         const d = JSON.parse(ev.data);
-        if(d && d.order){
-          const oid = d.order.orderId || d.order.id || d.order._id;
-          if(oid) updateBellForNewOrder(oid);
-        }else if(d && (d.orderId || d.id || d._id)){
-          updateBellForNewOrder(d.orderId || d.id || d._id);
-        }
+        const order = d && d.order;
+        if(!order) return;
+        // Filter: only orders after page load (ignore Firebase replay)
+        let orderMs = Number(order.time_us || order.time || order.createdAt || 0);
+        if(orderMs && orderMs < 1e12) orderMs *= 1000; // seconds → ms
+        if(orderMs && orderMs < window.__bellPageLoadMs) return;
+        const oid = order.orderId || order.id || order._id;
+        if(oid) updateBellForNewOrder(oid);
       }catch(e){}
     }
     ['new','buysell','update','swap'].forEach(t => {
