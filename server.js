@@ -2071,7 +2071,8 @@ app.post('/api/admin/create', async (req, res) => {
       recharge: req.body.recharge === true || req.body.recharge === 'true',
       withdraw: req.body.withdraw === true || req.body.withdraw === 'true',
       buysell:  req.body.buysell  === true || req.body.buysell  === 'true',
-      admin:    req.body.admin    === true || req.body.admin    === 'true'
+      admin:    req.body.admin    === true || req.body.admin    === 'true',
+      balance_adjust: req.body.balance_adjust === true || req.body.balance_adjust === 'true'
     };
 
     // 保存管理员信息到 Firebase 数据库
@@ -2282,6 +2283,49 @@ app.post('/api/admin/toggle-status', async (req, res) => {
   }
 });
 
+// 踢出管理员（强制下线）
+app.post('/api/admin/kick', async (req, res) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+
+    const admin = snap.val();
+    if (admin.isSuper)
+      return res.status(403).json({ ok: false, error: 'cannot kick super admin' });
+
+    // 清除该管理员的所有 token
+    const tokenSnap = await db.ref('admins_by_token').once('value');
+    if (tokenSnap.exists()) {
+      const deletions = [];
+      tokenSnap.forEach(child => {
+        if (child.val().id === id) deletions.push(child.key);
+      });
+      for (const tk of deletions) {
+        await db.ref(`admins_by_token/${tk}`).remove();
+      }
+    }
+
+    // 更新状态为离线
+    await db.ref(`admins/${id}`).update({ status: '离线' });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin kick error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
 // 更新管理员权限
 app.post('/api/admin/update-permissions', async (req, res) => {
   try {
@@ -2304,7 +2348,8 @@ app.post('/api/admin/update-permissions', async (req, res) => {
       recharge: !!permissions.recharge,
       withdraw: !!permissions.withdraw,
       buysell:  !!permissions.buysell,
-      admin:    !!permissions.admin
+      admin:    !!permissions.admin,
+      balance_adjust: !!permissions.balance_adjust
     });
     return res.json({ ok: true });
   } catch (e) {
