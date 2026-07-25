@@ -2998,7 +2998,8 @@ function openProfile(uid) {
   if (!uid || uid === '--') return;
   currentProfileUid = uid;
   profilePendingChanges = {};
-  const isAdmin = isSuperAdmin();
+  const perms = getAdminPerms();
+  const isAdmin = isSuperAdmin() && perms.admin !== false;
   const store = getProfileStore();
   const profile = store[uid] || {};
   
@@ -3032,6 +3033,28 @@ function openProfile(uid) {
   const saveBtn = document.getElementById('profileSaveBtn');
   if (saveBtn) { saveBtn.style.display = isAdmin ? '' : 'none'; }
   
+  // 头像上传区域：仅 admin 可更换
+  const avatarWrap = document.querySelector('#profileModal .avatar-wrap');
+  if (avatarWrap) {
+    if (isAdmin) {
+      avatarWrap.title = '点击更换头像';
+      avatarWrap.style.cursor = 'pointer';
+      avatarWrap.style.opacity = '1';
+      avatarWrap.style.pointerEvents = 'auto';
+      avatarWrap.onclick = function() { document.getElementById('avatarFileInput').click(); };
+      const overlay = avatarWrap.querySelector('.avatar-overlay');
+      if (overlay) overlay.style.display = '';
+    } else {
+      avatarWrap.title = '仅管理员可更换头像';
+      avatarWrap.style.cursor = 'default';
+      avatarWrap.style.opacity = '0.7';
+      avatarWrap.style.pointerEvents = 'none';
+      avatarWrap.onclick = null;
+      const overlay = avatarWrap.querySelector('.avatar-overlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+  }
+  
   document.getElementById('profileModal').style.display = 'flex';
 }
 
@@ -3043,7 +3066,8 @@ function closeProfile() {
 
 function editProfileField(field) {
   if (!currentProfileUid) return;
-  if (!isSuperAdmin()) return;
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
   
   const store = getProfileStore();
   const profile = store[currentProfileUid] || {};
@@ -3068,7 +3092,8 @@ function editProfileField(field) {
 
 function refreshProfileDisplay() {
   if (!currentProfileUid) return;
-  const isAdmin = isSuperAdmin();
+  const perms = getAdminPerms();
+  const isAdmin = isSuperAdmin() && perms.admin !== false;
   const store = getProfileStore();
   const profile = store[currentProfileUid] || {};
   // 合并暂存修改
@@ -3094,7 +3119,8 @@ function refreshProfileDisplay() {
 
 function saveProfile() {
   if (!currentProfileUid) return;
-  if (!isSuperAdmin()) return;
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
   
   // 如果有未保存的修改，先弹出确认
   const changes = profilePendingChanges;
@@ -3106,7 +3132,7 @@ function saveProfile() {
   }
   
   const confirmMsg = '即将保存以下修改：\n' + changedFields.map(f => ' - ' + f + ': ' + changes[f]).join('\n');
-  if (!confirm(confirmMsg + '\n\n确认保存？下级账号将同步更新。')) return;
+  if (!confirm(confirmMsg + '\n\n确认保存？')) return;
   
   const store = getProfileStore();
   const profile = store[currentProfileUid] || {};
@@ -3116,12 +3142,13 @@ function saveProfile() {
   
   profilePendingChanges = {};
   openProfile(currentProfileUid);
-  alert('已保存，所有下级账号已同步。');
+  alert('已保存。注：数据存储于本地浏览器，下级账号仅在相同浏览器中可同步查看。');
 }
 
 function viewProfilePhone() {
   if (!currentProfileUid) return;
-  if (!isSuperAdmin()) return;
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
   
   const store = getProfileStore();
   const profile = store[currentProfileUid] || {};
@@ -3141,7 +3168,8 @@ function viewProfilePhone() {
 }
 
 function uploadAvatar(event) {
-  if (!currentProfileUid || !isSuperAdmin()) return;
+  const perms = getAdminPerms();
+  if (!currentProfileUid || !(isSuperAdmin() && perms.admin !== false)) return;
   const file = event.target.files[0];
   if (!file) return;
   if (!file.type.startsWith('image/')) { alert('请选择图片文件'); return; }
