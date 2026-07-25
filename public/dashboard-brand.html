@@ -2652,7 +2652,8 @@ async function bs_search(){
     // 自己锁定
     if (document.getElementById('bsLockedOnly')?.checked) {
       const myName = getAdminName();
-      list = list.filter(o => o.lockedBy === myName);
+      const myId = getAdminId();
+      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
     }
 
     if(!list.length){
@@ -2724,7 +2725,8 @@ async function r_search(){
     // 自己锁定
     if (document.getElementById('rLockedOnly')?.checked) {
       const myName = getAdminName();
-      list = list.filter(o => o.lockedBy === myName);
+      const myId = getAdminId();
+      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
     }
 
     if(!list.length){
@@ -2788,7 +2790,8 @@ async function w_search(){
     // 自己锁定
     if (document.getElementById('wLockedOnly')?.checked) {
       const myName = getAdminName();
-      list = list.filter(o => o.lockedBy === myName);
+      const myId = getAdminId();
+      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
     }
 
     // 快速状态筛选
@@ -2796,7 +2799,7 @@ async function w_search(){
     if (quickStatus) {
       switch(quickStatus) {
         case 'pending':  list = list.filter(o => o.status === 'processing'); break;
-        case 'unlocked': list = list.filter(o => o.status !== 'locked'); break;
+        case 'unlocked': list = list.filter(o => o.status === 'processing'); break;
         case 'locked':   list = list.filter(o => o.status === 'locked'); break;
         case 'rejected': list = list.filter(o => o.status === 'failed'); break;
         case 'approved': list = list.filter(o => o.status === 'success'); break;
