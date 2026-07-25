@@ -926,7 +926,7 @@ button {
       <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
       <label><input type="checkbox" value="balance_adjust"> <span data-i18n="text" data-key="balanceAdjust">加减操作</span></label>
 
-      <button class="primary" onclick="loadAdmins()" style="margin-right:8px">刷新</button>
+      <button class="primary" id="btnRefreshAdmins" type="button" onclick="loadAdmins()" style="margin-right:8px">刷新</button>
       <button class="primary" onclick="createAdmin()" data-i18n="text" data-key="createAdmin">新增管理员</button>
     </div>
 
@@ -4350,13 +4350,18 @@ async function resetWithdrawPassword() {
    Settings - Admin Management
 ------------------------------ */
 async function loadAdmins(){
+  const btn = document.getElementById('btnRefreshAdmins');
+  const origText = btn ? btn.textContent : '刷新';
+  if (btn) { btn.disabled = true; btn.textContent = '刷新中...'; }
   try {
     const r = await fetch('/api/admin/list', { headers: authHeaders() });
     const j = await r.json();
-    if (!j.ok) { alert('加载管理员列表失败: ' + (j.error || '未知')); return; }
+    if (!j.ok) { alert('加载管理员列表失败: ' + (j.error || '未知')); if (btn) { btn.disabled = false; btn.textContent = origText; } return; }
     renderAdminTable(j.admins || []);
   } catch(e) {
     alert('加载管理员列表失败: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
 }
 
