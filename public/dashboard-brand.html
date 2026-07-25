@@ -121,7 +121,7 @@ body{
 .admin-dropdown .admin-trigger:hover{background:rgba(255,255,255,0.15)}
 .admin-dropdown .admin-trigger svg.chevron{width:12px;height:12px;transition:transform .2s}
 .admin-dropdown.open .admin-trigger svg.chevron{transform:rotate(180deg)}
-.admin-dropdown .admin-menu{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:180px;overflow:hidden;z-index:2000;display:none;padding:6px 0}
+.admin-dropdown .admin-menu{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:180px;overflow:visible;z-index:2000;display:none;padding:6px 0}
 .admin-dropdown.open .admin-menu{display:block}
 .admin-dropdown .admin-menu .menu-item{padding:9px 16px;cursor:pointer;font-size:13px;color:#333;display:flex;align-items:center;gap:8px;transition:background .15s;white-space:nowrap}
 .admin-dropdown .admin-menu .menu-item:hover{background:#f0f4ff}
@@ -661,6 +661,9 @@ button {
 <button class="primary" onclick="resetBuySellPage()" style="margin-left:8px;">
   重置
 </button>
+<label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
+  <input type="checkbox" id="bsLockedOnly" onchange="bs_search()" style="vertical-align:-2px;margin-right:4px">仅看我的锁定
+</label>
 </div>
 
       <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
@@ -718,6 +721,9 @@ button {
 <button class="primary" onclick="resetRechargePage()" style="margin-left:8px;">
   重置
 </button>
+<label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
+  <input type="checkbox" id="rLockedOnly" onchange="r_search()" style="vertical-align:-2px;margin-right:4px">仅看我的锁定
+</label>
       </div>
 
       <table class="table">
@@ -757,6 +763,9 @@ button {
 <button class="primary" onclick="resetWithdrawPage()" style="margin-left:8px;">
   重置
 </button>
+<label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
+  <input type="checkbox" id="wLockedOnly" onchange="w_search()" style="vertical-align:-2px;margin-right:4px">仅看我的锁定
+</label>
       </div>
 
       <table class="table">
@@ -1651,27 +1660,42 @@ function renderActionButtons(orderId, type, processed, status, lockedBy){
     if(active === 'orders') return '';
   }catch(e){}
 
+  // 别人锁定 → 只显示锁定提示
+  if (status === 'locked' && lockedBy) {
+    const myName = getAdminName();
+    if (!isSuperAdmin() && lockedBy !== myName) {
+      return `<span style="color:#e60000;font-size:12px;white-space:nowrap">${orderId}：正被其他业务员锁定，不能重复操作，请刷新重试</span>`;
+    }
+  }
+
   // ===== 状态判断 =====
   const isLocked = status === 'locked';
   const isProcessed = processed;
+  const isFinal = status === 'success' || status === 'failed' || status === 'approved' || status === 'rejected';
 
-  // 通过 / 拒绝：
-  // 1️⃣ 已处理 → 禁用
-  // 2️⃣ 被锁定 → 禁用
-  const approveRejectDisabled =
-    isProcessed || isLocked ? 'disabled' : '';
+  // 通过 / 拒绝：已处理或已锁定 → 禁用
+  const approveRejectDisabled = isProcessed || isLocked ? 'disabled' : '';
 
-  // 锁定按钮：已经 locked 就禁用
-  const lockDisabled =
-    isLocked ? 'disabled' : '';
-
-  // 解锁按钮：只有锁定者或超级管理员可以解锁
-  let unlockDisabled = '';
-  if (isLocked && lockedBy) {
-    const myName = getAdminName();
-    if (!isSuperAdmin() && lockedBy !== myName) {
-      unlockDisabled = 'disabled';
+  // 锁定 / 解锁：处理完成（成功/失败）后隐藏
+  let lockUnlockHtml = '';
+  if (!isFinal) {
+    const lockDisabled = isLocked ? 'disabled' : '';
+    let unlockDisabled = '';
+    if (isLocked && lockedBy) {
+      const myName = getAdminName();
+      if (!isSuperAdmin() && lockedBy !== myName) {
+        unlockDisabled = 'disabled';
+      }
     }
+    lockUnlockHtml = `
+    <button class="small-btn lock-btn" ${lockDisabled}
+      onclick="txAction(this,'${orderId}','${type}','lock')">
+      锁定🔒
+    </button>
+    <button class="small-btn unlock-btn" ${unlockDisabled}
+      onclick="txAction(this,'${orderId}','${type}','unlock')">
+      已解锁🔓
+    </button>`;
   }
 
   return `
@@ -1684,17 +1708,7 @@ function renderActionButtons(orderId, type, processed, status, lockedBy){
       onclick="txAction(this,'${orderId}','${type}','reject')">
       拒绝❌
     </button>
-
-    <button class="small-btn lock-btn" ${lockDisabled}
-      onclick="txAction(this,'${orderId}','${type}','lock')">
-      锁定🔒
-    </button>
-
-    <button class="small-btn unlock-btn" ${unlockDisabled}
-      onclick="txAction(this,'${orderId}','${type}','unlock')">
-      已解锁🔓
-    </button>
-
+${lockUnlockHtml}
     <button class="small-btn"
       onclick="addRemark('${orderId}','${type}','${status}')">
       备注📝
@@ -2395,6 +2409,12 @@ async function bs_search(){
       side: $('#bs_side').value
     });
 
+    // 仅看我的锁定
+    if (document.getElementById('bsLockedOnly')?.checked) {
+      const myName = getAdminName();
+      list = list.filter(o => o.lockedBy === myName);
+    }
+
     if(!list.length){
       tbody.innerHTML = `<tr><td colspan="12">没有记录</td></tr>`;
       window.buySellPNL = 0;   // ✅ 保证变量存在
@@ -2461,6 +2481,12 @@ async function r_search(){
       status: $('#r_status').value
     });
 
+    // 仅看我的锁定
+    if (document.getElementById('rLockedOnly')?.checked) {
+      const myName = getAdminName();
+      list = list.filter(o => o.lockedBy === myName);
+    }
+
     if(!list.length){
       tbody.innerHTML = `<tr><td colspan="14">没有记录</td></tr>`;
       window.rechargeProfit = 0;
@@ -2518,6 +2544,12 @@ async function w_search(){
       currency: $('#w_currency').value,
       status: $('#w_status').value
     });
+
+    // 仅看我的锁定
+    if (document.getElementById('wLockedOnly')?.checked) {
+      const myName = getAdminName();
+      list = list.filter(o => o.lockedBy === myName);
+    }
 
  if(!list.length){
   tbody.innerHTML = `<tr><td colspan="14">没有记录</td></tr>`;
@@ -3515,13 +3547,17 @@ function resetBuySellPage() {
     el.selectedIndex = 0;
   });
 
-  // 3️⃣ 停止自动刷新
+  // 3️⃣ 取消仅看我的锁定
+  const cb = document.getElementById('bsLockedOnly');
+  if (cb) cb.checked = false;
+
+  // 4️⃣ 停止自动刷新
   if (window.autoRefreshTimer_buysell) {
     clearInterval(window.autoRefreshTimer_buysell);
     window.autoRefreshTimer_buysell = null;
   }
 
-  // 4️⃣ 重新加载 BuySell 数据（不刷新页面）
+  // 5️⃣ 重新加载 BuySell 数据（不刷新页面）
   if (typeof bs_search === 'function') {
     bs_search();
   }
@@ -3551,7 +3587,11 @@ function resetRechargePage() {
   const autoSel = document.getElementById('autoRefreshSelect_recharge');
   if (autoSel) autoSel.selectedIndex = 0;
 
-  // 3️⃣ 停止自动刷新
+  // 3️⃣ 取消仅看我的锁定
+  const cb = document.getElementById('rLockedOnly');
+  if (cb) cb.checked = false;
+
+  // 4️⃣ 停止自动刷新
   if (window.autoRefreshTimer_recharge) {
     clearInterval(window.autoRefreshTimer_recharge);
     window.autoRefreshTimer_recharge = null;
@@ -3587,7 +3627,11 @@ function resetWithdrawPage() {
   const autoSel = document.getElementById('autoRefreshSelect_withdraw');
   if (autoSel) autoSel.selectedIndex = 0;
 
-  // 3️⃣ 停止自动刷新
+  // 3️⃣ 取消仅看我的锁定
+  const cb = document.getElementById('wLockedOnly');
+  if (cb) cb.checked = false;
+
+  // 4️⃣ 停止自动刷新
   if (window.autoRefreshTimer_withdraw) {
     clearInterval(window.autoRefreshTimer_withdraw);
     window.autoRefreshTimer_withdraw = null;
