@@ -926,6 +926,7 @@ button {
       <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
       <label><input type="checkbox" value="balance_adjust"> <span data-i18n="text" data-key="balanceAdjust">加减操作</span></label>
 
+      <button class="primary" onclick="loadAdmins()" style="margin-right:8px">刷新</button>
       <button class="primary" onclick="createAdmin()" data-i18n="text" data-key="createAdmin">新增管理员</button>
     </div>
 
@@ -4368,10 +4369,10 @@ function renderAdminTable(admins){
     return;
   }
   let html = '';
-  // 非超级管理员只能看到自己的账号
+  // 非超级管理员只能看到自己和自己创建的下级账号
   if (!isSuperAdmin()) {
     const myId = getAdminId();
-    admins = admins.filter(a => a.id === myId);
+    admins = admins.filter(a => a.id === myId || a.createdBy === myId);
   }
   admins.forEach(a => {
     const perms = a.permissions || {};
@@ -4628,10 +4629,38 @@ function startConfigPolling() {
   _configPollTimer = setInterval(checkConfigUpdate, 5000);
 }
 
+// 检查是否被踢出
+async function checkKickStatus() {
+  try {
+    const token = localStorage.getItem('adminToken');
+    if (!token) return;
+    const resp = await fetch('/api/admin/check-kicked', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await resp.json();
+    if (data.kicked) {
+      // 清除本地状态
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminPerms');
+      localStorage.removeItem('adminName');
+      localStorage.removeItem('adminId');
+      localStorage.removeItem('isSuper');
+      alert('您的账号已被管理员强制下线，请重新登录。');
+      location.href = 'login.html';
+    }
+  } catch(e) {}
+}
+
+let _kickPollTimer = null;
+function startKickPolling() {
+  if (_kickPollTimer) clearInterval(_kickPollTimer);
+  _kickPollTimer = setInterval(checkKickStatus, 8000);
+}
+
 // 页面加载后启动轮询
 document.addEventListener('DOMContentLoaded', () => {
   const myId = getAdminId();
-  if (myId) startConfigPolling();
+  if (myId) { startConfigPolling(); startKickPolling(); }
 });
 </script>
 
