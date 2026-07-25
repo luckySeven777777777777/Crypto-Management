@@ -502,27 +502,35 @@ button {
 
 /* ===== 个人资料弹窗 ===== */
 .profile-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,.55); z-index:2000; align-items:center; justify-content:center; }
-.profile-modal .box { background:#fff; border-radius:12px; width:620px; max-height:85vh; overflow-y:auto; padding:0; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+.profile-modal .box { background:#fff; border-radius:12px; width:780px; max-height:85vh; overflow-y:auto; padding:0; box-shadow:0 12px 40px rgba(0,0,0,.25); }
 .profile-header { display:flex; align-items:center; padding:16px 20px; border-bottom:1px solid #eee; position:sticky; top:0; background:#fff; z-index:1; border-radius:12px 12px 0 0; }
-.profile-header .avatar { width:56px; height:56px; border-radius:50%; object-fit:cover; margin-right:14px; border:2px solid #1976d2; }
+.avatar-wrap { position:relative; width:56px; height:56px; border-radius:50%; overflow:hidden; cursor:pointer; flex-shrink:0; margin-right:14px; border:2px solid #1976d2; }
+.avatar-wrap .avatar { width:100%; height:100%; object-fit:cover; }
+.avatar-wrap .avatar-overlay { position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,.55); color:#fff; font-size:10px; text-align:center; padding:3px 0; opacity:0; transition:opacity .2s; }
+.avatar-wrap:hover .avatar-overlay { opacity:1; }
 .profile-header .info { flex:1; }
 .profile-header .info .uid { font-size:16px; font-weight:700; color:#0f2655; }
 .profile-header .info .currency { font-size:13px; color:#666; margin-top:2px; }
 .profile-header .close-btn { background:none; border:none; font-size:22px; cursor:pointer; color:#999; padding:4px 8px; }
-.profile-section { padding:12px 20px; }
+.profile-columns { display:flex; gap:0; }
+.profile-col { flex:1; min-width:0; }
+.profile-col:first-child { border-right:1px solid #eee; }
+.profile-section { padding:12px 16px; }
 .profile-section h3 { font-size:14px; color:#0f2655; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid #1976d2; display:inline-block; }
-.profile-row { display:flex; align-items:center; padding:8px 0; border-bottom:1px solid #f0f0f0; }
-.profile-row .label { width:120px; font-size:13px; color:#666; flex-shrink:0; }
-.profile-row .value { flex:1; font-size:13px; color:#111; word-break:break-all; }
-.profile-row .edit-btn { margin-left:8px; padding:4px 12px; font-size:12px; border:1px solid #1976d2; background:#fff; color:#1976d2; border-radius:4px; cursor:pointer; white-space:nowrap; }
+.profile-row { display:flex; align-items:center; padding:7px 0; border-bottom:1px solid #f0f0f0; }
+.profile-row .label { width:90px; font-size:12px; color:#666; flex-shrink:0; }
+.profile-row .value { flex:1; font-size:12px; color:#111; word-break:break-all; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.profile-row .edit-btn { margin-left:6px; padding:3px 10px; font-size:11px; border:1px solid #1976d2; background:#fff; color:#1976d2; border-radius:4px; cursor:pointer; white-space:nowrap; }
 .profile-row .edit-btn:hover { background:#1976d2; color:#fff; }
 .profile-row .edit-btn.disabled { border-color:#ccc; color:#ccc; cursor:not-allowed; pointer-events:none; background:#f5f5f5; }
-.profile-row .view-btn { margin-left:8px; padding:4px 12px; font-size:12px; border:1px solid #ff9800; background:#fff; color:#ff9800; border-radius:4px; cursor:pointer; white-space:nowrap; }
+.profile-row .view-btn { margin-left:6px; padding:3px 10px; font-size:11px; border:1px solid #ff9800; background:#fff; color:#ff9800; border-radius:4px; cursor:pointer; white-space:nowrap; }
 .profile-row .view-btn:hover { background:#ff9800; color:#fff; }
 .profile-row .view-btn.disabled { border-color:#ccc; color:#ccc; cursor:not-allowed; pointer-events:none; background:#f5f5f5; }
 .uid-clickable { cursor:pointer; font-weight:600; color:#1976d2; text-decoration:underline; text-decoration-style:dotted; }
 .uid-clickable:hover { color:#0d47a1; }
 .profile-bottom { padding:12px 20px; border-top:1px solid #eee; text-align:right; }
+.profile-bottom .primary { background:#1976d2; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+.profile-bottom .primary:hover { background:#1565c0; }
 </style>
 </head>
 
@@ -1018,7 +1026,11 @@ button {
 <div id="profileModal" class="profile-modal" onclick="closeProfile()">
   <div class="box" onclick="event.stopPropagation()">
     <div class="profile-header">
-      <img id="profileAvatar" class="avatar" src="" alt="avatar" />
+      <div class="avatar-wrap" onclick="document.getElementById('avatarFileInput').click()" title="点击更换头像">
+        <img id="profileAvatar" class="avatar" src="" alt="avatar" />
+        <span class="avatar-overlay">更换</span>
+      </div>
+      <input type="file" id="avatarFileInput" accept="image/*" style="display:none" onchange="uploadAvatar(event)" />
       <div class="info">
         <div class="uid" id="profileUid">--</div>
         <div class="currency" id="profileCurrency">币种：USDT</div>
@@ -1026,32 +1038,38 @@ button {
       <button class="close-btn" onclick="closeProfile()">✕</button>
     </div>
 
-    <div class="profile-section">
-      <h3>个人资料</h3>
-      <div class="profile-row"><span class="label">姓名</span><span class="value" id="p-name">--</span><button class="edit-btn" id="eb-name" onclick="editProfileField('name')">修改</button></div>
-      <div class="profile-row"><span class="label">身份证</span><span class="value" id="p-idcard">--</span><button class="edit-btn" id="eb-idcard" onclick="editProfileField('idcard')">修改</button></div>
-      <div class="profile-row"><span class="label">国籍/地区</span><span class="value" id="p-nationality">--</span><button class="edit-btn" id="eb-nationality" onclick="editProfileField('nationality')">修改</button></div>
-      <div class="profile-row"><span class="label">性别</span><span class="value" id="p-gender">--</span><button class="edit-btn" id="eb-gender" onclick="editProfileField('gender')">修改</button></div>
-      <div class="profile-row"><span class="label">生日</span><span class="value" id="p-birthday">--</span><button class="edit-btn" id="eb-birthday" onclick="editProfileField('birthday')">修改</button></div>
-      <div class="profile-row"><span class="label">当前居住地</span><span class="value" id="p-residence">--</span><button class="edit-btn" id="eb-residence" onclick="editProfileField('residence')">修改</button></div>
-      <div class="profile-row"><span class="label">收入来源</span><span class="value" id="p-income">--</span><button class="edit-btn" id="eb-income" onclick="editProfileField('income')">修改</button></div>
-    </div>
-
-    <div class="profile-section">
-      <h3>账号信息</h3>
-      <div class="profile-row"><span class="label">邮箱</span><span class="value" id="p-email">--</span><button class="edit-btn" id="eb-email" onclick="editProfileField('email')">修改</button></div>
-      <div class="profile-row"><span class="label">Telegram</span><span class="value" id="p-telegram">--</span><button class="edit-btn" id="eb-telegram" onclick="editProfileField('telegram')">修改</button></div>
-      <div class="profile-row"><span class="label">X (Twitter)</span><span class="value" id="p-twitter">--</span><button class="edit-btn" id="eb-twitter" onclick="editProfileField('twitter')">修改</button></div>
-      <div class="profile-row"><span class="label">Instagram</span><span class="value" id="p-instagram">--</span><button class="edit-btn" id="eb-instagram" onclick="editProfileField('instagram')">修改</button></div>
-      <div class="profile-row"><span class="label">WhatsApp</span><span class="value" id="p-whatsapp">--</span><button class="edit-btn" id="eb-whatsapp" onclick="editProfileField('whatsapp')">修改</button></div>
-      <div class="profile-row"><span class="label">Zalo</span><span class="value" id="p-zalo">--</span><button class="edit-btn" id="eb-zalo" onclick="editProfileField('zalo')">修改</button></div>
-      <div class="profile-row"><span class="label">Facebook</span><span class="value" id="p-facebook">--</span><button class="edit-btn" id="eb-facebook" onclick="editProfileField('facebook')">修改</button></div>
-      <div class="profile-row"><span class="label">Line</span><span class="value" id="p-line">--</span><button class="edit-btn" id="eb-line" onclick="editProfileField('line')">修改</button></div>
-      <div class="profile-row"><span class="label">Threads</span><span class="value" id="p-threads">--</span><button class="edit-btn" id="eb-threads" onclick="editProfileField('threads')">修改</button></div>
-      <div class="profile-row"><span class="label">手机号</span><span class="value" id="p-phone">--</span><button class="view-btn" id="eb-phone" onclick="viewProfilePhone()">查看+修改</button></div>
+    <div class="profile-columns">
+      <div class="profile-col">
+        <div class="profile-section">
+          <h3>个人资料</h3>
+          <div class="profile-row"><span class="label">姓名</span><span class="value" id="p-name">--</span><button class="edit-btn" id="eb-name" onclick="editProfileField('name')">修改</button></div>
+          <div class="profile-row"><span class="label">身份证</span><span class="value" id="p-idcard">--</span><button class="edit-btn" id="eb-idcard" onclick="editProfileField('idcard')">修改</button></div>
+          <div class="profile-row"><span class="label">国籍/地区</span><span class="value" id="p-nationality">--</span><button class="edit-btn" id="eb-nationality" onclick="editProfileField('nationality')">修改</button></div>
+          <div class="profile-row"><span class="label">性别</span><span class="value" id="p-gender">--</span><button class="edit-btn" id="eb-gender" onclick="editProfileField('gender')">修改</button></div>
+          <div class="profile-row"><span class="label">生日</span><span class="value" id="p-birthday">--</span><button class="edit-btn" id="eb-birthday" onclick="editProfileField('birthday')">修改</button></div>
+          <div class="profile-row"><span class="label">当前居住地</span><span class="value" id="p-residence">--</span><button class="edit-btn" id="eb-residence" onclick="editProfileField('residence')">修改</button></div>
+          <div class="profile-row"><span class="label">收入来源</span><span class="value" id="p-income">--</span><button class="edit-btn" id="eb-income" onclick="editProfileField('income')">修改</button></div>
+        </div>
+      </div>
+      <div class="profile-col">
+        <div class="profile-section">
+          <h3>账号信息</h3>
+          <div class="profile-row"><span class="label">邮箱</span><span class="value" id="p-email">--</span><button class="edit-btn" id="eb-email" onclick="editProfileField('email')">修改</button></div>
+          <div class="profile-row"><span class="label">Telegram</span><span class="value" id="p-telegram">--</span><button class="edit-btn" id="eb-telegram" onclick="editProfileField('telegram')">修改</button></div>
+          <div class="profile-row"><span class="label">X (Twitter)</span><span class="value" id="p-twitter">--</span><button class="edit-btn" id="eb-twitter" onclick="editProfileField('twitter')">修改</button></div>
+          <div class="profile-row"><span class="label">Instagram</span><span class="value" id="p-instagram">--</span><button class="edit-btn" id="eb-instagram" onclick="editProfileField('instagram')">修改</button></div>
+          <div class="profile-row"><span class="label">WhatsApp</span><span class="value" id="p-whatsapp">--</span><button class="edit-btn" id="eb-whatsapp" onclick="editProfileField('whatsapp')">修改</button></div>
+          <div class="profile-row"><span class="label">Zalo</span><span class="value" id="p-zalo">--</span><button class="edit-btn" id="eb-zalo" onclick="editProfileField('zalo')">修改</button></div>
+          <div class="profile-row"><span class="label">Facebook</span><span class="value" id="p-facebook">--</span><button class="edit-btn" id="eb-facebook" onclick="editProfileField('facebook')">修改</button></div>
+          <div class="profile-row"><span class="label">Line</span><span class="value" id="p-line">--</span><button class="edit-btn" id="eb-line" onclick="editProfileField('line')">修改</button></div>
+          <div class="profile-row"><span class="label">Threads</span><span class="value" id="p-threads">--</span><button class="edit-btn" id="eb-threads" onclick="editProfileField('threads')">修改</button></div>
+          <div class="profile-row"><span class="label">手机号</span><span class="value" id="p-phone">--</span><button class="view-btn" id="eb-phone" onclick="viewProfilePhone()">查看+修改</button></div>
+        </div>
+      </div>
     </div>
 
     <div class="profile-bottom">
+      <button class="primary" onclick="saveProfile()" id="profileSaveBtn" style="padding:6px 18px;margin-right:8px">保存</button>
       <button onclick="closeProfile()" style="padding:6px 18px">关闭</button>
     </div>
   </div>
@@ -2937,7 +2955,9 @@ async function clearMemberTag() {
 
 // ========= 个人资料弹窗相关 =========
 let currentProfileUid = null;
+let profilePendingChanges = {}; // 暂存未保存的修改
 const PROFILE_STORAGE_KEY = 'nexbit_profiles';
+const AVATAR_STORAGE_KEY = 'nexbit_avatars';
 
 function getProfileStore() {
   try {
@@ -2949,21 +2969,35 @@ function saveProfileStore(store) {
   localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(store));
 }
 
+function getAvatarStore() {
+  try {
+    return JSON.parse(localStorage.getItem(AVATAR_STORAGE_KEY) || '{}');
+  } catch(e) { return {}; }
+}
+
+function saveAvatarStore(store) {
+  localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(store));
+}
+
 function getAvatarUrl(uid) {
-  // 使用 DiceBear 根据 userId 生成固定风格头像
+  // 优先使用用户上传的头像
+  const avatars = getAvatarStore();
+  if (avatars[uid]) return avatars[uid];
+  // 回退到 DiceBear 自动生成
   return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(uid || 'user')}&backgroundColor=1976d2,0f2655,ff4444,00c851,ffbb33,9933ff`;
 }
 
 function maskValue(val) {
   if (!val) return '--';
   const s = String(val);
-  if (s.length <= 4) return s[0] + '***';
+  if (s.length <= 4) return s[0] + '***' + s[s.length-1];
   return s.slice(0, 2) + '***' + s.slice(-2);
 }
 
 function openProfile(uid) {
   if (!uid || uid === '--') return;
   currentProfileUid = uid;
+  profilePendingChanges = {};
   const isAdmin = isSuperAdmin();
   const store = getProfileStore();
   const profile = store[uid] || {};
@@ -2978,12 +3012,6 @@ function openProfile(uid) {
     'name','idcard','nationality','gender','birthday','residence','income',
     'email','telegram','twitter','instagram','whatsapp','zalo','facebook','line','threads','phone'
   ];
-  const labels = {
-    name:'姓名', idcard:'身份证', nationality:'国籍/地区', gender:'性别',
-    birthday:'生日', residence:'当前居住地', income:'收入来源',
-    email:'邮箱', telegram:'Telegram', twitter:'X (Twitter)', instagram:'Instagram',
-    whatsapp:'WhatsApp', zalo:'Zalo', facebook:'Facebook', line:'Line', threads:'Threads', phone:'手机号'
-  };
   
   fields.forEach(f => {
     const rawVal = profile[f] || '';
@@ -2992,23 +3020,17 @@ function openProfile(uid) {
     if (!cellEl) return;
     
     if (isAdmin) {
-      // Admin: 完整显示，可修改
       cellEl.textContent = rawVal || '--';
       if (btnEl) { btnEl.className = (f === 'phone') ? 'view-btn' : 'edit-btn'; btnEl.disabled = false; }
     } else {
-      // 下级：掩码显示，按钮灰色
       cellEl.textContent = maskValue(rawVal);
       if (btnEl) { btnEl.className = (f === 'phone') ? 'view-btn disabled' : 'edit-btn disabled'; btnEl.disabled = true; }
     }
   });
   
-  // 专门处理手机号的按钮
-  const phoneBtn = document.getElementById('eb-phone');
-  if (phoneBtn) {
-    phoneBtn.style.display = isAdmin ? '' : 'inline-block';
-    phoneBtn.className = isAdmin ? 'view-btn' : 'view-btn disabled';
-    phoneBtn.disabled = !isAdmin;
-  }
+  // 保存按钮仅 admin 可见
+  const saveBtn = document.getElementById('profileSaveBtn');
+  if (saveBtn) { saveBtn.style.display = isAdmin ? '' : 'none'; }
   
   document.getElementById('profileModal').style.display = 'flex';
 }
@@ -3016,6 +3038,7 @@ function openProfile(uid) {
 function closeProfile() {
   document.getElementById('profileModal').style.display = 'none';
   currentProfileUid = null;
+  profilePendingChanges = {};
 }
 
 function editProfileField(field) {
@@ -3024,7 +3047,7 @@ function editProfileField(field) {
   
   const store = getProfileStore();
   const profile = store[currentProfileUid] || {};
-  const currentVal = profile[field] || '';
+  const pendingVal = profilePendingChanges[field] !== undefined ? profilePendingChanges[field] : (profile[field] || '');
   
   const fieldLabels = {
     name:'姓名', idcard:'身份证', nationality:'国籍/地区', gender:'性别',
@@ -3033,15 +3056,67 @@ function editProfileField(field) {
     whatsapp:'WhatsApp', zalo:'Zalo', facebook:'Facebook', line:'Line', threads:'Threads'
   };
   
-  const newVal = prompt(`请输入${fieldLabels[field] || field}：`, currentVal);
-  if (newVal === null) return; // 用户取消
+  const newVal = prompt(`请输入${fieldLabels[field] || field}：`, pendingVal);
+  if (newVal === null) return;
   
-  profile[field] = newVal.trim();
+  // 暂存修改，不立即落盘
+  profilePendingChanges[field] = newVal.trim();
+  
+  // 刷新弹窗显示（包含暂存修改）
+  refreshProfileDisplay();
+}
+
+function refreshProfileDisplay() {
+  if (!currentProfileUid) return;
+  const isAdmin = isSuperAdmin();
+  const store = getProfileStore();
+  const profile = store[currentProfileUid] || {};
+  // 合并暂存修改
+  const merged = Object.assign({}, profile, profilePendingChanges);
+  
+  const fields = [
+    'name','idcard','nationality','gender','birthday','residence','income',
+    'email','telegram','twitter','instagram','whatsapp','zalo','facebook','line','threads','phone'
+  ];
+  
+  fields.forEach(f => {
+    const rawVal = merged[f] || '';
+    const cellEl = document.getElementById('p-' + f);
+    if (!cellEl) return;
+    
+    if (isAdmin) {
+      cellEl.textContent = rawVal || '--';
+    } else {
+      cellEl.textContent = maskValue(rawVal);
+    }
+  });
+}
+
+function saveProfile() {
+  if (!currentProfileUid) return;
+  if (!isSuperAdmin()) return;
+  
+  // 如果有未保存的修改，先弹出确认
+  const changes = profilePendingChanges;
+  const changedFields = Object.keys(changes);
+  
+  if (changedFields.length === 0) {
+    alert('没有需要保存的修改。');
+    return;
+  }
+  
+  const confirmMsg = '即将保存以下修改：\n' + changedFields.map(f => ' - ' + f + ': ' + changes[f]).join('\n');
+  if (!confirm(confirmMsg + '\n\n确认保存？下级账号将同步更新。')) return;
+  
+  const store = getProfileStore();
+  const profile = store[currentProfileUid] || {};
+  Object.assign(profile, changes);
   store[currentProfileUid] = profile;
   saveProfileStore(store);
   
-  // 刷新弹窗
+  profilePendingChanges = {};
   openProfile(currentProfileUid);
+  alert('已保存，所有下级账号已同步。');
 }
 
 function viewProfilePhone() {
@@ -3050,20 +3125,35 @@ function viewProfilePhone() {
   
   const store = getProfileStore();
   const profile = store[currentProfileUid] || {};
+  const pendingPhone = profilePendingChanges['phone'] !== undefined ? profilePendingChanges['phone'] : (profile.phone || '');
   
   let action = prompt('手机号操作：\n输入 1 查看完整号码\n输入 2 修改号码', '1');
   if (action === '1') {
-    alert('完整手机号：' + (profile.phone || '未设置'));
+    alert('完整手机号：' + (pendingPhone || '未设置'));
     return;
   }
   if (action === '2') {
-    const newPhone = prompt('请输入新手机号：', profile.phone || '');
+    const newPhone = prompt('请输入新手机号：', pendingPhone);
     if (newPhone === null) return;
-    profile.phone = newPhone.trim();
-    store[currentProfileUid] = profile;
-    saveProfileStore(store);
-    openProfile(currentProfileUid);
+    profilePendingChanges['phone'] = newPhone.trim();
+    refreshProfileDisplay();
   }
+}
+
+function uploadAvatar(event) {
+  if (!currentProfileUid || !isSuperAdmin()) return;
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { alert('请选择图片文件'); return; }
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const avatars = getAvatarStore();
+    avatars[currentProfileUid] = e.target.result;
+    saveAvatarStore(avatars);
+    document.getElementById('profileAvatar').src = e.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 // 会员列表分页状态
