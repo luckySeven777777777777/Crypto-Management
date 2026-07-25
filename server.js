@@ -3755,6 +3755,59 @@ app.get('/api/referrals/:uid', async (req,res)=>{
 
 });
 /* ---------------------------------------------------------
+   Profile API - 跨浏览器同步用户资料
+--------------------------------------------------------- */
+// 获取用户资料
+app.get('/api/profiles/:uid', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const uid = req.params.uid;
+    const snap = await db.ref(`profiles/${uid}`).once('value');
+    const data = snap.exists() ? snap.val() : {};
+    return res.json({ ok: true, profile: data.profile || {}, avatar: data.avatar || '' });
+  } catch (e) {
+    console.error('get profile error', e);
+    return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+// 保存用户资料
+app.post('/api/profiles/:uid', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const uid = req.params.uid;
+    const { profile, avatar } = req.body;
+    if (!uid || (profile === undefined && avatar === undefined))
+      return res.status(400).json({ ok: false, error: 'invalid params' });
+
+    // 先读已有数据，只更新传入的字段
+    const snap = await db.ref(`profiles/${uid}`).once('value');
+    const existing = snap.exists() ? snap.val() : {};
+    const update = {};
+    if (profile !== undefined) update.profile = profile;
+    if (avatar !== undefined) update.avatar = avatar;
+
+    await db.ref(`profiles/${uid}`).update(update);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('save profile error', e);
+    return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+/* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
 
