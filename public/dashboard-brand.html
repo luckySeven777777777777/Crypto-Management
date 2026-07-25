@@ -353,6 +353,29 @@ tr.row-tag-red td:first-child{border-left:3px solid #e60000}
 .unlock-btn{ background:transparent; color:#6c757d; border:1px solid transparent; }
 .small-btn:not(.confirm-btn):not(.cancel-btn):not(.lock-btn):not(.unlock-btn){ background:transparent; color:#1976d2; border:1px solid transparent; }
 
+/* ===== 备注 Modal ===== */
+.remark-modal{display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:1360;}
+.remark-modal[style*="display: flex"]{pointer-events:auto!important}
+.remark-box{background:#fff;color:#111;border-radius:10px;width:780px;max-width:95%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.24);}
+.remark-header{display:flex;justify-content:space-between;align-items:center;padding:12px 24px;border-bottom:1px solid #e0e0e0;background:#f5f5f5;border-radius:10px 10px 0 0;}
+.remark-header h2{margin:0;font-size:16px;font-weight:700;color:#333}
+.remark-close{background:none;border:none;font-size:22px;cursor:pointer;color:#999;padding:0 4px;line-height:1}
+.remark-close:hover{color:#333}
+.remark-body{padding:16px 24px}
+.remark-info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 16px;margin-bottom:16px;padding:12px;background:#fafafa;border-radius:6px;border:1px solid #eee}
+.remark-info-item{font-size:13px;display:flex;align-items:center}
+.remark-info-item .rlabel{color:#888;flex-shrink:0;margin-right:4px}
+.remark-info-item .rvalue{color:#111;word-break:break-all}
+.remark-textarea-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.remark-textarea-label{font-size:13px;font-weight:600;color:#555;margin-bottom:6px}
+.remark-textarea-row textarea{width:100%;height:120px;border:1px solid #d0d0d0;border-radius:6px;padding:10px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit}
+.remark-textarea-row textarea:focus{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,.15)}
+.remark-footer{display:flex;justify-content:center;gap:12px;padding:12px 24px 20px}
+.remark-footer .btn-cancel{padding:8px 28px;border:1px solid #d0d0d0;border-radius:6px;background:#fff;color:#555;font-size:14px;cursor:pointer}
+.remark-footer .btn-cancel:hover{background:#f5f5f5}
+.remark-footer .btn-confirm{padding:8px 28px;border:none;border-radius:6px;background:#1976d2;color:#fff;font-size:14px;cursor:pointer}
+.remark-footer .btn-confirm:hover{background:#1565c0}
+
 /* Modal */
 .modal{
   display:none;
@@ -1031,6 +1054,43 @@ button {
       <button class="detail-close" onclick="closeViewDetail()">&times;</button>
     </div>
     <div class="detail-body" id="detailBody"></div>
+  </div>
+</div>
+
+<!-- 备注 Modal -->
+<div id="remarkModal" class="remark-modal" onclick="closeRemarkModal()">
+  <div class="remark-box" onclick="event.stopPropagation()">
+    <div class="remark-header">
+      <h2>备注</h2>
+      <button class="remark-close" onclick="closeRemarkModal()">&times;</button>
+    </div>
+    <div class="remark-body">
+      <div class="remark-info-grid" id="remarkInfoGrid">
+        <div class="remark-info-item"><span class="rlabel">订单号：</span><span class="rvalue" id="rm-orderId">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">品牌名称(ID)：</span><span class="rvalue" id="rm-brand">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">会员ID：</span><span class="rvalue" id="rm-userId">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">会员账号：</span><span class="rvalue" id="rm-account">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">会员层级：</span><span class="rvalue" id="rm-level">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">提现金额：</span><span class="rvalue" id="rm-amount">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">预计到帐：</span><span class="rvalue" id="rm-estimate">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">手续费：</span><span class="rvalue" id="rm-fee">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">实际到账：</span><span class="rvalue" id="rm-actual">--</span></div>
+      </div>
+      <div class="remark-textarea-row">
+        <div>
+          <div class="remark-textarea-label">前台备注</div>
+          <textarea id="rmFrontNote" placeholder="输入前台备注..."></textarea>
+        </div>
+        <div>
+          <div class="remark-textarea-label">后台备注</div>
+          <textarea id="rmBackNote" placeholder="输入后台备注..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="remark-footer">
+      <button class="btn-cancel" onclick="closeRemarkModal()">取消</button>
+      <button class="btn-confirm" id="rmConfirmBtn" onclick="submitRemark()">确认</button>
+    </div>
   </div>
 </div>
 
@@ -1934,6 +1994,10 @@ const body = {
     if(btn) btn.disabled = false;
   }
 }
+let _remarkOrderId = null;
+let _remarkType = null;
+let _remarkStatus = null;
+
 async function addRemark(orderId, type, currentStatus){
   if(!orderId) return;
 
@@ -1942,15 +2006,83 @@ async function addRemark(orderId, type, currentStatus){
     if(!getAdminToken()) return;
   }
 
-  const remark = prompt(__('enterRemark'));
+  _remarkOrderId = orderId;
+  _remarkType = type;
+  _remarkStatus = currentStatus || 'processing';
+
+  // Reset textareas
+  document.getElementById('rmFrontNote').value = '';
+  document.getElementById('rmBackNote').value = '';
+
+  // Show loading state
+  document.getElementById('rm-orderId').innerText = '...';
+  document.getElementById('rm-brand').innerText = '...';
+  document.getElementById('rm-userId').innerText = '...';
+  document.getElementById('rm-account').innerText = '...';
+  document.getElementById('rm-level').innerText = '...';
+  document.getElementById('rm-amount').innerText = '...';
+  document.getElementById('rm-estimate').innerText = '...';
+  document.getElementById('rm-fee').innerText = '...';
+  document.getElementById('rm-actual').innerText = '...';
+
+  document.getElementById('remarkModal').style.display = 'flex';
+
+  // Fetch order data in background
+  try {
+    const all = await fetchAll();
+    const isRecharge = type === 'recharge';
+    const list = isRecharge ? (all.recharge || []) : (all.withdraw || []);
+    const order = list.find(o => o.orderId === orderId);
+    const users = all.users || {};
+    const user = users[order ? order.userId : ''] || {};
+
+    const tag = getMemberTag(user);
+    const tagRemark = tag.remark || '--';
+    const coin = (order && order.coin) ? String(order.coin).toUpperCase() : '--';
+    const amount = order && order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
+    const estimate = order && order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
+    const fee = '0.00';
+
+    document.getElementById('rm-orderId').innerText = orderId || '--';
+    document.getElementById('rm-brand').innerText = (user.brandName || user.brand || '--') + '(' + (user.brandId || '--') + ')';
+    document.getElementById('rm-userId').innerText = (order && order.userId) || '--';
+    document.getElementById('rm-account').innerText = (user.account || user.username || user.wallet || '--');
+    document.getElementById('rm-level').innerText = tagRemark;
+    document.getElementById('rm-amount').innerText = amount + ' ' + coin;
+    document.getElementById('rm-estimate').innerText = estimate + ' ' + coin;
+    document.getElementById('rm-fee').innerText = fee + ' ' + coin;
+    document.getElementById('rm-actual').innerText = estimate + ' ' + coin;
+  } catch(e) {
+    console.error('load remark info error', e);
+    document.getElementById('rm-orderId').innerText = orderId || '--';
+    document.getElementById('rm-brand').innerText = '--';
+    document.getElementById('rm-userId').innerText = '--';
+    document.getElementById('rm-account').innerText = '--';
+    document.getElementById('rm-level').innerText = '--';
+    document.getElementById('rm-amount').innerText = '--';
+    document.getElementById('rm-estimate').innerText = '--';
+    document.getElementById('rm-fee').innerText = '--';
+    document.getElementById('rm-actual').innerText = '--';
+  }
+}
+
+function closeRemarkModal(){
+  document.getElementById('remarkModal').style.display = 'none';
+  _remarkOrderId = null;
+  _remarkType = null;
+  _remarkStatus = null;
+}
+
+async function submitRemark(){
+  const frontNote = document.getElementById('rmFrontNote').value.trim();
+  const backNote = document.getElementById('rmBackNote').value.trim();
+  const remark = [frontNote, backNote].filter(Boolean).join('\n');
   if(!remark) return;
 
-  const statusSafe = currentStatus || 'processing';
-
   const body = {
-    orderId,
-    type: normalizeType(type),
-    status: statusSafe,
+    orderId: _remarkOrderId,
+    type: normalizeType(_remarkType),
+    status: _remarkStatus,
     note: remark
   };
 
@@ -1964,6 +2096,7 @@ async function addRemark(orderId, type, currentStatus){
 
     if(j.ok){
       alert(__('remarkSaved'));
+      closeRemarkModal();
 
       const active = document.querySelector('.header-nav .icon.active')?.dataset.page;
       if(active === 'recharge') r_search();
@@ -2350,8 +2483,8 @@ async function openViewDetail(orderId, type) {
     const amount = order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
     const estimate = order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
 
-    const applyTime = order.timestamp || '--';
-    const opTime = order.timestamp || '--';
+    const applyTime = order.time_us || '--';
+    const opTime = order.opTime || order.time_us || '--';
     const walletAddr = order.wallet || '--';
     const walletNickname = order.walletNickname || order.walletType || order.walletName || '--';
     const operator = order.operatorNickname || '--';
@@ -2383,8 +2516,8 @@ async function openViewDetail(orderId, type) {
 
     right.push('<div class="detail-section"><div class="detail-section-title">其他信息</div>');
     right.push(`<div class="detail-row"><span class="label">操作人：</span><span class="value">${operator}</span></div>`);
-    right.push(`<div class="detail-row"><span class="label">申请时间：</span><span class="value">${formatMyanmarTime(applyTime)}</span></div>`);
-    right.push(`<div class="detail-row"><span class="label">操作时间：</span><span class="value">${formatMyanmarTime(opTime)}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">申请时间：</span><span class="value">${applyTime}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">操作时间：</span><span class="value">${opTime}</span></div>`);
     right.push(`<div class="detail-row"><span class="label">充/提次数：</span><span class="value">充${rechargeCount}/提${withdrawCount}次</span></div>`);
     right.push(`<div class="detail-row"><span class="label">累计充/提差额：</span><span class="value ${diff < 0 ? 'red' : ''}">${diff.toFixed(2)}</span></div>`);
     right.push(`<div class="detail-row"><span class="label">备注：</span><span class="value">${note}</span></div>`);
@@ -3941,8 +4074,6 @@ async function resetWithdrawPwd() {
     alert(data.error || '请求失败，请稍后再试');
   }
 }
-let autoRefreshTimer = null;
-
 function initAutoRefresh(selectId, refreshFn) {
   const select = document.getElementById(selectId);
   if (!select) return;
@@ -3952,26 +4083,28 @@ function initAutoRefresh(selectId, refreshFn) {
   if (saved) select.value = saved;
 
   if (saved && saved !== '0') {
-    startTimer(saved, refreshFn);
+    startTimer(selectId, parseInt(saved, 10), refreshFn);
   }
 
   select.addEventListener('change', () => {
     const sec = select.value;
     localStorage.setItem(key, sec);
-    stopTimer();
-    if (sec !== '0') startTimer(sec, refreshFn);
+    stopTimer(selectId);
+    if (sec !== '0') startTimer(selectId, parseInt(sec, 10), refreshFn);
   });
 }
 
-function startTimer(sec, fn) {
-  stopTimer();
-  autoRefreshTimer = setInterval(fn, sec * 1000);
+function startTimer(timerId, sec, fn) {
+  stopTimer(timerId);
+  window._autoTimers = window._autoTimers || {};
+  window._autoTimers[timerId] = setInterval(fn, sec * 1000);
 }
 
-function stopTimer() {
-  if (autoRefreshTimer) {
-    clearInterval(autoRefreshTimer);
-    autoRefreshTimer = null;
+function stopTimer(timerId) {
+  window._autoTimers = window._autoTimers || {};
+  if (window._autoTimers[timerId]) {
+    clearInterval(window._autoTimers[timerId]);
+    window._autoTimers[timerId] = null;
   }
 }
 
@@ -4063,9 +4196,7 @@ function resetBuySellPage() {
   if (cb) cb.checked = false;
 
   // 4️⃣ 停止自动刷新
-  if (window.autoRefreshTimer_buysell) {
-    clearInterval(window.autoRefreshTimer_buysell);
-    window.autoRefreshTimer_buysell = null;
+  stopTimer('autoRefreshSelect_buysell');
   }
 
   // 5️⃣ 重新加载 BuySell 数据（不刷新页面）
@@ -4103,9 +4234,7 @@ function resetRechargePage() {
   if (cb) cb.checked = false;
 
   // 4️⃣ 停止自动刷新
-  if (window.autoRefreshTimer_recharge) {
-    clearInterval(window.autoRefreshTimer_recharge);
-    window.autoRefreshTimer_recharge = null;
+  stopTimer('autoRefreshSelect_recharge');
   }
 
   // 4️⃣ 重新加载充值数据（不刷新页面）
@@ -4143,9 +4272,7 @@ function resetWithdrawPage() {
   if (cb) cb.checked = false;
 
   // 4️⃣ 停止自动刷新
-  if (window.autoRefreshTimer_withdraw) {
-    clearInterval(window.autoRefreshTimer_withdraw);
-    window.autoRefreshTimer_withdraw = null;
+  stopTimer('autoRefreshSelect_draw');
   }
 
   // 4️⃣ 重新加载提款数据（不刷新页面）
