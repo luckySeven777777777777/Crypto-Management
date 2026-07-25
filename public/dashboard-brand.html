@@ -694,9 +694,9 @@ button {
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_buysell"style="
   margin-left:8px;
-  background:#1f2933;
-  color:#fff;
-  border:1px solid #444;
+  background:transparent;
+  color:#1f2933;
+  border:1px solid #ccc;
   padding:6px 10px;
   border-radius:4px;
 ">
@@ -709,7 +709,7 @@ button {
   重置
 </button>
 <label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
-  <input type="checkbox" id="bsLockedOnly" onchange="bs_search()" style="vertical-align:-2px;margin-right:4px">仅看我的锁定
+  <input type="checkbox" id="bsLockedOnly" onchange="bs_search()" style="vertical-align:-2px;margin-right:4px">自己锁定
 </label>
 </div>
 
@@ -754,9 +754,9 @@ button {
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_recharge"style="
   margin-left:8px;
-  background:#1f2933;
-  color:#fff;
-  border:1px solid #444;
+  background:transparent;
+  color:#1f2933;
+  border:1px solid #ccc;
   padding:6px 10px;
   border-radius:4px;
 ">
@@ -769,7 +769,7 @@ button {
   重置
 </button>
 <label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
-  <input type="checkbox" id="rLockedOnly" onchange="r_search()" style="vertical-align:-2px;margin-right:4px">仅看我的锁定
+  <input type="checkbox" id="rLockedOnly" onchange="r_search()" style="vertical-align:-2px;margin-right:4px">自己锁定
 </label>
       </div>
 
@@ -789,6 +789,7 @@ button {
         <input id="w_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
         <select id="w_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
         <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <select id="w_quickStatus" style="margin-left:6px"><option value="">全部</option><option value="pending">待出款</option><option value="unlocked">未锁定</option><option value="locked">已锁定</option><option value="rejected">已拒绝</option><option value="approved">已通过</option></select>
         <button class="primary" onclick="w_search()">搜索</button>
   <button class="primary" onclick="downloadRecords()">下载记录</button>
   <button class="primary" onclick="showToday('w')">今日数据</button>
@@ -796,9 +797,9 @@ button {
 <!-- 自动刷新设置 -->
 <select id="autoRefreshSelect_draw"style="
   margin-left:8px;
-  background:#1f2933;
-  color:#fff;
-  border:1px solid #444;
+  background:transparent;
+  color:#1f2933;
+  border:1px solid #ccc;
   padding:6px 10px;
   border-radius:4px;
 ">
@@ -811,7 +812,7 @@ button {
   重置
 </button>
 <label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
-  <input type="checkbox" id="wLockedOnly" onchange="w_search()" style="vertical-align:-2px;margin-right:4px">仅看我的锁定
+  <input type="checkbox" id="wLockedOnly" onchange="w_search()" style="vertical-align:-2px;margin-right:4px">自己锁定
 </label>
       </div>
 
@@ -2648,7 +2649,7 @@ async function bs_search(){
       side: $('#bs_side').value
     });
 
-    // 仅看我的锁定
+    // 自己锁定
     if (document.getElementById('bsLockedOnly')?.checked) {
       const myName = getAdminName();
       list = list.filter(o => o.lockedBy === myName);
@@ -2720,7 +2721,7 @@ async function r_search(){
       status: $('#r_status').value
     });
 
-    // 仅看我的锁定
+    // 自己锁定
     if (document.getElementById('rLockedOnly')?.checked) {
       const myName = getAdminName();
       list = list.filter(o => o.lockedBy === myName);
@@ -2784,10 +2785,22 @@ async function w_search(){
       status: $('#w_status').value
     });
 
-    // 仅看我的锁定
+    // 自己锁定
     if (document.getElementById('wLockedOnly')?.checked) {
       const myName = getAdminName();
       list = list.filter(o => o.lockedBy === myName);
+    }
+
+    // 快速状态筛选
+    const quickStatus = document.getElementById('w_quickStatus')?.value;
+    if (quickStatus) {
+      switch(quickStatus) {
+        case 'pending':  list = list.filter(o => o.status === 'processing'); break;
+        case 'unlocked': list = list.filter(o => o.status !== 'locked'); break;
+        case 'locked':   list = list.filter(o => o.status === 'locked'); break;
+        case 'rejected': list = list.filter(o => o.status === 'failed'); break;
+        case 'approved': list = list.filter(o => o.status === 'success'); break;
+      }
     }
 
  if(!list.length){
@@ -4042,7 +4055,7 @@ function resetBuySellPage() {
     el.selectedIndex = 0;
   });
 
-  // 3️⃣ 取消仅看我的锁定
+  // 3️⃣ 取消自己锁定
   const cb = document.getElementById('bsLockedOnly');
   if (cb) cb.checked = false;
 
@@ -4082,7 +4095,7 @@ function resetRechargePage() {
   const autoSel = document.getElementById('autoRefreshSelect_recharge');
   if (autoSel) autoSel.selectedIndex = 0;
 
-  // 3️⃣ 取消仅看我的锁定
+  // 3️⃣ 取消自己锁定
   const cb = document.getElementById('rLockedOnly');
   if (cb) cb.checked = false;
 
@@ -4107,7 +4120,7 @@ function resetWithdrawPage() {
   if (!page) return;
 
   // 1️⃣ 清空筛选条件
-  const ids = ['w_start', 'w_end', 'w_wallet', 'w_currency', 'w_status'];
+  const ids = ['w_start', 'w_end', 'w_wallet', 'w_currency', 'w_status', 'w_quickStatus'];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -4119,10 +4132,10 @@ function resetWithdrawPage() {
   });
 
   // 2️⃣ 重置自动刷新下拉
-  const autoSel = document.getElementById('autoRefreshSelect_withdraw');
+  const autoSel = document.getElementById('autoRefreshSelect_draw');
   if (autoSel) autoSel.selectedIndex = 0;
 
-  // 3️⃣ 取消仅看我的锁定
+  // 3️⃣ 取消自己锁定
   const cb = document.getElementById('wLockedOnly');
   if (cb) cb.checked = false;
 
