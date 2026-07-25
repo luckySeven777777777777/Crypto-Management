@@ -1067,14 +1067,11 @@ button {
     <div class="remark-body">
       <div class="remark-info-grid" id="remarkInfoGrid">
         <div class="remark-info-item"><span class="rlabel">订单号：</span><span class="rvalue" id="rm-orderId">--</span></div>
-        <div class="remark-info-item"><span class="rlabel">品牌名称(ID)：</span><span class="rvalue" id="rm-brand">--</span></div>
-        <div class="remark-info-item"><span class="rlabel">会员ID：</span><span class="rvalue" id="rm-userId">--</span></div>
-        <div class="remark-info-item"><span class="rlabel">会员账号：</span><span class="rvalue" id="rm-account">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">用户ID：</span><span class="rvalue" id="rm-userId">--</span></div>
         <div class="remark-info-item"><span class="rlabel">会员层级：</span><span class="rvalue" id="rm-level">--</span></div>
         <div class="remark-info-item"><span class="rlabel">提现金额：</span><span class="rvalue" id="rm-amount">--</span></div>
-        <div class="remark-info-item"><span class="rlabel">预计到帐：</span><span class="rvalue" id="rm-estimate">--</span></div>
-        <div class="remark-info-item"><span class="rlabel">手续费：</span><span class="rvalue" id="rm-fee">--</span></div>
         <div class="remark-info-item"><span class="rlabel">实际到账：</span><span class="rvalue" id="rm-actual">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">手续费：</span><span class="rvalue" id="rm-fee">--</span></div>
       </div>
       <div class="remark-textarea-row">
         <div>
@@ -2016,14 +2013,11 @@ async function addRemark(orderId, type, currentStatus){
 
   // Show loading state
   document.getElementById('rm-orderId').innerText = '...';
-  document.getElementById('rm-brand').innerText = '...';
   document.getElementById('rm-userId').innerText = '...';
-  document.getElementById('rm-account').innerText = '...';
   document.getElementById('rm-level').innerText = '...';
   document.getElementById('rm-amount').innerText = '...';
-  document.getElementById('rm-estimate').innerText = '...';
-  document.getElementById('rm-fee').innerText = '...';
   document.getElementById('rm-actual').innerText = '...';
+  document.getElementById('rm-fee').innerText = '...';
 
   document.getElementById('remarkModal').style.display = 'flex';
 
@@ -2041,28 +2035,20 @@ async function addRemark(orderId, type, currentStatus){
     const coin = (order && order.coin) ? String(order.coin).toUpperCase() : '--';
     const amount = order && order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
     const estimate = order && order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
-    const fee = '0.00';
-
     document.getElementById('rm-orderId').innerText = orderId || '--';
-    document.getElementById('rm-brand').innerText = (user.brandName || user.brand || '--') + '(' + (user.brandId || '--') + ')';
     document.getElementById('rm-userId').innerText = (order && order.userId) || '--';
-    document.getElementById('rm-account').innerText = (user.account || user.username || user.wallet || '--');
     document.getElementById('rm-level').innerText = tagRemark;
     document.getElementById('rm-amount').innerText = amount + ' ' + coin;
-    document.getElementById('rm-estimate').innerText = estimate + ' ' + coin;
-    document.getElementById('rm-fee').innerText = fee + ' ' + coin;
     document.getElementById('rm-actual').innerText = estimate + ' ' + coin;
+    document.getElementById('rm-fee').innerText = '0.00$';
   } catch(e) {
     console.error('load remark info error', e);
     document.getElementById('rm-orderId').innerText = orderId || '--';
-    document.getElementById('rm-brand').innerText = '--';
     document.getElementById('rm-userId').innerText = '--';
-    document.getElementById('rm-account').innerText = '--';
     document.getElementById('rm-level').innerText = '--';
     document.getElementById('rm-amount').innerText = '--';
-    document.getElementById('rm-estimate').innerText = '--';
-    document.getElementById('rm-fee').innerText = '--';
     document.getElementById('rm-actual').innerText = '--';
+    document.getElementById('rm-fee').innerText = '--';
   }
 }
 
@@ -2467,8 +2453,8 @@ async function openViewDetail(orderId, type) {
     const user = users[order.userId] || {};
 
     const userId = order.userId;
-    const rechargeOrders = (all.recharge || []).filter(o => o.userId === userId && o.status === 'success');
-    const withdrawOrders = (all.withdraw || []).filter(o => o.userId === userId && o.status === 'success');
+    const rechargeOrders = (all.recharge || []).filter(o => o.status === 'success');
+    const withdrawOrders = (all.withdraw || []).filter(o => o.status === 'success');
     const rechargeCount = rechargeOrders.length;
     const withdrawCount = withdrawOrders.length;
 
