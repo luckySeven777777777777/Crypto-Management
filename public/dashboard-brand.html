@@ -924,6 +924,7 @@ button {
       <label><input type="checkbox" value="withdraw"> <span data-i18n="text" data-key="withdraw">提款</span></label>
       <label><input type="checkbox" value="buysell"> <span data-i18n="text" data-key="buysell">BuySell</span></label>
       <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
+      <label><input type="checkbox" value="balance_adjust"> <span data-i18n="text" data-key="balanceAdjust">加减操作</span></label>
 
       <button class="primary" onclick="createAdmin()" data-i18n="text" data-key="createAdmin">新增管理员</button>
     </div>
@@ -1233,9 +1234,9 @@ button {
       rejected:'已拒绝', pending:'待处理', buysellMgmt:'Buy/Sell 管理', rechargeMgmt:'充值管理', withdrawMgmt:'提款管理',
       memberMgmt:'会员管理', orderRecords:'订单记录', sysSettings:'系统设置', adminMgmt:'管理员账号管理',
       account:'管理员账号', nickname:'昵称（显示用）', initPwd:'初始密码', recharge:'充值', withdraw:'提款',
-      buysell:'BuySell', admin:'Admin', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'加减操作', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
       permissions:'权限', loginLink:'登录链接', copyLink:'复制登录链接', status:'状态', online:'在线', offline:'离线',
-      enabled:'已启用', disabled:'已禁用', enable:'启用', disable:'禁用', update:'更新', del:'删除',
+      enabled:'已启用', disabled:'已禁用', enable:'启用', disable:'禁用', update:'更新', del:'删除', kick:'踢出', kickConfirm:'确认踢出管理员',
       creator:'创建人', orders:'订单/会员/钱包', time:'时间', userId:'用户ID', type:'类型', amount:'金额',
       currency:'币种', estUSDT:'估算 USDT', wallet:'wallet', ip:'IP', operation:'操作', operator:'操作人',
       note:'备注', search:'搜索', downloadRecords:'下载记录', todayData:'今日数据', viewYesterday:'查看昨日数据',
@@ -1267,10 +1268,10 @@ button {
       rechargeMgmt:'Recharge Management', withdrawMgmt:'Withdraw Management', memberMgmt:'Member Management',
       orderRecords:'Order Records', sysSettings:'Settings', adminMgmt:'Admin Account Management',
       account:'Admin Account', nickname:'Nickname', initPwd:'Initial Password', recharge:'Recharge', withdraw:'Withdraw',
-      buysell:'BuySell', admin:'Admin', createAdmin:'Create Admin', loading:'Loading...', noAdmins:'No admins',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'Balance Adjust', createAdmin:'Create Admin', loading:'Loading...', noAdmins:'No admins',
       permissions:'Permissions', loginLink:'Login Link', copyLink:'Copy Link', status:'Status', online:'Online',
       offline:'Offline', enabled:'Enabled', disabled:'Disabled', enable:'Enable', disable:'Disable', update:'Update',
-      del:'Delete', creator:'Creator', orders:'Order/Member/Wallet', time:'Time', userId:'User ID', type:'Type',
+      del:'Delete', kick:'Kick', kickConfirm:'Confirm kick admin', creator:'Creator', orders:'Order/Member/Wallet', time:'Time', userId:'User ID', type:'Type',
       amount:'Amount', currency:'Currency', estUSDT:'Est. USDT', wallet:'Wallet', ip:'IP', operation:'Action',
       operator:'Operator', note:'Note', search:'Search', downloadRecords:'Download', todayData:'Today',
       viewYesterday:'Yesterday', autoRefresh:'Auto Refresh', off:'Off', sec15:'15s', sec30:'30s', sec60:'60s',
@@ -1303,10 +1304,10 @@ button {
       rechargeMgmt:'จัดการเติมเงิน', withdrawMgmt:'จัดการถอนเงิน', memberMgmt:'จัดการสมาชิก',
       orderRecords:'บันทึกคำสั่งซื้อ', sysSettings:'ตั้งค่าระบบ', adminMgmt:'จัดการบัญชีผู้ดูแล',
       account:'บัญชีผู้ดูแล', nickname:'ชื่อเล่น', initPwd:'รหัสผ่านเริ่มต้น', recharge:'เติมเงิน', withdraw:'ถอนเงิน',
-      buysell:'BuySell', admin:'Admin', createAdmin:'เพิ่มผู้ดูแล', loading:'กำลังโหลด...', noAdmins:'ไม่มีผู้ดูแล',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'ปรับยอด', createAdmin:'เพิ่มผู้ดูแล', loading:'กำลังโหลด...', noAdmins:'ไม่มีผู้ดูแล',
       permissions:'สิทธิ์', loginLink:'ลิงก์เข้าสู่ระบบ', copyLink:'คัดลอกลิงก์', status:'สถานะ', online:'ออนไลน์',
       offline:'ออฟไลน์', enabled:'เปิดใช้งาน', disabled:'ปิดใช้งาน', enable:'เปิด', disable:'ปิด', update:'อัปเดต',
-      del:'ลบ', creator:'ผู้สร้าง', orders:'คำสั่ง/สมาชิก/กระเป๋า', time:'เวลา', userId:'รหัสผู้ใช้', type:'ประเภท',
+      del:'ลบ', kick:'เตะออก', kickConfirm:'ยืนยันการเตะผู้ดูแล', creator:'ผู้สร้าง', orders:'คำสั่ง/สมาชิก/กระเป๋า', time:'เวลา', userId:'รหัสผู้ใช้', type:'ประเภท',
       amount:'จำนวน', currency:'สกุลเงิน', estUSDT:'USDT โดยประมาณ', wallet:'กระเป๋า', ip:'IP', operation:'ดำเนินการ',
       operator:'ผู้ดำเนินการ', note:'หมายเหตุ', search:'ค้นหา', downloadRecords:'ดาวน์โหลด', todayData:'วันนี้',
       viewYesterday:'เมื่อวาน', autoRefresh:'รีเฟรชอัตโนมัติ', off:'ปิด', sec15:'15 วินาที', sec30:'30 วินาที',
@@ -1339,10 +1340,10 @@ button {
       rechargeMgmt:'Quản lý nạp tiền', withdrawMgmt:'Quản lý rút tiền', memberMgmt:'Quản lý thành viên',
       orderRecords:'Hồ sơ đơn hàng', sysSettings:'Cài đặt', adminMgmt:'Quản lý tài khoản admin',
       account:'Tài khoản admin', nickname:'Biệt danh', initPwd:'Mật khẩu ban đầu', recharge:'Nạp tiền', withdraw:'Rút tiền',
-      buysell:'BuySell', admin:'Admin', createAdmin:'Thêm admin', loading:'Đang tải...', noAdmins:'Không có admin',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'Điều chỉnh số dư', createAdmin:'Thêm admin', loading:'Đang tải...', noAdmins:'Không có admin',
       permissions:'Quyền', loginLink:'Liên kết đăng nhập', copyLink:'Sao chép', status:'Trạng thái', online:'Trực tuyến',
       offline:'Ngoại tuyến', enabled:'Đã kích hoạt', disabled:'Đã vô hiệu', enable:'Kích hoạt', disable:'Vô hiệu',
-      update:'Cập nhật', del:'Xóa', creator:'Người tạo', orders:'Đơn/Thành viên/Ví', time:'Thời gian',
+      update:'Cập nhật', del:'Xóa', kick:'Đá ra', kickConfirm:'Xác nhận đá admin', creator:'Người tạo', orders:'Đơn/Thành viên/Ví', time:'Thời gian',
       userId:'ID người dùng', type:'Loại', amount:'Số tiền', currency:'Tiền tệ', estUSDT:'USDT ước tính',
       wallet:'Ví', ip:'IP', operation:'Thao tác', operator:'Người thao tác', note:'Ghi chú', search:'Tìm kiếm',
       downloadRecords:'Tải xuống', todayData:'Hôm nay', viewYesterday:'Hôm qua', autoRefresh:'Tự động làm mới',
@@ -3553,7 +3554,7 @@ async function loadMembers(resetPage = true){
         <td><span class="uid-clickable" onclick="openProfile('${uid}')">${uid}</span></td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${walletMap[uid] || u.wallet || ''}">${walletMap[uid] || u.wallet || '--'}</td>
         <td>${bal.toFixed(2)}</td>
-        <td><button class="primary" style="margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','add')">+</button> <button class="primary" style="background:#ff4444;margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','deduct')">-</button></td>
+        <td>${(isSuperAdmin() || (getAdminPerms().balance_adjust)) ? `<button class="primary" style="margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','add')">+</button> <button class="primary" style="background:#ff4444;margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','deduct')">-</button>` : '--'}</td>
         <td>${formatMyanmarTime(u.created)}</td>
         <td>${formatMyanmarTime(r.loginTime)}</td>
         <td>${formatMyanmarTime(r.lastOnline)}</td>
@@ -4367,6 +4368,11 @@ function renderAdminTable(admins){
     return;
   }
   let html = '';
+  // 非超级管理员只能看到自己的账号
+  if (!isSuperAdmin()) {
+    const myId = getAdminId();
+    admins = admins.filter(a => a.id === myId);
+  }
   admins.forEach(a => {
     const perms = a.permissions || {};
     const statusColor = a.status === '在线' ? 'green' : '#999';
@@ -4382,7 +4388,8 @@ function renderAdminTable(admins){
         '<label><input type="checkbox" data-field="recharge" ' + (perms.recharge ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 充值</label> ' +
         '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
         '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
-        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label>' +
+        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label> ' +
+        '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label>' +
       '</td>' +
       '<td>' +
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
@@ -4392,6 +4399,7 @@ function renderAdminTable(admins){
       '<td>' +
         '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
         '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
+        (a.isSuper ? '' : '<button class="danger" style="padding:4px 10px;background:#ff6600" onclick="if(confirm(\'确认踢出管理员 ' + escHtml1(a.id) + '？\'))kickAdmin(\'' + escHtml1(a.id) + '\')">踢出</button> ') +
         '<button class="danger" onclick="if(confirm(\'确认删除管理员 ' + escHtml1(a.id) + '？\'))deleteAdmin(\'' + escHtml1(a.id) + '\')">删除</button>' +
         '<div class="small">创建人: ' + escHtml1(a.createdBy || 'system') + '</div>' +
       '</td>' +
@@ -4429,7 +4437,8 @@ async function createAdmin(){
         recharge: cb('recharge'),
         withdraw: cb('withdraw'),
         buysell:  cb('buysell'),
-        admin: cb('admin')
+        admin: cb('admin'),
+        balance_adjust: cb('balance_adjust')
       })
     });
     const j = await r.json();
@@ -4475,10 +4484,27 @@ async function deleteAdmin(id){
   }
 }
 
+async function kickAdmin(id){
+  if (!id) { alert('缺少管理员ID'); return; }
+  try {
+    const r = await fetch('/api/admin/kick', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('踢出失败: ' + (j.error || '未知')); return; }
+    alert('已踢出管理员 ' + id);
+    loadAdmins();
+  } catch(e) {
+    alert('踢出失败: ' + e.message);
+  }
+}
+
 async function updateAdminPermissions(id, ev){
   const tr = ev.target.closest('tr');
   const cbs = tr.querySelectorAll('input[data-field]');
-  const perms = { recharge: false, withdraw: false, buysell: false, admin: false };
+  const perms = { recharge: false, withdraw: false, buysell: false, admin: false, balance_adjust: false };
   cbs.forEach(cb => {
     perms[cb.getAttribute('data-field')] = cb.checked;
   });
