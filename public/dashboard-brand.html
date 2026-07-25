@@ -61,22 +61,30 @@ body{
   transform: translateX(-50%);
   display:flex;
   align-items:center;
-  gap:4px;
+  gap:2px;
 }
 .header-nav .icon{
   display:flex;
+  flex-direction:column;
   align-items:center;
-  gap:4px;
-  padding:6px 10px;
+  justify-content:center;
+  gap:2px;
+  padding:6px 12px;
   border-radius:6px;
   color:#cfe6ff;
   cursor:pointer;
-  font-size:14px;
+  font-size:12px;
   white-space:nowrap;
-  transition:background 0.2s;
+  transition:background 0.2s,color 0.2s;
+  min-width:64px;
+  text-align:center;
+}
+.header-nav .icon svg{
+  width:22px;height:22px;
 }
 .header-nav .icon:hover{
   background:rgba(255,255,255,0.15);
+  color:#fff;
 }
 .header-nav .icon.active{
   background:rgba(255,255,255,0.25);
@@ -86,8 +94,8 @@ body{
   background:rgba(255,255,255,0.12);
 }
 .header-nav .icon span{
-  font-size:12px;
-  margin-left:2px;
+  font-size:10px;
+  margin-top:1px;
 }
 .top-header .user{
   font-size:16px;
@@ -97,14 +105,34 @@ body{
 }
 #adminUser{color:#fff;font-size:16px;}
 
-/* ----------- 铃铛通知 ----------- */
-.bell-icon{cursor:pointer;font-size:20px;margin:0 8px;position:relative;display:inline-flex;align-items:center;transition:transform .2s;user-select:none}
-.bell-icon:hover{transform:scale(1.15)}
+/* ----------- 铃铛 ----------- */
+.bell-icon{cursor:pointer;position:relative;display:inline-flex;align-items:center;justify-content:center;transition:transform .2s,opacity .2s;user-select:none;width:36px;height:36px;border-radius:8px}
+.bell-icon:hover{transform:scale(1.08);background:rgba(255,255,255,0.12)}
+.bell-icon svg{width:20px;height:20px;color:#fff}
 .bell-icon.muted{opacity:.45}
-.bell-badge{position:absolute;top:-7px;right:-10px;background:#ff4444;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.bell-badge{position:absolute;top:-2px;right:-3px;background:#ff4444;color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:none;align-items:center;justify-content:center;padding:0 3px;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .bell-badge.show{display:flex}
 @keyframes bell-ring{0%,100%{transform:rotate(0)}10%{transform:rotate(12deg)}20%{transform:rotate(-10deg)}30%{transform:rotate(8deg)}40%{transform:rotate(-6deg)}50%{transform:rotate(3deg)}60%{transform:rotate(-2deg)}70%{transform:rotate(0)}}
 .bell-icon.ring{animation:bell-ring .6s ease-in-out}
+
+/* ----------- 管理员下拉 ---------- */
+.admin-dropdown{position:relative;display:inline-flex;align-items:center}
+.admin-dropdown .admin-trigger{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;color:#fff;cursor:pointer;font-size:14px;font-weight:600;transition:background .2s;user-select:none}
+.admin-dropdown .admin-trigger:hover{background:rgba(255,255,255,0.15)}
+.admin-dropdown .admin-trigger svg.chevron{width:12px;height:12px;transition:transform .2s}
+.admin-dropdown.open .admin-trigger svg.chevron{transform:rotate(180deg)}
+.admin-dropdown .admin-menu{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:180px;overflow:hidden;z-index:2000;display:none;padding:6px 0}
+.admin-dropdown.open .admin-menu{display:block}
+.admin-dropdown .admin-menu .menu-item{padding:9px 16px;cursor:pointer;font-size:13px;color:#333;display:flex;align-items:center;gap:8px;transition:background .15s;white-space:nowrap}
+.admin-dropdown .admin-menu .menu-item:hover{background:#f0f4ff}
+.admin-dropdown .admin-menu .menu-item svg{width:16px;height:16px;color:#666}
+.admin-dropdown .admin-menu .menu-divider{height:1px;background:#e8ecf0;margin:4px 0}
+.admin-dropdown .admin-menu .lang-sub{position:relative}
+.admin-dropdown .admin-menu .lang-sub .lang-list{display:none;position:absolute;right:100%;top:-6px;background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:140px;padding:6px 0;z-index:2001;margin-right:4px}
+.admin-dropdown .admin-menu .lang-sub:hover .lang-list{display:block}
+.admin-dropdown .admin-menu .lang-list .lang-opt{padding:8px 16px;cursor:pointer;font-size:13px;color:#333;white-space:nowrap;transition:background .15s}
+.admin-dropdown .admin-menu .lang-list .lang-opt:hover{background:#f0f4ff}
+.admin-dropdown .admin-menu .lang-list .lang-opt.active{color:#1976d2;font-weight:600}
 
 /* ----------- LAYOUT ---------- */
 .app{
@@ -175,13 +203,32 @@ button.primary{
   width:100%;
   border-collapse:collapse;
   margin-top:8px;
+  background:#fff;
+  border-radius:8px;
+  overflow:hidden;
+  box-shadow:0 1px 4px rgba(0,0,0,0.04);
 }
-.table th,.table td{
-  padding:10px;
-  border-bottom:1px solid #eee;
+.table thead{ background:#f5f7fa; }
+.table th{
+  padding:12px 10px;
+  border-bottom:2px solid #e0e4e8;
+  font-size:12px;
+  font-weight:700;
+  color:#555;
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+  text-align:center;
+  white-space:nowrap;
+}
+.table td{
+  padding:11px 10px;
+  border-bottom:1px solid #f0f2f5;
   font-size:13px;
   text-align:center;
+  color:#333;
 }
+.table tbody tr:nth-child(even){ background:#fafbfc; }
+.table tbody tr:hover{ background:#eef2f7; }
 
 /* 会员等级标签 */
 .member-label{
@@ -460,18 +507,66 @@ button {
 <div class="top-header">
   <div class="brand">管理后台</div>
   <div class="header-nav">
-    <div class="icon active" data-page="dashboard" title="控制台">🏠<span>主页</span></div>
-    <div class="icon buysell" data-page="buysell" title="Buy/Sell">💱<span>Buy/Sell</span></div>
-    <div class="icon" data-page="recharge" title="充值管理">💳<span>充值</span></div>
-    <div class="icon" data-page="withdraw" title="提款管理">💸<span>提款</span></div>
-    <div class="icon" data-page="members" title="会员管理">👥<span>会员</span></div>
-    <div class="icon" data-page="orders" title="订单记录">📜<span>订单</span></div>
-    <div class="icon" data-page="settings" title="系统设置">⚙️<span>设置</span></div>
+    <div class="icon active" data-page="dashboard" title="主页">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span data-i18n="text" data-key="dashboard">主页</span>
+    </div>
+    <div class="icon buysell" data-page="buysell" title="Buy/Sell">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="7 16 3 12 7 8"/><line x1="3" y1="12" x2="15" y2="12"/><polyline points="17 8 21 12 17 16"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span data-i18n="text" data-key="buysellMgmt">Buy/Sell</span>
+    </div>
+    <div class="icon" data-page="recharge" title="充值管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="12" y1="9" x2="12" y2="15"/><polyline points="9 12 12 15 15 12"/></svg>
+      <span data-i18n="text" data-key="rechargeMgmt">充值</span>
+    </div>
+    <div class="icon" data-page="withdraw" title="提款管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="12" y1="15" x2="12" y2="9"/><polyline points="9 12 12 9 15 12"/></svg>
+      <span data-i18n="text" data-key="withdrawMgmt">提款</span>
+    </div>
+    <div class="icon" data-page="members" title="会员管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><path d="M9 14a5 5 0 0 0-5 5v1h18v-1a5 5 0 0 0-5-5"/></svg>
+      <span data-i18n="text" data-key="memberMgmt">会员</span>
+    </div>
+    <div class="icon" data-page="orders" title="订单记录">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span data-i18n="text" data-key="orderRecords">订单</span>
+    </div>
+    <div class="icon" data-page="settings" title="系统设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span data-i18n="text" data-key="sysSettings">设置</span>
+    </div>
   </div>
-  <div class="user">
-    <span id="adminUser">admin</span>
-    <span id="bellIcon" class="bell-icon" title="新订单通知（已开启）">🔔<span class="bell-badge" id="bellBadge">0</span></span>
-    <button id="logoutBtn">Logout</button>
+  <div class="user" style="display:flex;align-items:center;gap:6px">
+    <span id="bellIcon" class="bell-icon" title="新订单通知（已开启）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span class="bell-badge" id="bellBadge">0</span>
+    </span>
+    <div class="admin-dropdown" id="adminDropdown">
+      <div class="admin-trigger" onclick="toggleAdminMenu()">
+        <span id="adminUser">admin</span>
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="admin-menu">
+        <div class="lang-sub">
+          <div class="menu-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            语言 Language
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;margin-left:auto"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+          <div class="lang-list">
+            <div class="lang-opt active" onclick="switchLanguage('zh')">中文</div>
+            <div class="lang-opt" onclick="switchLanguage('en')">English</div>
+            <div class="lang-opt" onclick="switchLanguage('th')">ไทย</div>
+            <div class="lang-opt" onclick="switchLanguage('vi')">Tiếng Việt</div>
+          </div>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-item" onclick="logout()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span data-i18n="text" data-key="logout">退出</span>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 <div class="app">
@@ -479,39 +574,39 @@ button {
 
     <!-- Dashboard -->
     <div id="page-dashboard" class="container">
-      <div class="page-title">控制台</div>
+      <div class="page-title" data-i18n="text" data-key="dashboard">控制台</div>
 
       <div class="grid" style="grid-template-columns:repeat(3,1fr)">
   <div class="card">
-    今日充值<br>
+    <span data-i18n="text" data-key="todayRecharge">今日充值</span><br>
     <strong id="todayRecharge">--</strong>
     <div class="small">USDT：<span id="todayRechargeSum">--</span></div>
   </div>
 
   <div class="card">
-    今日提款<br>
+    <span data-i18n="text" data-key="todayWithdraw">今日提款</span><br>
     <strong id="todayWithdraw">--</strong>
     <div class="small">USDT：<span id="todayWithdrawSum">--</span></div>
   </div>
 
 <div class="card pnl-card" id="pnlCard">
-  总盈亏
+  <span data-i18n="text" data-key="totalPnl">总盈亏</span>
   <div class="pnl-value" id="pnlValue">--</div>
-  <div class="pnl-sub">USDT（实时）</div>
+  <div class="pnl-sub">USDT（<span data-i18n="text" data-key="realtime">实时</span>）</div>
 </div>
 
   <div class="card">
-    风控预警<br>
+    <span data-i18n="text" data-key="riskAlerts">风控预警</span><br>
     <strong id="alertsCount">--</strong>
   </div>
 <div class="card" id="rejectedCard">
-  ❌ 已拒绝<br>
+  <span data-i18n="text" data-key="rejected">已拒绝</span><br>
   <strong id="todayRejected">--</strong>
   <div class="small" id="rejectedDetail" style="margin-top:4px;min-height:18px;display:block"></div>
 </div>
 
 <div class="card">
-  🔥 待处理<br>
+  <span data-i18n="text" data-key="pending">待处理</span><br>
   <strong id="todayPending">--</strong>
 </div>
 </div>
@@ -528,7 +623,7 @@ button {
 
     <!-- BuySell page -->
     <div id="page-buysell" class="container" style="display:none">
-      <div class="page-title">BuySell 管理</div>
+      <div class="page-title" data-i18n="text" data-key="buysellMgmt">BuySell 管理</div>
 
      <div class="filters">
   <label>开始 <input type="date" id="bs_start"></label>
@@ -734,37 +829,37 @@ button {
 =============================== -->
 <div id="page-settings" class="container" style="display:none">
 
-  <div class="page-title">系统设置</div>
+  <div class="page-title" data-i18n="text" data-key="sysSettings">系统设置</div>
 
   <!-- 管理员账号管理 -->
   <div class="card" style="margin-bottom:16px">
-    <div class="page-title" style="font-size:16px">管理员账号管理</div>
+    <div class="page-title" style="font-size:16px" data-i18n="text" data-key="adminMgmt">管理员账号管理</div>
 
     <div class="filters">
-      <input id="newAdminId" placeholder="管理员账号">
-      <input id="newAdminNickname" placeholder="昵称（显示用）">
-      <input id="newAdminPassword" placeholder="初始密码">
+      <input id="newAdminId" data-i18n="placeholder" data-key="account" placeholder="管理员账号">
+      <input id="newAdminNickname" data-i18n="placeholder" data-key="nickname" placeholder="昵称（显示用）">
+      <input id="newAdminPassword" data-i18n="placeholder" data-key="initPwd" placeholder="初始密码">
 
-      <label><input type="checkbox" value="recharge"> 充值</label>
-      <label><input type="checkbox" value="withdraw"> 提款</label>
-      <label><input type="checkbox" value="buysell"> BuySell</label>
-      <label><input type="checkbox" value="admin"> Admin</label>
+      <label><input type="checkbox" value="recharge"> <span data-i18n="text" data-key="recharge">充值</span></label>
+      <label><input type="checkbox" value="withdraw"> <span data-i18n="text" data-key="withdraw">提款</span></label>
+      <label><input type="checkbox" value="buysell"> <span data-i18n="text" data-key="buysell">BuySell</span></label>
+      <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
 
-      <button class="primary" onclick="createAdmin()">新增管理员</button>
+      <button class="primary" onclick="createAdmin()" data-i18n="text" data-key="createAdmin">新增管理员</button>
     </div>
 
     <table class="table">
       <thead>
         <tr>
-          <th>账号</th>
-          <th>权限</th>
-          <th>登录链接</th>
-          <th>状态</th>
-          <th>操作</th>
+          <th data-i18n="text" data-key="account">账号</th>
+          <th data-i18n="text" data-key="permissions">权限</th>
+          <th data-i18n="text" data-key="loginLink">登录链接</th>
+          <th data-i18n="text" data-key="status">状态</th>
+          <th data-i18n="text" data-key="operation">操作</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="5">加载中...</td></tr>
+        <tr><td colspan="5"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -952,6 +1047,173 @@ button {
 </div>
 
 <script>
+  // ===== i18n 语言包 =====
+  const I18N = {
+    zh: {
+      dashboard:'控制台', todayRecharge:'今日充值', todayWithdraw:'今日提款', totalPnl:'总盈亏', riskAlerts:'风控报警',
+      rejected:'已拒绝', pending:'待处理', buysellMgmt:'Buy/Sell 管理', rechargeMgmt:'充值管理', withdrawMgmt:'提款管理',
+      memberMgmt:'会员管理', orderRecords:'订单记录', sysSettings:'系统设置', adminMgmt:'管理员账号管理',
+      account:'管理员账号', nickname:'昵称（显示用）', initPwd:'初始密码', recharge:'充值', withdraw:'提款',
+      buysell:'BuySell', admin:'Admin', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
+      permissions:'权限', loginLink:'登录链接', copyLink:'复制登录链接', status:'状态', online:'在线', offline:'离线',
+      enabled:'已启用', disabled:'已禁用', enable:'启用', disable:'禁用', update:'更新', del:'删除',
+      creator:'创建人', orders:'订单/会员/钱包', time:'时间', userId:'用户ID', type:'类型', amount:'金额',
+      currency:'币种', estUSDT:'估算 USDT', wallet:'wallet', ip:'IP', operation:'操作', operator:'操作人',
+      note:'备注', search:'搜索', downloadRecords:'下载记录', todayData:'今日数据', viewYesterday:'查看昨日数据',
+      autoRefresh:'自动刷新', off:'关闭', sec15:'15 秒', sec30:'30 秒', sec60:'60 秒', reset:'重置',
+      processing:'处理中', success:'成功', failed:'失败', locked:'锁定', allStatus:'全部状态', allCurrency:'全部币种',
+      start:'开始', end:'结束', memberId:'会员ID', memberLevel:'会员等级', phone:'手机号', email:'邮箱',
+      tags:'标签', newMember:'新成员', normalMember:'正常会员', testAccount:'测试账号', abnormalMember:'异常会员',
+      noRecords:'没有记录', clickSearch:'点击搜索加载数据', updated:'更新于', system:'system', language:'语言',
+      logout:'退出', soundOn:'新订单通知（已开启）', soundOff:'新订单通知（已关闭）', noSound:'新订单通知（已关闭）',
+      createSuccess:'创建成功', accountColon:'账号', nicknameColon:'昵称', initPwdColon:'初始密码', loginUrlColon:'专属登录链接',
+      createFailed:'创建失败', unknown:'未知', confirmDel:'确认删除管理员', delFailed:'删除失败', updateFailed:'更新失败',
+      pwdReset:'重置提款密码', verifyType:'验证方式', walletAddr:'钱包地址/会员ID/订单号',
+      side:'方向', buy:'买入', sell:'卖出', qty:'数量', planMgmt:'理财管理', transfer:'转账',
+      bellNewOrder:'你有新的订单请及时处理', newOrderNotify:'新订单通知',
+      rechargeCount:'笔', withdrawCount:'笔', usdt:'USDT', realtime:'实时', detailRejected:'充值:0，提款:0',
+      google2fa:'Google 二级验证码（2FA）', genQr:'生成绑定', scanQr:'请使用 Google Authenticator 扫码',
+      inputCode:'输入 6 位验证码', confirmBind:'确认绑定', genFailed:'生成2FA绑定失败'
+    },
+    en: {
+      dashboard:'Dashboard', todayRecharge:'Today Recharge', todayWithdraw:'Today Withdraw', totalPnl:'Total P&L',
+      riskAlerts:'Risk Alerts', rejected:'Rejected', pending:'Pending', buysellMgmt:'Buy/Sell Management',
+      rechargeMgmt:'Recharge Management', withdrawMgmt:'Withdraw Management', memberMgmt:'Member Management',
+      orderRecords:'Order Records', sysSettings:'Settings', adminMgmt:'Admin Account Management',
+      account:'Admin Account', nickname:'Nickname', initPwd:'Initial Password', recharge:'Recharge', withdraw:'Withdraw',
+      buysell:'BuySell', admin:'Admin', createAdmin:'Create Admin', loading:'Loading...', noAdmins:'No admins',
+      permissions:'Permissions', loginLink:'Login Link', copyLink:'Copy Link', status:'Status', online:'Online',
+      offline:'Offline', enabled:'Enabled', disabled:'Disabled', enable:'Enable', disable:'Disable', update:'Update',
+      del:'Delete', creator:'Creator', orders:'Order/Member/Wallet', time:'Time', userId:'User ID', type:'Type',
+      amount:'Amount', currency:'Currency', estUSDT:'Est. USDT', wallet:'Wallet', ip:'IP', operation:'Action',
+      operator:'Operator', note:'Note', search:'Search', downloadRecords:'Download', todayData:'Today',
+      viewYesterday:'Yesterday', autoRefresh:'Auto Refresh', off:'Off', sec15:'15s', sec30:'30s', sec60:'60s',
+      reset:'Reset', processing:'Processing', success:'Success', failed:'Failed', locked:'Locked',
+      allStatus:'All Status', allCurrency:'All Currencies', start:'Start', end:'End', memberId:'Member ID',
+      memberLevel:'Member Level', phone:'Phone', email:'Email', tags:'Tags', newMember:'New Member',
+      normalMember:'Normal', testAccount:'Test', abnormalMember:'Abnormal', noRecords:'No records',
+      clickSearch:'Click search to load', updated:'Updated', system:'System', language:'Language',
+      logout:'Logout', soundOn:'Order notification (ON)', soundOff:'Order notification (OFF)', noSound:'Notification (OFF)',
+      createSuccess:'Created successfully', accountColon:'Account', nicknameColon:'Nickname', initPwdColon:'Password',
+      loginUrlColon:'Login URL', createFailed:'Creation failed', unknown:'Unknown', confirmDel:'Confirm delete admin',
+      delFailed:'Delete failed', updateFailed:'Update failed', pwdReset:'Reset Withdraw Password',
+      verifyType:'Verify Method', walletAddr:'Wallet/ID/Order#', side:'Side', buy:'Buy', sell:'Sell', qty:'Qty',
+      planMgmt:'Plan Management', transfer:'Transfer', bellNewOrder:'You have a new order', newOrderNotify:'New Order',
+      rechargeCount:'txns', withdrawCount:'txns', usdt:'USDT', realtime:'Real-time',
+      detailRejected:'Recharge:0, Withdraw:0', google2fa:'Google 2FA', genQr:'Generate QR',
+      scanQr:'Scan with Google Authenticator', inputCode:'Enter 6-digit code', confirmBind:'Confirm',
+      genFailed:'2FA generation failed'
+    },
+    th: {
+      dashboard:'แดชบอร์ด', todayRecharge:'เติมเงินวันนี้', todayWithdraw:'ถอนเงินวันนี้', totalPnl:'กำไร/ขาดทุนรวม',
+      riskAlerts:'แจ้งเตือนความเสี่ยง', rejected:'ปฏิเสธแล้ว', pending:'รอดำเนินการ', buysellMgmt:'จัดการ Buy/Sell',
+      rechargeMgmt:'จัดการเติมเงิน', withdrawMgmt:'จัดการถอนเงิน', memberMgmt:'จัดการสมาชิก',
+      orderRecords:'บันทึกคำสั่งซื้อ', sysSettings:'ตั้งค่าระบบ', adminMgmt:'จัดการบัญชีผู้ดูแล',
+      account:'บัญชีผู้ดูแล', nickname:'ชื่อเล่น', initPwd:'รหัสผ่านเริ่มต้น', recharge:'เติมเงิน', withdraw:'ถอนเงิน',
+      buysell:'BuySell', admin:'Admin', createAdmin:'เพิ่มผู้ดูแล', loading:'กำลังโหลด...', noAdmins:'ไม่มีผู้ดูแล',
+      permissions:'สิทธิ์', loginLink:'ลิงก์เข้าสู่ระบบ', copyLink:'คัดลอกลิงก์', status:'สถานะ', online:'ออนไลน์',
+      offline:'ออฟไลน์', enabled:'เปิดใช้งาน', disabled:'ปิดใช้งาน', enable:'เปิด', disable:'ปิด', update:'อัปเดต',
+      del:'ลบ', creator:'ผู้สร้าง', orders:'คำสั่ง/สมาชิก/กระเป๋า', time:'เวลา', userId:'รหัสผู้ใช้', type:'ประเภท',
+      amount:'จำนวน', currency:'สกุลเงิน', estUSDT:'USDT โดยประมาณ', wallet:'กระเป๋า', ip:'IP', operation:'ดำเนินการ',
+      operator:'ผู้ดำเนินการ', note:'หมายเหตุ', search:'ค้นหา', downloadRecords:'ดาวน์โหลด', todayData:'วันนี้',
+      viewYesterday:'เมื่อวาน', autoRefresh:'รีเฟรชอัตโนมัติ', off:'ปิด', sec15:'15 วินาที', sec30:'30 วินาที',
+      sec60:'60 วินาที', reset:'รีเซ็ต', processing:'กำลังดำเนินการ', success:'สำเร็จ', failed:'ล้มเหลว',
+      locked:'ล็อก', allStatus:'สถานะทั้งหมด', allCurrency:'ทุกสกุลเงิน', start:'เริ่ม', end:'สิ้นสุด',
+      memberId:'รหัสสมาชิก', memberLevel:'ระดับสมาชิก', phone:'โทรศัพท์', email:'อีเมล', tags:'แท็ก',
+      newMember:'สมาชิกใหม่', normalMember:'สมาชิกปกติ', testAccount:'บัญชีทดสอบ', abnormalMember:'สมาชิกผิดปกติ',
+      noRecords:'ไม่มีบันทึก', clickSearch:'คลิกค้นหาเพื่อโหลด', updated:'อัปเดตเมื่อ', system:'ระบบ',
+      language:'ภาษา', logout:'ออกจากระบบ', soundOn:'แจ้งเตือนคำสั่งซื้อ (เปิด)', soundOff:'แจ้งเตือนคำสั่งซื้อ (ปิด)',
+      noSound:'การแจ้งเตือน (ปิด)', createSuccess:'สร้างสำเร็จ', accountColon:'บัญชี', nicknameColon:'ชื่อเล่น',
+      initPwdColon:'รหัสผ่าน', loginUrlColon:'URL เข้าสู่ระบบ', createFailed:'สร้างไม่สำเร็จ', unknown:'ไม่ทราบ',
+      confirmDel:'ยืนยันการลบผู้ดูแล', delFailed:'ลบไม่สำเร็จ', updateFailed:'อัปเดตไม่สำเร็จ',
+      pwdReset:'รีเซ็ตรหัสผ่านถอนเงิน', verifyType:'วิธีการยืนยัน', walletAddr:'กระเป๋า/รหัส/เลขคำสั่ง',
+      side:'ทิศทาง', buy:'ซื้อ', sell:'ขาย', qty:'จำนวน', planMgmt:'จัดการแผน', transfer:'โอน',
+      bellNewOrder:'คุณมีคำสั่งซื้อใหม่', newOrderNotify:'คำสั่งซื้อใหม่', rechargeCount:'รายการ', withdrawCount:'รายการ',
+      usdt:'USDT', realtime:'เรียลไทม์', detailRejected:'เติมเงิน:0, ถอน:0',
+      google2fa:'Google 2FA', genQr:'สร้าง QR', scanQr:'สแกนด้วย Google Authenticator',
+      inputCode:'ใส่รหัส 6 หลัก', confirmBind:'ยืนยัน', genFailed:'สร้าง 2FA ไม่สำเร็จ'
+    },
+    vi: {
+      dashboard:'Bảng điều khiển', todayRecharge:'Nạp hôm nay', todayWithdraw:'Rút hôm nay', totalPnl:'Tổng Lãi/Lỗ',
+      riskAlerts:'Cảnh báo rủi ro', rejected:'Đã từ chối', pending:'Đang xử lý', buysellMgmt:'Quản lý Buy/Sell',
+      rechargeMgmt:'Quản lý nạp tiền', withdrawMgmt:'Quản lý rút tiền', memberMgmt:'Quản lý thành viên',
+      orderRecords:'Hồ sơ đơn hàng', sysSettings:'Cài đặt', adminMgmt:'Quản lý tài khoản admin',
+      account:'Tài khoản admin', nickname:'Biệt danh', initPwd:'Mật khẩu ban đầu', recharge:'Nạp tiền', withdraw:'Rút tiền',
+      buysell:'BuySell', admin:'Admin', createAdmin:'Thêm admin', loading:'Đang tải...', noAdmins:'Không có admin',
+      permissions:'Quyền', loginLink:'Liên kết đăng nhập', copyLink:'Sao chép', status:'Trạng thái', online:'Trực tuyến',
+      offline:'Ngoại tuyến', enabled:'Đã kích hoạt', disabled:'Đã vô hiệu', enable:'Kích hoạt', disable:'Vô hiệu',
+      update:'Cập nhật', del:'Xóa', creator:'Người tạo', orders:'Đơn/Thành viên/Ví', time:'Thời gian',
+      userId:'ID người dùng', type:'Loại', amount:'Số tiền', currency:'Tiền tệ', estUSDT:'USDT ước tính',
+      wallet:'Ví', ip:'IP', operation:'Thao tác', operator:'Người thao tác', note:'Ghi chú', search:'Tìm kiếm',
+      downloadRecords:'Tải xuống', todayData:'Hôm nay', viewYesterday:'Hôm qua', autoRefresh:'Tự động làm mới',
+      off:'Tắt', sec15:'15 giây', sec30:'30 giây', sec60:'60 giây', reset:'Đặt lại',
+      processing:'Đang xử lý', success:'Thành công', failed:'Thất bại', locked:'Đã khóa', allStatus:'Tất cả trạng thái',
+      allCurrency:'Tất cả tiền tệ', start:'Bắt đầu', end:'Kết thúc', memberId:'ID thành viên',
+      memberLevel:'Cấp thành viên', phone:'Điện thoại', email:'Email', tags:'Thẻ',
+      newMember:'Thành viên mới', normalMember:'Bình thường', testAccount:'Tài khoản test', abnormalMember:'Bất thường',
+      noRecords:'Không có dữ liệu', clickSearch:'Nhấn tìm kiếm để tải', updated:'Cập nhật lúc', system:'Hệ thống',
+      language:'Ngôn ngữ', logout:'Đăng xuất', soundOn:'Thông báo đơn hàng (BẬT)', soundOff:'Thông báo đơn hàng (TẮT)',
+      noSound:'Thông báo (TẮT)', createSuccess:'Tạo thành công', accountColon:'Tài khoản', nicknameColon:'Biệt danh',
+      initPwdColon:'Mật khẩu', loginUrlColon:'URL đăng nhập', createFailed:'Tạo thất bại', unknown:'Không xác định',
+      confirmDel:'Xác nhận xóa admin', delFailed:'Xóa thất bại', updateFailed:'Cập nhật thất bại',
+      pwdReset:'Đặt lại mật khẩu rút tiền', verifyType:'Phương thức xác minh', walletAddr:'Ví/ID/Số đơn',
+      side:'Hướng', buy:'Mua', sell:'Bán', qty:'Số lượng', planMgmt:'Quản lý kế hoạch', transfer:'Chuyển khoản',
+      bellNewOrder:'Bạn có đơn hàng mới', newOrderNotify:'Đơn hàng mới', rechargeCount:'giao dịch', withdrawCount:'giao dịch',
+      usdt:'USDT', realtime:'Thời gian thực', detailRejected:'Nạp:0, Rút:0',
+      google2fa:'Google 2FA', genQr:'Tạo QR', scanQr:'Quét bằng Google Authenticator',
+      inputCode:'Nhập mã 6 chữ số', confirmBind:'Xác nhận', genFailed:'Tạo 2FA thất bại'
+    }
+  };
+
+  let currentLang = localStorage.getItem('nexbit_lang') || 'zh';
+  function __(key) { return (I18N[currentLang] && I18N[currentLang][key]) || key; }
+  function switchLanguage(lang) {
+    currentLang = lang;
+    localStorage.setItem('nexbit_lang', lang);
+    document.querySelectorAll('.lang-opt').forEach(el => el.classList.toggle('active', el.textContent.trim()===(lang==='zh'?'中文':lang==='en'?'English':lang==='th'?'ไทย':'Tiếng Việt')));
+    document.getElementById('adminDropdown')?.classList.remove('open');
+    applyTranslations();
+    // 刷新当前页面数据
+    const activeIcon = document.querySelector('.header-nav .icon.active');
+    if (activeIcon) activeIcon.click();
+  }
+  function applyTranslations() {
+    const lang = currentLang;
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if (key === 'text') el.textContent = __(el.getAttribute('data-key'));
+      else if (key === 'placeholder') el.placeholder = __(el.getAttribute('data-key'));
+      else if (key === 'title') el.title = __(el.getAttribute('data-key'));
+    });
+    // 更新 bell title
+    const bell = document.getElementById('bellIcon');
+    if (bell) {
+      const isMuted = bell.classList.contains('muted');
+      bell.title = __(isMuted ? 'noSound' : 'soundOn');
+    }
+  }
+
+  // ===== 管理员下拉菜单 =====
+  function toggleAdminMenu() {
+    document.getElementById('adminDropdown').classList.toggle('open');
+  }
+  document.addEventListener('click', function(e) {
+    const dd = document.getElementById('adminDropdown');
+    if (dd && !dd.contains(e.target)) dd.classList.remove('open');
+  });
+
+  // ===== 退出 =====
+  function logout() {
+    localStorage.removeItem('nexbit_admin_token');
+    localStorage.removeItem('admin_user');
+    const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
+    if (subLoginId) {
+      location.href = 'dashboard-brand.html?login=' + encodeURIComponent(subLoginId);
+    } else {
+      location.href = 'login.html';
+    }
+  }
+
   // 获取 2FA 密钥和二维码
     async function generateGoogle2FA() {
       const adminId = document.getElementById('gaAdminId').value.trim();
@@ -1277,7 +1539,7 @@ function restoreLoginState(){
 }
 
 async function ensureLoggedIn(){
-  if(getAdminToken()) { restoreLoginState(); filterHeaderNav(); return true; }
+  if(getAdminToken()) { restoreLoginState(); filterHeaderNav(); applyTranslations(); return true; }
 
   hideAllPages();
 
@@ -1370,6 +1632,7 @@ async function submitAdminLogin(){
       document.body.style.background = '';
       closeAdminLogin();
       filterHeaderNav();
+      applyTranslations();
       loadDashboard();
     } else {
       alert('登录失败: ' + (j.error || '未知'));
@@ -3368,16 +3631,6 @@ function resetWithdrawPage() {
 
 </script>
 <script>
-document.getElementById('logoutBtn')?.addEventListener('click', () => {
-  localStorage.removeItem('nexbit_admin_token');
-  localStorage.removeItem('admin_user');
-  const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
-  if (subLoginId) {
-    location.href = 'dashboard-brand.html?login=' + encodeURIComponent(subLoginId);
-  } else {
-    location.href = 'login.html';
-  }
-});
 async function resetWithdrawPassword() {
   const verifyType = document.getElementById('verifyType').value;
   const wallet = document.getElementById('searchWithdrawWallet').value.trim();
