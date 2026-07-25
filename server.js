@@ -2316,12 +2316,33 @@ app.post('/api/admin/kick', async (req, res) => {
       }
     }
 
-    // 更新状态为离线
-    await db.ref(`admins/${id}`).update({ status: '离线' });
+    // 更新状态为离线，并标记强制登出时间戳
+    await db.ref(`admins/${id}`).update({ status: '离线', forceLogoutAt: Date.now() });
 
     return res.json({ ok: true });
   } catch (e) {
     console.error('admin kick error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 检查是否被踢出（客户端轮询用）
+app.get('/api/admin/check-kicked', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ ok: false });
+    const tokenEntry = (await db.ref(`admins_by_token/${token}`).once('value')).val();
+    if (!tokenEntry) return res.status(401).json({ ok: false });
+    const adminSnap = await db.ref(`admins/${tokenEntry.id}`).once('value');
+    if (!adminSnap.exists()) return res.status(401).json({ ok: false });
+    const admin = adminSnap.val();
+    if (admin.forceLogoutAt) {
+      // 客户端检测到后自行清理
+      return res.json({ kicked: true });
+    }
+    return res.json({ kicked: false });
+  } catch (e) {
+    console.error('check-kicked error', e);
     return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
