@@ -2349,8 +2349,8 @@ async function openViewDetail(orderId, type) {
     const amount = order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
     const estimate = order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
 
-    const applyTime = order.time_us || '--';
-    const opTime = order.opTime || order.time_us || '--';
+    const applyTime = order.timestamp || '--';
+    const opTime = order.timestamp || '--';
     const walletAddr = order.wallet || '--';
     const walletNickname = order.walletNickname || order.walletType || order.walletName || '--';
     const operator = order.operatorNickname || '--';
