@@ -2959,30 +2959,49 @@ let profilePendingChanges = {}; // 暂存未保存的修改
 const PROFILE_STORAGE_KEY = 'nexbit_profiles';
 const AVATAR_STORAGE_KEY = 'nexbit_avatars';
 
-function getProfileStore() {
+// 已缓存的头像 { uid: base64 }，优先于 API 读取
+let _cachedAvatars = {};
+try {
+  _cachedAvatars = JSON.parse(localStorage.getItem(AVATAR_STORAGE_KEY) || '{}');
+} catch(e) {}
+
+async function getProfileFromAPI(uid) {
   try {
-    return JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || '{}');
+    const r = await fetch(`/api/profiles/${encodeURIComponent(uid)}`, { headers: authHeaders() });
+    const j = await r.json();
+    if (j.ok) {
+      // 同步头像到本地缓存
+      if (j.avatar) {
+        _cachedAvatars[uid] = j.avatar;
+        localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(_cachedAvatars));
+      } else if (_cachedAvatars[uid]) {
+        delete _cachedAvatars[uid];
+        localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(_cachedAvatars));
+      }
+      return j.profile || {};
+    }
+    return {};
   } catch(e) { return {}; }
 }
 
-function saveProfileStore(store) {
-  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(store));
-}
-
-function getAvatarStore() {
+async function saveProfileToAPI(uid, profile, avatar) {
   try {
-    return JSON.parse(localStorage.getItem(AVATAR_STORAGE_KEY) || '{}');
-  } catch(e) { return {}; }
-}
-
-function saveAvatarStore(store) {
-  localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(store));
+    const body = {};
+    if (profile !== undefined) body.profile = profile;
+    if (avatar !== undefined) body.avatar = avatar;
+    const r = await fetch(`/api/profiles/${encodeURIComponent(uid)}`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    return j.ok;
+  } catch(e) { return false; }
 }
 
 function getAvatarUrl(uid) {
-  // 优先使用用户上传的头像
-  const avatars = getAvatarStore();
-  if (avatars[uid]) return avatars[uid];
+  // 优先使用缓存的头像
+  if (_cachedAvatars[uid]) return _cachedAvatars[uid];
   // 回退到 DiceBear 自动生成
   return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(uid || 'user')}&backgroundColor=1976d2,0f2655,ff4444,00c851,ffbb33,9933ff`;
 }
@@ -2994,14 +3013,16 @@ function maskValue(val) {
   return s.slice(0, 2) + '***' + s.slice(-2);
 }
 
-function openProfile(uid) {
+let _currentProfile = {}; // 当前弹窗用户的 profile 缓存
+
+async function openProfile(uid) {
   if (!uid || uid === '--') return;
   currentProfileUid = uid;
   profilePendingChanges = {};
   const perms = getAdminPerms();
   const isAdmin = isSuperAdmin() && perms.admin !== false;
-  const store = getProfileStore();
-  const profile = store[uid] || {};
+  const profile = await getProfileFromAPI(uid);
+  _currentProfile = profile;
   
   // 头像
   document.getElementById('profileAvatar').src = getAvatarUrl(uid);
@@ -3069,8 +3090,7 @@ function editProfileField(field) {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
   
-  const store = getProfileStore();
-  const profile = store[currentProfileUid] || {};
+  const profile = _currentProfile || {};
   const pendingVal = profilePendingChanges[field] !== undefined ? profilePendingChanges[field] : (profile[field] || '');
   
   const fieldLabels = {
@@ -3094,8 +3114,7 @@ function refreshProfileDisplay() {
   if (!currentProfileUid) return;
   const perms = getAdminPerms();
   const isAdmin = isSuperAdmin() && perms.admin !== false;
-  const store = getProfileStore();
-  const profile = store[currentProfileUid] || {};
+  const profile = _currentProfile || {};
   // 合并暂存修改
   const merged = Object.assign({}, profile, profilePendingChanges);
   
@@ -3117,7 +3136,7 @@ function refreshProfileDisplay() {
   });
 }
 
-function saveProfile() {
+async function saveProfile() {
   if (!currentProfileUid) return;
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
@@ -3134,15 +3153,17 @@ function saveProfile() {
   const confirmMsg = '即将保存以下修改：\n' + changedFields.map(f => ' - ' + f + ': ' + changes[f]).join('\n');
   if (!confirm(confirmMsg + '\n\n确认保存？')) return;
   
-  const store = getProfileStore();
-  const profile = store[currentProfileUid] || {};
-  Object.assign(profile, changes);
-  store[currentProfileUid] = profile;
-  saveProfileStore(store);
+  // 合并到已有 profile 再写入 API
+  const merged = Object.assign({}, _currentProfile, changes);
+  const ok = await saveProfileToAPI(currentProfileUid, merged);
+  if (!ok) {
+    alert('保存失败，请检查网络后重试。');
+    return;
+  }
   
   profilePendingChanges = {};
-  openProfile(currentProfileUid);
-  alert('已保存。注：数据存储于本地浏览器，下级账号仅在相同浏览器中可同步查看。');
+  await openProfile(currentProfileUid);
+  alert('已保存。所有下级账号实时同步（数据存储于服务器）。');
 }
 
 function viewProfilePhone() {
@@ -3150,8 +3171,7 @@ function viewProfilePhone() {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
   
-  const store = getProfileStore();
-  const profile = store[currentProfileUid] || {};
+  const profile = _currentProfile || {};
   const pendingPhone = profilePendingChanges['phone'] !== undefined ? profilePendingChanges['phone'] : (profile.phone || '');
   
   let action = prompt('手机号操作：\n输入 1 查看完整号码\n输入 2 修改号码', '1');
@@ -3175,11 +3195,16 @@ function uploadAvatar(event) {
   if (!file.type.startsWith('image/')) { alert('请选择图片文件'); return; }
   
   const reader = new FileReader();
-  reader.onload = function(e) {
-    const avatars = getAvatarStore();
-    avatars[currentProfileUid] = e.target.result;
-    saveAvatarStore(avatars);
-    document.getElementById('profileAvatar').src = e.target.result;
+  reader.onload = async function(e) {
+    const base64 = e.target.result;
+    const ok = await saveProfileToAPI(currentProfileUid, undefined, base64);
+    if (ok) {
+      _cachedAvatars[currentProfileUid] = base64;
+      localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(_cachedAvatars));
+      document.getElementById('profileAvatar').src = base64;
+    } else {
+      alert('头像上传失败，请检查网络后重试。');
+    }
   };
   reader.readAsDataURL(file);
 }
