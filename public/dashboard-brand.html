@@ -336,16 +336,17 @@ tr.row-tag-red td:first-child{border-left:3px solid #e60000}
 /* ===== 查看详情 Modal ===== */
 .detail-modal{display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:1350;}
 .detail-modal[style*="display: flex"]{pointer-events:auto!important}
-.detail-box{background:#fff;color:#111;border-radius:10px;width:680px;max-width:95%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.24);}
-.detail-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #e0e0e0;position:sticky;top:0;background:#fff;z-index:1;border-radius:10px 10px 0 0;}
+.detail-box{background:#fff;color:#111;border-radius:10px;width:960px;max-width:95%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.24);}
+.detail-header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #e0e0e0;position:sticky;top:0;background:#fff;z-index:1;border-radius:10px 10px 0 0;}
 .detail-header h2{margin:0;font-size:18px;font-weight:700}
 .detail-close{background:none;border:none;font-size:24px;cursor:pointer;color:#666;padding:0 4px;line-height:1}
 .detail-close:hover{color:#000}
-.detail-body{padding:0 20px 20px}
-.detail-section{margin-top:16px}
+.detail-body{padding:0 24px 24px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 32px}
+.detail-section{margin-top:8px}
 .detail-section-title{font-size:14px;font-weight:700;color:#555;padding:8px 0;border-bottom:2px solid #e8e8e8;margin-bottom:10px}
-.detail-row{display:flex;align-items:center;padding:6px 0;font-size:14px}
-.detail-row .label{width:120px;color:#888;flex-shrink:0}
+.detail-row{display:flex;align-items:center;padding:5px 0;font-size:14px}
+.detail-row .label{width:110px;color:#888;flex-shrink:0}
 .detail-row .value{flex:1;word-break:break-all}
 .detail-row .value.red{color:#e60000;font-weight:600}
 .lock-btn{ background:transparent; color:#ffbb33; border:1px solid transparent; }
@@ -2314,92 +2315,81 @@ async function openViewDetail(orderId, type) {
   const typeLabel = isRecharge ? '充值' : '提现';
   const title = isRecharge ? '充值详情' : '提现详情';
 
-  // 立即显示弹窗并显示加载状态
   document.getElementById('detailTitle').textContent = title;
   document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#888">加载中...</div>';
   document.getElementById('viewDetailModal').style.display = 'flex';
 
   try {
-    // 获取订单详情
-    const j = await fetchOrderDetail(orderId);
-    const order = (j && j.ok && j.order) ? j.order : null;
+    // 从 fetchAll 全量数据中查找订单（server 端 /api/transactions 不支持 fetchOrder 参数）
+    const all = await fetchAll();
+    const list = isRecharge ? (all.recharge || []) : (all.withdraw || []);
+    const order = list.find(o => o.orderId === orderId);
     if (!order) {
       document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#e60000">订单不存在或已删除</div>';
       return;
     }
 
-    // 获取全部数据用于统计
-    const all = await fetchAll();
     const users = all.users || {};
     const user = users[order.userId] || {};
 
-    // 该会员所有成功订单
     const userId = order.userId;
     const rechargeOrders = (all.recharge || []).filter(o => o.userId === userId && o.status === 'success');
     const withdrawOrders = (all.withdraw || []).filter(o => o.userId === userId && o.status === 'success');
     const rechargeCount = rechargeOrders.length;
     const withdrawCount = withdrawOrders.length;
 
-    // 累计金额
     const totalRecharge = rechargeOrders.reduce((sum, o) => sum + (Number(o.estimate || 0)), 0);
     const totalWithdraw = withdrawOrders.reduce((sum, o) => sum + (Number(o.estimate || 0)), 0);
     const diff = totalRecharge - totalWithdraw;
 
-    // 会员标签
     const tag = getMemberTag(user);
     const tagRemark = tag.remark || '--';
 
-    // 金额格式化
     const coin = order.coin || '--';
     const amount = order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
     const estimate = order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
 
-    // 时间格式化
     const applyTime = order.time_us || '--';
     const opTime = order.opTime || order.time_us || '--';
-
-    // 构建 HTML
-    const rows = [];
-
-    // === 会员个人信息 ===
-    rows.push('<div class="detail-section"><div class="detail-section-title">会员个人信息</div>');
-    rows.push(`<div class="detail-row"><span class="label">订单号：</span><span class="value">${order.orderId || '--'}</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">用户ID：</span><span class="value">${order.userId || '--'}</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">币种：</span><span class="value">${coin}</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">会员层级：</span><span class="value">${tagRemark}</span></div>`);
-    rows.push('</div>');
-
-    // === 提现/充值 账户信息 ===
-    rows.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '账户信息</div>');
-    // 提款方式 / 充值方式：从 wallet 字段提取或显示
     const walletAddr = order.wallet || '--';
-    rows.push(`<div class="detail-row"><span class="label">${typeLabel}方式：</span><span class="value">${walletAddr}</span></div>`);
-    // 钱包昵称
     const walletNickname = order.walletNickname || order.walletType || order.walletName || '--';
-    rows.push(`<div class="detail-row"><span class="label">钱包昵称：</span><span class="value">${walletNickname}</span></div>`);
-    rows.push('</div>');
-
-    // === 提现/充值 金额信息 ===
-    rows.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '金额信息</div>');
-    rows.push(`<div class="detail-row"><span class="label">${typeLabel}金额：</span><span class="value">${amount} ${coin}</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">手续费：</span><span class="value">0.00$</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">${estimate} ${coin}</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">${estimate} ${coin}</span></div>`);
-    rows.push('</div>');
-
-    // === 其他信息 ===
-    rows.push('<div class="detail-section"><div class="detail-section-title">其他信息</div>');
     const operator = order.operatorNickname || '--';
-    rows.push(`<div class="detail-row"><span class="label">操作人：</span><span class="value">${operator}</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">申请时间：</span><span class="value">${formatMyanmarTime(applyTime)}</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">操作时间：</span><span class="value">${formatMyanmarTime(opTime)}</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">充/提次数：</span><span class="value">充${rechargeCount}/提${withdrawCount}次</span></div>`);
-    rows.push(`<div class="detail-row"><span class="label">累计充/提差额：</span><span class="value ${diff < 0 ? 'red' : ''}">${diff.toFixed(2)}</span></div>`);
     const note = order.note || '--';
-    rows.push(`<div class="detail-row"><span class="label">备注：</span><span class="value">${note}</span></div>`);
-    rows.push('</div>');
 
-    document.getElementById('detailBody').innerHTML = rows.join('');
+    const left = [];
+    const right = [];
+
+    // 左列：会员个人信息 + 金额信息
+    left.push('<div class="detail-section"><div class="detail-section-title">会员个人信息</div>');
+    left.push(`<div class="detail-row"><span class="label">订单号：</span><span class="value">${order.orderId || '--'}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">用户ID：</span><span class="value">${order.userId || '--'}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">币种：</span><span class="value">${coin}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">会员层级：</span><span class="value">${tagRemark}</span></div>`);
+    left.push('</div>');
+
+    left.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '金额信息</div>');
+    left.push(`<div class="detail-row"><span class="label">${typeLabel}金额：</span><span class="value">${amount} ${coin}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">${estimate} ${coin}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">${estimate} ${coin}</span></div>`);
+    left.push('</div>');
+
+    // 右列：账户信息 + 其他信息
+    right.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '账户信息</div>');
+    right.push(`<div class="detail-row"><span class="label">${typeLabel}方式：</span><span class="value">${walletAddr}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">钱包昵称：</span><span class="value">${walletNickname}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">手续费：</span><span class="value">0.00$</span></div>`);
+    right.push('</div>');
+
+    right.push('<div class="detail-section"><div class="detail-section-title">其他信息</div>');
+    right.push(`<div class="detail-row"><span class="label">操作人：</span><span class="value">${operator}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">申请时间：</span><span class="value">${formatMyanmarTime(applyTime)}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">操作时间：</span><span class="value">${formatMyanmarTime(opTime)}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">充/提次数：</span><span class="value">充${rechargeCount}/提${withdrawCount}次</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">累计充/提差额：</span><span class="value ${diff < 0 ? 'red' : ''}">${diff.toFixed(2)}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">备注：</span><span class="value">${note}</span></div>`);
+    right.push('</div>');
+
+    document.getElementById('detailBody').innerHTML = '<div class="detail-grid"><div>' + left.join('') + '</div><div>' + right.join('') + '</div></div>';
 
   } catch (e) {
     console.error(e);
