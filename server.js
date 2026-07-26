@@ -1,3894 +1,4700 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
-const admin = require('firebase-admin');
-const path = require('path');
-const axios = require('axios'); 
-const speakeasy = require('speakeasy');
-const qrcode = require('qrcode');
-const multer = require('multer');
-const FormData = require('form-data');
-const upload = multer();  
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXBIT 管理后台 — 最终版</title>
 
-const app = express();
-app.disable('etag');
-app.use(cors());
-app.use(express.json());
+<style>
 
-const PORT = process.env.PORT || 8080;
+:root{
+  --top-blue:#1976d2;
+  --deep-blue:#0f2655;
+  --bg:#f4f7fb;
+  --card:#fff;
+  --red:#ff4444;
+  --black:#000;
+  --green:#00c851;
+  --yellow:#ffbb33;
+  --purple:#9933ff;
+}
 
-/* ---------------------------------------------------------
-   Telegram Loan Notify Function
---------------------------------------------------------- */
-async function sendLoanToTelegram(text, photos = []) {
-  const token = process.env.LOAN_TELEGRAM_BOT_TOKEN;
-  const chats = (process.env.LOAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Segoe UI,Roboto,Arial;
+  background:var(--bg);
+  min-height:100vh;
+}
 
-  if (!token || chats.length === 0) {
-    console.error('❌ Loan Telegram bot not configured');
+  .modal[style*="display: flex"],
+  .order-detail-modal[style*="display: flex"],
+  .admin-login-modal[style*="display: flex"] {
+    pointer-events: auto !important;
+  }
+
+/* ========= HEADER ========= */
+.top-header{
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 64px;
+  background: #1976d2;
+  z-index: 1000;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+
+  pointer-events: auto;   /* ✅ 必须是 auto */
+}
+.top-header .brand{
+  font-weight:700;
+  font-size:18px;
+  white-space:nowrap;
+}
+.header-nav{
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display:flex;
+  align-items:center;
+  gap:2px;
+}
+.header-nav .icon{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  padding:6px 12px;
+  border-radius:6px;
+  color:#cfe6ff;
+  cursor:pointer;
+  font-size:12px;
+  white-space:nowrap;
+  transition:background 0.2s,color 0.2s;
+  min-width:64px;
+  text-align:center;
+}
+.header-nav .icon svg{
+  width:22px;height:22px;
+}
+.header-nav .icon:hover{
+  background:rgba(255,255,255,0.15);
+  color:#fff;
+}
+.header-nav .icon.active{
+  background:rgba(255,255,255,0.25);
+  color:#fff;
+}
+.header-nav .icon.buysell{
+  background:rgba(255,255,255,0.12);
+}
+.header-nav .icon span{
+  font-size:10px;
+  margin-top:1px;
+}
+.top-header .user{
+  font-size:16px;
+  color:#fff;
+  white-space:nowrap;
+  margin-left:auto;
+}
+#adminUser{color:#fff;font-size:16px;}
+
+/* ----------- 铃铛 ----------- */
+.bell-icon{cursor:pointer;position:relative;display:inline-flex;align-items:center;justify-content:center;transition:transform .2s,opacity .2s;user-select:none;width:36px;height:36px;border-radius:8px}
+.bell-icon:hover{transform:scale(1.08);background:rgba(255,255,255,0.12)}
+.bell-icon svg{width:20px;height:20px;color:#fff}
+.bell-icon.muted{opacity:.45}
+.bell-badge{position:absolute;top:-2px;right:-3px;background:#ff4444;color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:none;align-items:center;justify-content:center;padding:0 3px;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.bell-badge.show{display:flex}
+@keyframes bell-ring{0%,100%{transform:rotate(0)}10%{transform:rotate(12deg)}20%{transform:rotate(-10deg)}30%{transform:rotate(8deg)}40%{transform:rotate(-6deg)}50%{transform:rotate(3deg)}60%{transform:rotate(-2deg)}70%{transform:rotate(0)}}
+.bell-icon.ring{animation:bell-ring .6s ease-in-out}
+
+/* ----------- 管理员下拉 ---------- */
+.admin-dropdown{position:relative;display:inline-flex;align-items:center}
+.admin-dropdown .admin-trigger{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;color:#fff;cursor:pointer;font-size:14px;font-weight:600;transition:background .2s;user-select:none}
+.admin-dropdown .admin-trigger:hover{background:rgba(255,255,255,0.15)}
+.admin-dropdown .admin-trigger svg.chevron{width:12px;height:12px;transition:transform .2s}
+.admin-dropdown.open .admin-trigger svg.chevron{transform:rotate(180deg)}
+.admin-dropdown .admin-menu{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:180px;overflow:visible;z-index:2000;display:none;padding:6px 0}
+.admin-dropdown.open .admin-menu{display:block}
+.admin-dropdown .admin-menu .menu-item{padding:9px 16px;cursor:pointer;font-size:13px;color:#333;display:flex;align-items:center;gap:8px;transition:background .15s;white-space:nowrap}
+.admin-dropdown .admin-menu .menu-item:hover{background:#f0f4ff}
+.admin-dropdown .admin-menu .menu-item svg{width:16px;height:16px;color:#666}
+.admin-dropdown .admin-menu .menu-divider{height:1px;background:#e8ecf0;margin:4px 0}
+.admin-dropdown .admin-menu .lang-sub{position:relative}
+.admin-dropdown .admin-menu .lang-sub .lang-list{display:none;position:absolute;right:100%;top:-6px;background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:140px;padding:6px 0;z-index:2001;margin-right:4px}
+.admin-dropdown .admin-menu .lang-sub:hover .lang-list{display:block}
+.admin-dropdown .admin-menu .lang-list .lang-opt{padding:8px 16px;cursor:pointer;font-size:13px;color:#333;white-space:nowrap;transition:background .15s}
+.admin-dropdown .admin-menu .lang-list .lang-opt:hover{background:#f0f4ff}
+.admin-dropdown .admin-menu .lang-list .lang-opt.active{color:#1976d2;font-weight:600}
+
+/* ----------- LAYOUT ---------- */
+.app{
+  display:flex;
+  padding-top:64px;
+}
+.main{
+  flex:1;
+  padding:22px 26px;
+}
+/* ====== FIX CLICK ISSUE ====== */
+
+/* header 不挡点击，只给内部按钮 */
+
+/* 主内容必须在最上层 */
+.main {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto !important;
+  overflow-x: auto;
+}
+/* ----------- CARD / GRID ----------- */
+.container{
+  background:var(--card);
+  border-radius:8px;
+  padding:18px;
+  box-shadow:0 6px 18px rgba(0,0,0,0.06);
+}
+.page-title{
+  font-size:20px;
+  font-weight:700;
+  margin-bottom:12px;
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+  margin-bottom:12px;
+}
+.card{
+  background:#fff;
+  border-radius:8px;
+  padding:12px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.06);
+}
+.filters{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin-bottom:12px;
+}
+
+input,select,button{
+  padding:8px;
+  border:1px solid #ddd;
+  border-radius:6px;
+}
+button.primary{
+  background:transparent;
+  color:var(--top-blue);
+  border:1px solid var(--top-blue);
+  cursor:pointer;
+  border-radius:4px;
+}
+button.primary:hover{background:var(--top-blue);color:#fff;}
+button.secondary{
+  background:transparent;
+  color:#999;
+  border:1px solid #ccc;
+  cursor:pointer;
+  border-radius:4px;
+}
+button.secondary:hover{background:#f5f5f5;}
+button.danger{
+  background:transparent;
+  color:#ff4d4f;
+  border:1px solid #ff4d4f;
+  cursor:pointer;
+  border-radius:4px;
+}
+button.danger:hover{background:#ff4d4f;color:#fff;}
+
+/* ----------- TABLE ----------- */
+.table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:8px;
+  background:#fff;
+  border-radius:8px;
+  overflow:hidden;
+  box-shadow:0 1px 4px rgba(0,0,0,0.04);
+}
+.table thead{ background:#f5f7fa; }
+.table th{
+  padding:12px 10px;
+  border-bottom:2px solid #e0e4e8;
+  font-size:12px;
+  font-weight:700;
+  color:#555;
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+  text-align:center;
+  white-space:nowrap;
+}
+.table td{
+  padding:11px 10px;
+  border-bottom:1px solid #f0f2f5;
+  font-size:13px;
+  text-align:center;
+  color:#333;
+}
+.table tbody tr:nth-child(even){ background:#fafbfc; }
+.table tbody tr:hover{ background:#eef2f7; }
+
+/* 会员等级标签 */
+.member-label{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:4px;
+  color:#fff;
+  font-weight:600;
+  margin-left:8px;
+  font-size:12px;
+}
+.label-attention{background:var(--red)}
+.label-observe{background:var(--black)}
+.label-first-recharge{background:var(--green)}
+.label-first-withdraw{background:var(--yellow); color:#111}
+.label-vip{background:var(--purple)}
+
+/* 会员标签相关 */
+.member-tag-cell{cursor:pointer;position:relative;user-select:none}
+.member-tag-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.2);white-space:nowrap}
+.member-tag-badge.yellow{background:#f5c518;color:#111;text-shadow:none}
+.member-tag-badge.green{background:#22bb33}
+.member-tag-badge.black{background:#333}
+.member-tag-badge.red{background:#e60000}
+.member-tag-badge.no-color{background:#bbb;text-shadow:none}
+.member-tag-cell:hover .member-tag-badge{filter:brightness(1.1)}
+.member-tag-empty{color:#bbb;font-size:12px}
+/* 会员行标签背景色 */
+tr.row-tag-yellow td{background:rgba(245,197,24,.12)}
+tr.row-tag-green td{background:rgba(34,187,51,.1)}
+tr.row-tag-black td{background:rgba(51,51,51,.07)}
+tr.row-tag-red td{background:rgba(230,0,0,.08)}
+tr.row-tag-yellow td:first-child{border-left:3px solid #f5c518}
+tr.row-tag-green td:first-child{border-left:3px solid #22bb33}
+tr.row-tag-black td:first-child{border-left:3px solid #333}
+tr.row-tag-red td:first-child{border-left:3px solid #e60000}
+
+/* 标签编辑弹窗 */
+.tag-editor-overlay{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.3);z-index:9998;display:none}
+.tag-editor-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:24px;z-index:9999;width:340px;box-shadow:0 8px 32px rgba(0,0,0,.18)}
+.tag-editor-panel .tag-section{margin-bottom:16px}
+.tag-editor-panel .tag-section-title{font-size:14px;font-weight:600;margin-bottom:8px;color:#333}
+.tag-editor-panel .tag-colors{display:flex;gap:10px}
+.tag-editor-panel .tag-color-btn{width:52px;height:36px;border-radius:8px;border:3px solid transparent;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+.tag-editor-panel .tag-color-btn.yellow{background:#f5c518;color:#111;text-shadow:none}
+.tag-editor-panel .tag-color-btn.green{background:#22bb33}
+.tag-editor-panel .tag-color-btn.black{background:#333}
+.tag-editor-panel .tag-color-btn.red{background:#e60000}
+.tag-editor-panel .tag-color-btn.selected{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.15)}
+.tag-editor-panel .tag-presets{display:flex;flex-wrap:wrap;gap:8px}
+.tag-editor-panel .tag-preset-btn{padding:6px 14px;border-radius:20px;border:2px solid transparent;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.2)}
+.tag-editor-panel .tag-preset-btn:hover{filter:brightness(1.1)}
+.tag-editor-panel .tag-preset-btn.selected{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.15)}
+.tag-editor-panel .tag-preset-btn.preset-yellow{background:#f5c518;color:#111;text-shadow:none}
+.tag-editor-panel .tag-preset-btn.preset-green{background:#22bb33}
+.tag-editor-panel .tag-preset-btn.preset-black{background:#333}
+.tag-editor-panel .tag-preset-btn.preset-red{background:#e60000}
+.tag-editor-panel .tag-custom-input{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin-top:6px}
+.tag-editor-panel .tag-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.tag-editor-panel .tag-actions button{padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600}
+.tag-editor-panel .tag-btn-save{background:var(--top-blue);color:#fff}
+.tag-editor-panel .tag-btn-cancel{background:#eee;color:#333}
+.tag-editor-panel .tag-btn-clear{background:#ff4444;color:#fff;margin-right:auto}
+
+.small{font-size:12px; color:#666}
+.actions button{margin-right:6px}
+.footer-note{margin-top:10px; color:#888; font-size:12px}
+
+/* BuySell ticker style */
+.table-sm th,.table-sm td{
+  padding:8px; font-size:13px;
+}
+
+/* 状态徽章 */
+.badge{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:4px;
+  background:#eee;
+  color:#333;
+  font-weight:600;
+}
+/* 👇 加在最后 */
+.btn-disabled {
+  opacity: 0.4 !important;
+  pointer-events: none !important;
+  filter: grayscale(100%);
+  cursor: not-allowed;
+}
+/* ----------- 审核按钮样式 ----------- */
+.small-btn{
+  padding:6px 8px;
+  border-radius:6px;
+  border:none;
+  cursor:pointer;
+  font-size:13px;
+}
+.small-btn:disabled{
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.confirm-btn{ background:transparent; color:#00c851; border:1px solid transparent; }
+.cancel-btn{ background:transparent; color:#ff4444; border:1px solid transparent; }
+/* ===== 查看详情 Modal ===== */
+.detail-modal{display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:1350;}
+.detail-modal[style*="display: flex"]{pointer-events:auto!important}
+.detail-box{background:#fff;color:#111;border-radius:10px;width:960px;max-width:95%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.24);}
+.detail-header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #e0e0e0;position:sticky;top:0;background:#fff;z-index:1;border-radius:10px 10px 0 0;}
+.detail-header h2{margin:0;font-size:18px;font-weight:700}
+.detail-close{background:none;border:none;font-size:24px;cursor:pointer;color:#666;padding:0 4px;line-height:1}
+.detail-close:hover{color:#000}
+.detail-body{padding:0 24px 24px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 32px}
+.detail-section{margin-top:8px}
+.detail-section-title{font-size:14px;font-weight:700;color:#555;padding:8px 0;border-bottom:2px solid #e8e8e8;margin-bottom:10px}
+.detail-row{display:flex;align-items:center;padding:5px 0;font-size:14px}
+.detail-row .label{width:110px;color:#888;flex-shrink:0}
+.detail-row .value{flex:1;word-break:break-all}
+.detail-row .value.red{color:#e60000;font-weight:600}
+.lock-btn{ background:transparent; color:#ffbb33; border:1px solid transparent; }
+.unlock-btn{ background:transparent; color:#6c757d; border:1px solid transparent; }
+.small-btn:not(.confirm-btn):not(.cancel-btn):not(.lock-btn):not(.unlock-btn){ background:transparent; color:#1976d2; border:1px solid transparent; }
+
+/* ===== 备注 Modal ===== */
+.remark-modal{display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:1360;}
+.remark-modal[style*="display: flex"]{pointer-events:auto!important}
+.remark-box{background:#fff;color:#111;border-radius:10px;width:780px;max-width:95%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.24);}
+.remark-header{display:flex;justify-content:space-between;align-items:center;padding:12px 24px;border-bottom:1px solid #e0e0e0;background:#f5f5f5;border-radius:10px 10px 0 0;}
+.remark-header h2{margin:0;font-size:16px;font-weight:700;color:#333}
+.remark-close{background:none;border:none;font-size:22px;cursor:pointer;color:#999;padding:0 4px;line-height:1}
+.remark-close:hover{color:#333}
+.remark-body{padding:16px 24px}
+.remark-info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 16px;margin-bottom:16px;padding:12px;background:#fafafa;border-radius:6px;border:1px solid #eee}
+.remark-info-item{font-size:13px;display:flex;align-items:center}
+.remark-info-item .rlabel{color:#888;flex-shrink:0;margin-right:4px}
+.remark-info-item .rvalue{color:#111;word-break:break-all}
+.remark-textarea-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.remark-textarea-label{font-size:13px;font-weight:600;color:#555;margin-bottom:6px}
+.remark-textarea-row textarea{width:100%;height:120px;border:1px solid #d0d0d0;border-radius:6px;padding:10px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit}
+.remark-textarea-row textarea:focus{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,.15)}
+.remark-footer{display:flex;justify-content:center;gap:12px;padding:12px 24px 20px}
+.remark-footer .btn-cancel{padding:8px 28px;border:1px solid #d0d0d0;border-radius:6px;background:#fff;color:#555;font-size:14px;cursor:pointer}
+.remark-footer .btn-cancel:hover{background:#f5f5f5}
+.remark-footer .btn-confirm{padding:8px 28px;border:none;border-radius:6px;background:#1976d2;color:#fff;font-size:14px;cursor:pointer}
+.remark-footer .btn-confirm:hover{background:#1565c0}
+
+/* Modal */
+.modal{
+  display:none;
+  position:fixed;
+  left:0; top:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.5);
+  align-items:center;
+  justify-content:center;
+  z-index:1200;
+}
+.modal .box{
+  background:#fff;
+  padding:16px;
+  border-radius:8px;
+  min-width:320px;
+}
+
+/* ===== Extra styles: order modal, admin login, alerts ===== */
+.order-detail-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1300; }
+.order-detail-modal .box { background:#fff; color:#111; padding:16px; border-radius:8px; width:760px; max-width:95%; max-height:86vh; overflow:auto; }
+.order-detail-modal pre { background:#f6f8fa; padding:10px; border-radius:6px; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+.admin-login-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1400; }
+.admin-login-modal .box { background:#fff; color:#111; padding:20px; border-radius:8px; width:420px; max-width:95%; }
+.badge-alert { background:#ff4444; color:#fff; padding:6px 8px; border-radius:6px; display:inline-block; margin-left:8px; }
+.flash { animation: flash 1s linear infinite; }
+@keyframes flash { 0% { box-shadow: 0 0 0 rgba(255,0,0,0.0); } 50% { box-shadow: 0 0 8px rgba(255,0,0,0.6); } 100% { box-shadow: 0 0 0 rgba(255,0,0,0.0); } }
+.tr-alert { background: #fff0f0 !important; border-left:4px solid #ff4444 !important; }
+
+/* Responsive */
+@media(max-width:900px){
+  .grid{ grid-template-columns:repeat(2,1fr); }
+}
+
+/* 只有真正显示时，才允许点击 */
+.modal[style*="display: flex"],
+.order-detail-modal[style*="display: flex"],
+.admin-login-modal[style*="display: flex"] {
+  pointer-events: auto !important;
+}
+/* ===== 兜底：确保操作按钮永远可点击 ===== */
+.small-btn{
+  position: relative;
+  z-index: 3001;
+  pointer-events: auto;
+}
+/* ===== 强制恢复后台操作区点击能力 ===== */
+table,
+tbody,
+tr,
+td,
+.small-btn,
+.action-btn,
+button {
+  pointer-events: auto !important;
+}
+.remark-drawer{
+  position: fixed;
+  top: 64px;
+  right: -420px;
+  width: 420px;
+  height: calc(100vh - 64px);
+  background: #0f172a;
+  color: #fff;
+  box-shadow: -4px 0 16px rgba(0,0,0,.4);
+  transition: right .3s ease;
+  z-index: 5000;
+}
+
+.remark-drawer.open{
+  right: 0;
+}
+
+.drawer-header{
+  padding: 14px 16px;
+  font-weight: 700;
+  background: #1976d2;
+  display:flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.drawer-header button{
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.drawer-body{
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.drawer-meta{
+  font-size: 13px;
+  color: #cbd5e1;
+  margin-bottom: 12px;
+}
+
+.remark-box{
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.remark-box.reject{
+  background: rgba(255,68,68,.15);
+  border-left: 4px solid #ff4444;
+}
+
+.remark-box.normal{
+  background: rgba(25,118,210,.15);
+  border-left: 4px solid #1976d2;
+}
+
+.remark-title{
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+/* ===== 盈亏高亮 ===== */
+.pnl-card{
+  position: relative;
+  border-radius: 10px;
+  padding: 14px;
+  color: #fff;
+  font-weight: 700;
+  overflow: hidden;
+}
+
+.pnl-positive{
+  background: linear-gradient(135deg,#00c851,#00e676);
+  box-shadow: 0 0 18px rgba(0,200,81,.45);
+}
+
+.pnl-negative{
+  background: linear-gradient(135deg,#ff4444,#ff6b6b);
+  box-shadow: 0 0 18px rgba(255,68,68,.45);
+}
+
+.pnl-value{
+  font-size: 22px;
+  margin-top: 6px;
+  letter-spacing: .5px;
+}
+
+.pnl-sub{
+  font-size: 12px;
+  opacity: .9;
+}
+
+.pnl-flash{
+  animation: pnlPulse 1.6s infinite;
+}
+
+@keyframes pnlPulse{
+  0%{box-shadow:0 0 10px rgba(255,255,255,.15)}
+  50%{box-shadow:0 0 24px rgba(255,255,255,.55)}
+  100%{box-shadow:0 0 10px rgba(255,255,255,.15)}
+}
+
+/* ===== 个人资料弹窗 ===== */
+.profile-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,.55); z-index:2000; align-items:center; justify-content:center; }
+.profile-modal .box { background:#fff; border-radius:12px; width:780px; max-height:85vh; overflow-y:auto; padding:0; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+.profile-header { display:flex; align-items:center; padding:16px 20px; border-bottom:1px solid #eee; position:sticky; top:0; background:#fff; z-index:1; border-radius:12px 12px 0 0; }
+.avatar-wrap { position:relative; width:56px; height:56px; border-radius:50%; overflow:hidden; cursor:pointer; flex-shrink:0; margin-right:14px; border:2px solid #1976d2; }
+.avatar-wrap .avatar { width:100%; height:100%; object-fit:cover; }
+.avatar-wrap .avatar-overlay { position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,.55); color:#fff; font-size:10px; text-align:center; padding:3px 0; opacity:0; transition:opacity .2s; }
+.avatar-wrap:hover .avatar-overlay { opacity:1; }
+.profile-header .info { flex:1; }
+.profile-header .info .uid { font-size:16px; font-weight:700; color:#0f2655; }
+.profile-header .info .currency { font-size:13px; color:#666; margin-top:2px; }
+.profile-header .close-btn { background:none; border:none; font-size:22px; cursor:pointer; color:#999; padding:4px 8px; }
+.profile-columns { display:flex; gap:0; }
+.profile-col { flex:1; min-width:0; }
+.profile-col:first-child { border-right:1px solid #eee; }
+.profile-section { padding:12px 16px; }
+.profile-section h3 { font-size:14px; color:#0f2655; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid #1976d2; display:inline-block; }
+.profile-row { display:flex; align-items:center; padding:7px 0; border-bottom:1px solid #f0f0f0; }
+.profile-row .label { width:90px; font-size:12px; color:#666; flex-shrink:0; }
+.profile-row .value { flex:1; font-size:12px; color:#111; word-break:break-all; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.profile-row .edit-btn { margin-left:6px; padding:3px 10px; font-size:11px; border:1px solid #1976d2; background:#fff; color:#1976d2; border-radius:4px; cursor:pointer; white-space:nowrap; }
+.profile-row .edit-btn:hover { background:#1976d2; color:#fff; }
+.profile-row .edit-btn.disabled { border-color:#ccc; color:#ccc; cursor:not-allowed; pointer-events:none; background:#f5f5f5; }
+.profile-row .view-btn { margin-left:6px; padding:3px 10px; font-size:11px; border:1px solid #ff9800; background:#fff; color:#ff9800; border-radius:4px; cursor:pointer; white-space:nowrap; }
+.profile-row .view-btn:hover { background:#ff9800; color:#fff; }
+.profile-row .view-btn.disabled { border-color:#ccc; color:#ccc; cursor:not-allowed; pointer-events:none; background:#f5f5f5; }
+.uid-clickable { cursor:pointer; font-weight:600; color:#1976d2; text-decoration:underline; text-decoration-style:dotted; }
+.uid-clickable:hover { color:#0d47a1; }
+.profile-bottom { padding:12px 20px; border-top:1px solid #eee; text-align:right; }
+.profile-bottom .primary { background:#1976d2; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+.profile-bottom .primary:hover { background:#1565c0; }
+</style>
+</head>
+
+<body>
+<div class="top-header">
+  <div class="brand">管理后台</div>
+  <div class="header-nav">
+    <div class="icon active" data-page="dashboard" title="主页">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span data-i18n="text" data-key="dashboard">主页</span>
+    </div>
+    <div class="icon buysell" data-page="buysell" title="Buy/Sell">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="7 16 3 12 7 8"/><line x1="3" y1="12" x2="15" y2="12"/><polyline points="17 8 21 12 17 16"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span data-i18n="text" data-key="buysellMgmt">Buy/Sell</span>
+    </div>
+    <div class="icon" data-page="recharge" title="充值管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="12" y1="9" x2="12" y2="15"/><polyline points="9 12 12 15 15 12"/></svg>
+      <span data-i18n="text" data-key="rechargeMgmt">充值</span>
+    </div>
+    <div class="icon" data-page="withdraw" title="提款管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="12" y1="15" x2="12" y2="9"/><polyline points="9 12 12 9 15 12"/></svg>
+      <span data-i18n="text" data-key="withdrawMgmt">提款</span>
+    </div>
+    <div class="icon" data-page="members" title="会员管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><path d="M9 14a5 5 0 0 0-5 5v1h18v-1a5 5 0 0 0-5-5"/></svg>
+      <span data-i18n="text" data-key="memberMgmt">会员</span>
+    </div>
+    <div class="icon" data-page="orders" title="订单记录">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span data-i18n="text" data-key="orderRecords">订单</span>
+    </div>
+    <div class="icon" data-page="settings" title="系统设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span data-i18n="text" data-key="sysSettings">设置</span>
+    </div>
+  </div>
+  <div class="user" style="display:flex;align-items:center;gap:6px">
+    <span id="bellIcon" class="bell-icon" title="新订单通知（已开启）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span class="bell-badge" id="bellBadge">0</span>
+    </span>
+    <div class="admin-dropdown" id="adminDropdown">
+      <div class="admin-trigger" onclick="toggleAdminMenu()">
+        <span id="adminUser">admin</span>
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="admin-menu">
+        <div class="lang-sub">
+          <div class="menu-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            语言 Language
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;margin-left:auto"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+          <div class="lang-list">
+            <div class="lang-opt active" onclick="switchLanguage('zh')">中文</div>
+            <div class="lang-opt" onclick="switchLanguage('en')">English</div>
+            <div class="lang-opt" onclick="switchLanguage('th')">ไทย</div>
+            <div class="lang-opt" onclick="switchLanguage('vi')">Tiếng Việt</div>
+          </div>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-item" onclick="logout()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span data-i18n="text" data-key="logout">退出</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="app">
+  <div class="main">
+
+    <!-- Dashboard -->
+    <div id="page-dashboard" class="container">
+      <div class="page-title" data-i18n="text" data-key="dashboard">控制台</div>
+
+      <div class="grid" style="grid-template-columns:repeat(3,1fr)">
+  <div class="card">
+    <span data-i18n="text" data-key="todayRecharge">今日充值</span><br>
+    <strong id="todayRecharge">--</strong>
+    <div class="small">USDT：<span id="todayRechargeSum">--</span></div>
+  </div>
+
+  <div class="card">
+    <span data-i18n="text" data-key="todayWithdraw">今日提款</span><br>
+    <strong id="todayWithdraw">--</strong>
+    <div class="small">USDT：<span id="todayWithdrawSum">--</span></div>
+  </div>
+
+<div class="card pnl-card" id="pnlCard">
+  <span data-i18n="text" data-key="totalPnl">总盈亏</span>
+  <div class="pnl-value" id="pnlValue">--</div>
+  <div class="pnl-sub">USDT（<span data-i18n="text" data-key="realtime">实时</span>）</div>
+</div>
+
+  <div class="card">
+    <span data-i18n="text" data-key="riskAlerts">风控预警</span><br>
+    <strong id="alertsCount">--</strong>
+  </div>
+<div class="card" id="rejectedCard">
+  <span data-i18n="text" data-key="rejected">已拒绝</span><br>
+  <strong id="todayRejected">--</strong>
+  <div class="small" id="rejectedDetail" style="margin-top:4px;min-height:18px;display:block"></div>
+</div>
+
+<div class="card">
+  <span data-i18n="text" data-key="pending">待处理</span><br>
+  <strong id="todayPending">--</strong>
+</div>
+</div>
+
+
+      <div class="container card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="small">会员等级统计</div>
+          <div class="small">更新于 <span id="statTime"></span></div>
+        </div>
+        <div style="margin-top:12px" id="memberStats"></div>
+      </div>
+    </div>
+
+    <!-- BuySell page -->
+    <div id="page-buysell" class="container" style="display:none">
+      <div class="page-title" data-i18n="text" data-key="buysellMgmt">BuySell 管理</div>
+
+     <div class="filters">
+  <label>开始 <input type="date" id="bs_start"></label>
+  <label>结束 <input type="date" id="bs_end"></label>
+  <input id="bs_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+  <select id="bs_currency">
+    <option value="">全部币种</option>
+    <option>BTC</option>
+    <option>ETH</option>
+    <option>USDT</option>
+  </select>
+  <select id="bs_side">
+    <option value="">全部</option>
+    <option value="buy">买</option>
+    <option value="sell">卖</option>
+  </select>
+  <button class="primary" onclick="bs_search()">搜索</button>
+  <button class="primary" onclick="downloadRecords()">下载记录</button>
+  <button class="primary" onclick="showToday('bs')">今日数据</button>
+<button class="primary view-yesterday-btn">查看昨日数据</button>
+<!-- 自动刷新设置 -->
+<select id="autoRefreshSelect_buysell"style="
+  margin-left:8px;
+  background:transparent;
+  color:#1f2933;
+  border:1px solid #ccc;
+  padding:6px 10px;
+  border-radius:4px;
+">
+  <option value="0">自动刷新：关闭</option>
+  <option value="15">自动刷新：15 秒</option>
+  <option value="30">自动刷新：30 秒</option>
+  <option value="60">自动刷新：60 秒</option>
+</select>
+<button class="primary" onclick="resetBuySellPage()" style="margin-left:8px;">
+  重置
+</button>
+<label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
+  <input type="checkbox" id="bsLockedOnly" onchange="bs_search()" style="vertical-align:-2px;margin-right:4px">自己锁定
+</label>
+</div>
+
+      <div style="margin-bottom:8px">实时汇率：<span id="tickersSummary">-</span></div>
+
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th></th>
+            <th>订单/会员/钱包</th>
+            <th>时间 (US/Eastern)</th>
+            <th>用户ID</th>
+            <th>类型</th>
+            <th>货币数量</th>
+            <th>币种</th>
+            <th>估算 USDT</th>
+            <th>状态</th>
+            <th>操作</th>
+            <th>操作人</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+
+        <tbody id="bs_table"><tr><td colspan="12" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Recharge page -->
+    <div id="page-recharge" class="container" style="display:none">
+      <div class="page-title">充值管理</div>
+
+      <div class="filters">
+        <label>开始 <input type="date" id="r_start"></label>
+        <label>结束 <input type="date" id="r_end"></label>
+        <input id="r_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+        <select id="r_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
+        <select id="r_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <button class="primary" onclick="r_search()">搜索</button>
+  <button class="primary" onclick="downloadRecords()">下载记录</button>
+  <button class="primary" onclick="showToday('r')">今日数据</button>
+<button class="primary view-yesterday-btn">查看昨日数据</button>
+<!-- 自动刷新设置 -->
+<select id="autoRefreshSelect_recharge"style="
+  margin-left:8px;
+  background:transparent;
+  color:#1f2933;
+  border:1px solid #ccc;
+  padding:6px 10px;
+  border-radius:4px;
+">
+  <option value="0">自动刷新：关闭</option>
+  <option value="15">自动刷新：15 秒</option>
+  <option value="30">自动刷新：30 秒</option>
+  <option value="60">自动刷新：60 秒</option>
+</select>
+<button class="primary" onclick="resetRechargePage()" style="margin-left:8px;">
+  重置
+</button>
+<label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
+  <input type="checkbox" id="rLockedOnly" onchange="r_search()" style="vertical-align:-2px;margin-right:4px">自己锁定
+</label>
+      </div>
+
+      <table class="table">
+        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
+        <tbody id="r_table"><tr><td colspan="15" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Withdraw page -->
+    <div id="page-withdraw" class="container" style="display:none">
+      <div class="page-title">提款管理</div>
+
+      <div class="filters">
+        <label>开始 <input type="date" id="w_start"></label>
+        <label>结束 <input type="date" id="w_end"></label>
+        <input id="w_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+        <select id="w_currency"><option value="">全部币种</option><option>BRL</option><option>USDT</option><option>BTC</option></select>
+        <select id="w_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <select id="w_quickStatus" style="margin-left:6px"><option value="">全部</option><option value="pending">待出款</option><option value="unlocked">未锁定</option><option value="locked">已锁定</option><option value="rejected">已拒绝</option><option value="approved">已通过</option></select>
+        <button class="primary" onclick="w_search()">搜索</button>
+  <button class="primary" onclick="downloadRecords()">下载记录</button>
+  <button class="primary" onclick="showToday('w')">今日数据</button>
+<button class="primary view-yesterday-btn">查看昨日数据</button>
+<!-- 自动刷新设置 -->
+<select id="autoRefreshSelect_draw"style="
+  margin-left:8px;
+  background:transparent;
+  color:#1f2933;
+  border:1px solid #ccc;
+  padding:6px 10px;
+  border-radius:4px;
+">
+  <option value="0">自动刷新：关闭</option>
+  <option value="15">自动刷新：15 秒</option>
+  <option value="30">自动刷新：30 秒</option>
+  <option value="60">自动刷新：60 秒</option>
+</select>
+<button class="primary" onclick="resetWithdrawPage()" style="margin-left:8px;">
+  重置
+</button>
+<label style="margin-left:10px;cursor:pointer;font-size:13px;color:#1f2933;user-select:none">
+  <input type="checkbox" id="wLockedOnly" onchange="w_search()" style="vertical-align:-2px;margin-right:4px">自己锁定
+</label>
+      </div>
+
+      <table class="table">
+        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
+        <tbody id="w_table"><tr><td colspan="15" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Members page -->
+    <div id="page-members" class="container" style="display:none">
+      <div class="page-title">会员管理</div>
+      <div class="filters">
+        <input id="m_search" placeholder="会员ID / 钱包地址" style="width:260px">
+        <button onclick="loadMembers()">搜索</button>
+      </div>
+      <table class="table">
+       <thead>
+<tr>
+<th>会员ID</th>
+<th>钱包地址</th>
+<th>账号余额</th>
+<th>加减操作</th>
+<th>注册时间</th>
+<th>上线时间</th>
+<th>IP</th>
+<th>最后在线时间</th>
+<th>标签</th>
+</tr>
+</thead>
+        <tbody id="m_table"><tr><td colspan="9" class="small">暂无数据</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- 标签编辑弹窗 -->
+    <div class="tag-editor-overlay" id="tagEditorOverlay" onclick="closeTagEditor()"></div>
+    <div class="tag-editor-panel" id="tagEditorPanel" style="display:none">
+      <div class="tag-section">
+        <div class="tag-section-title">快捷备注</div>
+        <div class="tag-presets" id="tagPresetGroup">
+          <button class="tag-preset-btn preset-yellow" data-remark="新成员" data-color="yellow" onclick="selectTagPreset(this)">新成员</button>
+          <button class="tag-preset-btn preset-green"  data-remark="正常会员" data-color="green"  onclick="selectTagPreset(this)">正常会员</button>
+          <button class="tag-preset-btn preset-black"  data-remark="测试账号" data-color="black"  onclick="selectTagPreset(this)">测试账号</button>
+          <button class="tag-preset-btn preset-red"    data-remark="异常会员" data-color="red"    onclick="selectTagPreset(this)">异常会员</button>
+        </div>
+        <input class="tag-custom-input" id="tagCustomRemark" placeholder="或输入自定义备注..." oninput="onCustomRemarkInput()">
+      </div>
+      <div class="tag-actions">
+        <button class="tag-btn-clear" onclick="clearMemberTag()">清除标签</button>
+        <button class="tag-btn-cancel" onclick="closeTagEditor()">取消</button>
+        <button class="tag-btn-save" onclick="saveMemberTag()">保存</button>
+      </div>
+    </div>
+
+    <!-- Orders page -->
+    <div id="page-orders" class="container" style="display:none">
+      <div class="page-title">订单记录（充值/提款/买卖）</div>
+      <div class="filters">
+        <label>开始 <input type="date" id="o_start"></label>
+        <label>结束 <input type="date" id="o_end"></label>
+        <input id="o_q" placeholder="订单号 / 会员ID / 钱包地址" style="width:260px">
+        <select id="o_type"><option value="">全部类型</option><option value="recharge">充值</option><option value="withdraw">提款</option><option value="trade">买卖</option></select>
+        <button class="primary" onclick="o_search()">搜索</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="o_table"><tr><td colspan="11" class="small">暂无数据</td></tr></tbody>
+      </table>
+    </div>
+    <!-- ===============================
+     系统设置 / 管理员管理
+=============================== -->
+<div id="page-settings" class="container" style="display:none">
+
+  <div class="page-title" data-i18n="text" data-key="sysSettings">系统设置</div>
+
+  <!-- 管理员账号管理 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="page-title" style="font-size:16px" data-i18n="text" data-key="adminMgmt">管理员账号管理</div>
+
+    <div class="filters">
+      <input id="newAdminId" data-i18n="placeholder" data-key="account" placeholder="管理员账号">
+      <input id="newAdminNickname" data-i18n="placeholder" data-key="nickname" placeholder="昵称（显示用）">
+      <input id="newAdminPassword" data-i18n="placeholder" data-key="initPwd" placeholder="初始密码">
+
+      <label><input type="checkbox" value="recharge"> <span data-i18n="text" data-key="recharge">充值</span></label>
+      <label><input type="checkbox" value="withdraw"> <span data-i18n="text" data-key="withdraw">提款</span></label>
+      <label><input type="checkbox" value="buysell"> <span data-i18n="text" data-key="buysell">BuySell</span></label>
+      <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
+      <label><input type="checkbox" value="balance_adjust"> <span data-i18n="text" data-key="balanceAdjust">加减操作</span></label>
+
+      <button class="primary" id="btnRefreshAdmins" type="button" onclick="loadAdmins()" style="margin-right:8px">刷新</button>
+      <button class="primary" onclick="createAdmin()" data-i18n="text" data-key="createAdmin">新增管理员</button>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th data-i18n="text" data-key="account">账号</th>
+          <th data-i18n="text" data-key="permissions">权限</th>
+          <th data-i18n="text" data-key="loginLink">登录链接</th>
+          <th data-i18n="text" data-key="status">状态</th>
+          <th data-i18n="text" data-key="operation">操作</th>
+        </tr>
+      </thead>
+      <tbody id="adminTable">
+        <tr><td colspan="5"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Google 2FA -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
+
+    <div class="filters">
+      <input id="gaAdminId" placeholder="管理员账号" style="width:100%">
+      <button class="primary" onclick="generateGoogle2FA()">生成绑定</button>
+    </div>
+
+    <div id="gaBox" style="display:none;margin-top:12px">
+      <div class="small">请使用 Google Authenticator 扫码：</div>
+      <img id="gaQr" style="margin:8px 0" src="">
+      <input id="gaCode" placeholder="输入 6 位验证码">
+      <button class="primary" onclick="verifyGoogle2FA()">确认绑定</button>
+    </div>
+  </div>
+
+  <!-- 管理员密码重置 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="page-title" style="font-size:16px">重置管理员登录密码</div>
+
+    <div class="filters">
+      <input id="resetAdminId" placeholder="管理员账号">
+      <input id="resetAdminPassword" placeholder="新登录密码">
+      <button class="primary" onclick="resetAdminLoginPassword()">重置</button>
+    </div>
+  </div>
+
+  <!-- 用户提款密码重置 -->
+<!-- 用户提款密码重置 -->
+<div class="card">
+  <div class="page-title" style="font-size:16px">重置用户提款密码</div>
+
+  <div class="filters">
+
+    <!-- 校验方式 -->
+    <select id="verifyType">
+      <option value="address">钱包地址</option>
+      <option value="order">订单号</option>
+      <option value="userid">用户ID</option>
+    </select>
+
+    <!-- 已提款的钱包地址 -->
+    <input
+      id="searchWithdrawWallet"
+      placeholder="已提款的钱包地址"
+    >
+
+    <!-- 提款订单号 -->
+    <input
+      id="searchWithdrawOrder"
+      placeholder="订单号（当选择订单号校验时填写）"
+    >
+
+    <!-- 用户ID（新增） -->
+    <input
+      id="searchWithdrawUserId"
+      placeholder="用户ID"
+    >
+
+    <!-- 新提款密码 -->
+    <input
+      id="newWithdrawPassword"
+      type="password"
+      placeholder="新提款密码"
+    >
+
+    <button
+      class="primary"
+      onclick="resetWithdrawPassword()"
+    >重置</button>
+
+  </div>
+</div>
+
+</div>
+
+    <div class="footer-note">系统生成：<span id="genTime"></span></div>
+  </div>
+</div>
+
+<!-- Wallet modal -->
+<div class="modal" id="walletModal" onclick="closeWallet()"><div class="box" onclick="event.stopPropagation()"><div style="font-weight:700;margin-bottom:8px">钱包地址</div><div id="walletAddr" style="font-size:14px;word-break:break-all"></div><button onclick="closeWallet()" style="margin-top:12px;padding:6px 12px">关闭</button></div></div>
+
+<!-- Order Detail Modal -->
+<div id="orderDetailModal" class="order-detail-modal" onclick="closeOrderDetail()">
+  <div class="box" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:700">订单详情 <span id="orderDetailId"></span></div>
+      <div><button onclick="closeOrderDetail()" style="padding:6px 10px">关闭</button></div>
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-weight:600">原始数据</div>
+      <pre id="orderRawJson">{}</pre>
+    </div>
+    <div style="margin-top:8px">
+      <div style="font-weight:600">操作记录</div>
+      <pre id="orderActions">无操作记录</pre>
+    </div>
+  </div>
+</div>
+
+<!-- 查看详情 Modal -->
+<div id="viewDetailModal" class="detail-modal" onclick="closeViewDetail()">
+  <div class="detail-box" onclick="event.stopPropagation()">
+    <div class="detail-header">
+      <h2 id="detailTitle">详情</h2>
+      <button class="detail-close" onclick="closeViewDetail()">&times;</button>
+    </div>
+    <div class="detail-body" id="detailBody"></div>
+  </div>
+</div>
+
+<!-- 备注 Modal -->
+<div id="remarkModal" class="remark-modal" onclick="closeRemarkModal()">
+  <div class="remark-box" onclick="event.stopPropagation()">
+    <div class="remark-header">
+      <h2>备注</h2>
+      <button class="remark-close" onclick="closeRemarkModal()">&times;</button>
+    </div>
+    <div class="remark-body">
+      <div class="remark-info-grid" id="remarkInfoGrid">
+        <div class="remark-info-item"><span class="rlabel">订单号：</span><span class="rvalue" id="rm-orderId">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">用户ID：</span><span class="rvalue" id="rm-userId">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">会员层级：</span><span class="rvalue" id="rm-level">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">提现金额：</span><span class="rvalue" id="rm-amount">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">实际到账：</span><span class="rvalue" id="rm-actual">--</span></div>
+        <div class="remark-info-item"><span class="rlabel">手续费：</span><span class="rvalue" id="rm-fee">--</span></div>
+      </div>
+      <div class="remark-textarea-row">
+        <div>
+          <div class="remark-textarea-label">前台备注</div>
+          <textarea id="rmFrontNote" placeholder="输入前台备注..."></textarea>
+        </div>
+        <div>
+          <div class="remark-textarea-label">后台备注</div>
+          <textarea id="rmBackNote" placeholder="输入后台备注..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="remark-footer">
+      <button class="btn-cancel" onclick="closeRemarkModal()">取消</button>
+      <button class="btn-confirm" id="rmConfirmBtn" onclick="submitRemark()">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin Login Modal -->
+<div id="adminLoginModal" class="admin-login-modal" onclick="closeAdminLogin()">
+  <div class="box" onclick="event.stopPropagation()">
+    <div id="loginModalTitle" style="font-weight:700;margin-bottom:8px">管理员登录</div>
+    <div style="margin-bottom:8px">
+      <input id="adminName" placeholder="管理员ID" style="width:100%;margin-bottom:8px;padding:8px" />
+      <input id="adminPassword" type="password" placeholder="密码" style="width:100%;padding:8px" />
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="submitAdminLogin()" class="primary">登录</button>
+      <button onclick="closeAdminLogin()">取消</button>
+    </div>
+    <div id="loginModalHint" style="margin-top:8px;font-size:12px;color:#666">提示：管理员可以通过后端 /api/admin/create 创建新账号。</div>
+  </div>
+</div>
+
+<!-- 个人资料弹窗 -->
+<div id="profileModal" class="profile-modal" onclick="closeProfile()">
+  <div class="box" onclick="event.stopPropagation()">
+    <div class="profile-header">
+      <div class="avatar-wrap" onclick="document.getElementById('avatarFileInput').click()" title="点击更换头像">
+        <img id="profileAvatar" class="avatar" src="" alt="avatar" />
+        <span class="avatar-overlay">更换</span>
+      </div>
+      <input type="file" id="avatarFileInput" accept="image/*" style="display:none" onchange="uploadAvatar(event)" />
+      <div class="info">
+        <div class="uid" id="profileUid">--</div>
+        <div class="currency" id="profileCurrency">币种：USDT</div>
+      </div>
+      <button class="close-btn" onclick="closeProfile()">✕</button>
+    </div>
+
+    <div class="profile-columns">
+      <div class="profile-col">
+        <div class="profile-section">
+          <h3>个人资料</h3>
+          <div class="profile-row"><span class="label">姓名</span><span class="value" id="p-name">--</span><button class="edit-btn" id="eb-name" onclick="editProfileField('name')">修改</button></div>
+          <div class="profile-row"><span class="label">身份证</span><span class="value" id="p-idcard">--</span><button class="edit-btn" id="eb-idcard" onclick="editProfileField('idcard')">修改</button></div>
+          <div class="profile-row"><span class="label">国籍/地区</span><span class="value" id="p-nationality">--</span><button class="edit-btn" id="eb-nationality" onclick="editProfileField('nationality')">修改</button></div>
+          <div class="profile-row"><span class="label">性别</span><span class="value" id="p-gender">--</span><button class="edit-btn" id="eb-gender" onclick="editProfileField('gender')">修改</button></div>
+          <div class="profile-row"><span class="label">生日</span><span class="value" id="p-birthday">--</span><button class="edit-btn" id="eb-birthday" onclick="editProfileField('birthday')">修改</button></div>
+          <div class="profile-row"><span class="label">当前居住地</span><span class="value" id="p-residence">--</span><button class="edit-btn" id="eb-residence" onclick="editProfileField('residence')">修改</button></div>
+          <div class="profile-row"><span class="label">收入来源</span><span class="value" id="p-income">--</span><button class="edit-btn" id="eb-income" onclick="editProfileField('income')">修改</button></div>
+        </div>
+      </div>
+      <div class="profile-col">
+        <div class="profile-section">
+          <h3>账号信息</h3>
+          <div class="profile-row"><span class="label">邮箱</span><span class="value" id="p-email">--</span><button class="edit-btn" id="eb-email" onclick="editProfileField('email')">修改</button></div>
+          <div class="profile-row"><span class="label">Telegram</span><span class="value" id="p-telegram">--</span><button class="edit-btn" id="eb-telegram" onclick="editProfileField('telegram')">修改</button></div>
+          <div class="profile-row"><span class="label">X (Twitter)</span><span class="value" id="p-twitter">--</span><button class="edit-btn" id="eb-twitter" onclick="editProfileField('twitter')">修改</button></div>
+          <div class="profile-row"><span class="label">Instagram</span><span class="value" id="p-instagram">--</span><button class="edit-btn" id="eb-instagram" onclick="editProfileField('instagram')">修改</button></div>
+          <div class="profile-row"><span class="label">WhatsApp</span><span class="value" id="p-whatsapp">--</span><button class="edit-btn" id="eb-whatsapp" onclick="editProfileField('whatsapp')">修改</button></div>
+          <div class="profile-row"><span class="label">Zalo</span><span class="value" id="p-zalo">--</span><button class="edit-btn" id="eb-zalo" onclick="editProfileField('zalo')">修改</button></div>
+          <div class="profile-row"><span class="label">Facebook</span><span class="value" id="p-facebook">--</span><button class="edit-btn" id="eb-facebook" onclick="editProfileField('facebook')">修改</button></div>
+          <div class="profile-row"><span class="label">Line</span><span class="value" id="p-line">--</span><button class="edit-btn" id="eb-line" onclick="editProfileField('line')">修改</button></div>
+          <div class="profile-row"><span class="label">Threads</span><span class="value" id="p-threads">--</span><button class="edit-btn" id="eb-threads" onclick="editProfileField('threads')">修改</button></div>
+          <div class="profile-row"><span class="label">手机号</span><span class="value" id="p-phone">--</span><button class="view-btn" id="eb-phone" onclick="viewProfilePhone()">查看+修改</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="profile-bottom">
+      <button class="primary" onclick="saveProfile()" id="profileSaveBtn" style="padding:6px 18px;margin-right:8px">保存</button>
+      <button onclick="closeProfile()" style="padding:6px 18px">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 备注 Drawer -->
+<div id="remarkDrawer" class="remark-drawer">
+  <div class="drawer-header">
+    <span>备注详情</span>
+    <button onclick="closeRemarkDrawer()">✕</button>
+  </div>
+
+  <div class="drawer-body">
+    <div class="drawer-meta">
+      <div>订单号：<span id="rd-order"></span></div>
+      <div>类型：<span id="rd-type"></span></div>
+      <div>时间：<span id="rd-time"></span></div>
+    </div>
+<!-- ===== 订单详情 ===== -->
+<div class="rd-block rd-detail">
+
+  <div class="rd-row">
+    <span class="rd-label">方向</span>
+    <span id="rd-side" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">金额</span>
+    <span id="rd-amount" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">估算 USDT</span>
+    <span id="rd-estimate" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">TP / SL</span>
+    <span id="rd-tpsl" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">状态</span>
+    <span id="rd-status" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">Wallet</span>
+    <span id="rd-wallet" class="rd-value">--</span>
+  </div>
+
+  <div class="rd-row">
+    <span class="rd-label">IP</span>
+    <span id="rd-ip" class="rd-value">--</span>
+  </div>
+
+</div>
+
+    <div id="rd-reject-box" class="remark-box reject" style="display:none">
+      <div class="remark-title">拒绝原因</div>
+      <div id="rd-reject"></div>
+    </div>
+
+    <div id="rd-note-box" class="remark-box normal" style="display:none">
+      <div class="remark-title">普通备注</div>
+      <div id="rd-note"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== i18n 语言包 =====
+  const I18N = {
+    zh: {
+      dashboard:'控制台', todayRecharge:'今日充值', todayWithdraw:'今日提款', totalPnl:'总盈亏', riskAlerts:'风控报警',
+      rejected:'已拒绝', pending:'待处理', buysellMgmt:'Buy/Sell 管理', rechargeMgmt:'充值管理', withdrawMgmt:'提款管理',
+      memberMgmt:'会员管理', orderRecords:'订单记录', sysSettings:'系统设置', adminMgmt:'管理员账号管理',
+      account:'管理员账号', nickname:'昵称（显示用）', initPwd:'初始密码', recharge:'充值', withdraw:'提款',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'加减操作', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
+      permissions:'权限', loginLink:'登录链接', copyLink:'复制登录链接', status:'状态', online:'在线', offline:'离线',
+      enabled:'已启用', disabled:'已禁用', enable:'启用', disable:'禁用', update:'更新', del:'删除', kick:'踢出', kickConfirm:'确认踢出管理员',
+      creator:'创建人', orders:'订单/会员/钱包', time:'时间', userId:'用户ID', type:'类型', amount:'金额',
+      currency:'币种', estUSDT:'估算 USDT', wallet:'wallet', ip:'IP', operation:'操作', operator:'操作人',
+      note:'备注', search:'搜索', downloadRecords:'下载记录', todayData:'今日数据', viewYesterday:'查看昨日数据',
+      autoRefresh:'自动刷新', off:'关闭', sec15:'15 秒', sec30:'30 秒', sec60:'60 秒', reset:'重置',
+      processing:'处理中', success:'成功', failed:'失败', locked:'锁定', allStatus:'全部状态', allCurrency:'全部币种',
+      start:'开始', end:'结束', memberId:'会员ID', memberLevel:'会员等级', phone:'手机号', email:'邮箱',
+      tags:'标签', newMember:'新成员', normalMember:'正常会员', testAccount:'测试账号', abnormalMember:'异常会员',
+      noRecords:'没有记录', clickSearch:'点击搜索加载数据', updated:'更新于', system:'system', language:'语言',
+      logout:'退出', soundOn:'新订单通知（已开启）', soundOff:'新订单通知（已关闭）', noSound:'新订单通知（已关闭）',
+      createSuccess:'创建成功', accountColon:'账号', nicknameColon:'昵称', initPwdColon:'初始密码', loginUrlColon:'专属登录链接',
+      createFailed:'创建失败', unknown:'未知', confirmDel:'确认删除管理员', delFailed:'删除失败', updateFailed:'更新失败',
+      pwdReset:'重置提款密码', verifyType:'验证方式', walletAddr:'钱包地址/会员ID/订单号',
+      side:'方向', buy:'买入', sell:'卖出', qty:'数量', planMgmt:'理财管理', transfer:'转账',
+      bellNewOrder:'你有新的订单请及时处理', newOrderNotify:'新订单通知',
+      rechargeCount:'笔', withdrawCount:'笔', usdt:'USDT', realtime:'实时', detailRejected:'充值:0，提款:0',
+      google2fa:'Google 二级验证码（2FA）', genQr:'生成绑定', scanQr:'请使用 Google Authenticator 扫码',
+      inputCode:'输入 6 位验证码', confirmBind:'确认绑定', genFailed:'生成2FA绑定失败',
+      loadFailed:'加载失败', approveBtn:'通过', rejectBtn:'拒绝', lockBtn:'锁定', unlockBtn:'解锁',
+      remarkBtn:'备注', rechargeType:'充值', withdrawType:'提款',
+      lockedByOther:'正被其他业务员锁定，不能重复操作，请刷新重试', missingOrderId:'缺少订单ID',
+      confirmAction:'确定对订单', actionLabel:'执行', enterRemark:'请输入备注内容（仅后台可见）：',
+      remarkSaved:'备注已保存', operationFailed:'操作失败', serverError:'服务器错误',
+      remarkFailed:'备注失败：', unknownError:'未知错误', remarkException:'备注请求异常',
+      enterRejectReason:'请输入拒绝原因（必填）'
+    },
+    en: {
+      dashboard:'Dashboard', todayRecharge:'Today Recharge', todayWithdraw:'Today Withdraw', totalPnl:'Total P&L',
+      riskAlerts:'Risk Alerts', rejected:'Rejected', pending:'Pending', buysellMgmt:'Buy/Sell Management',
+      rechargeMgmt:'Recharge Management', withdrawMgmt:'Withdraw Management', memberMgmt:'Member Management',
+      orderRecords:'Order Records', sysSettings:'Settings', adminMgmt:'Admin Account Management',
+      account:'Admin Account', nickname:'Nickname', initPwd:'Initial Password', recharge:'Recharge', withdraw:'Withdraw',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'Balance Adjust', createAdmin:'Create Admin', loading:'Loading...', noAdmins:'No admins',
+      permissions:'Permissions', loginLink:'Login Link', copyLink:'Copy Link', status:'Status', online:'Online',
+      offline:'Offline', enabled:'Enabled', disabled:'Disabled', enable:'Enable', disable:'Disable', update:'Update',
+      del:'Delete', kick:'Kick', kickConfirm:'Confirm kick admin', creator:'Creator', orders:'Order/Member/Wallet', time:'Time', userId:'User ID', type:'Type',
+      amount:'Amount', currency:'Currency', estUSDT:'Est. USDT', wallet:'Wallet', ip:'IP', operation:'Action',
+      operator:'Operator', note:'Note', search:'Search', downloadRecords:'Download', todayData:'Today',
+      viewYesterday:'Yesterday', autoRefresh:'Auto Refresh', off:'Off', sec15:'15s', sec30:'30s', sec60:'60s',
+      reset:'Reset', processing:'Processing', success:'Success', failed:'Failed', locked:'Locked',
+      allStatus:'All Status', allCurrency:'All Currencies', start:'Start', end:'End', memberId:'Member ID',
+      memberLevel:'Member Level', phone:'Phone', email:'Email', tags:'Tags', newMember:'New Member',
+      normalMember:'Normal', testAccount:'Test', abnormalMember:'Abnormal', noRecords:'No records',
+      clickSearch:'Click search to load', updated:'Updated', system:'System', language:'Language',
+      logout:'Logout', soundOn:'Order notification (ON)', soundOff:'Order notification (OFF)', noSound:'Notification (OFF)',
+      createSuccess:'Created successfully', accountColon:'Account', nicknameColon:'Nickname', initPwdColon:'Password',
+      loginUrlColon:'Login URL', createFailed:'Creation failed', unknown:'Unknown', confirmDel:'Confirm delete admin',
+      delFailed:'Delete failed', updateFailed:'Update failed', pwdReset:'Reset Withdraw Password',
+      verifyType:'Verify Method', walletAddr:'Wallet/ID/Order#', side:'Side', buy:'Buy', sell:'Sell', qty:'Qty',
+      planMgmt:'Plan Management', transfer:'Transfer', bellNewOrder:'You have a new order', newOrderNotify:'New Order',
+      rechargeCount:'txns', withdrawCount:'txns', usdt:'USDT', realtime:'Real-time',
+      detailRejected:'Recharge:0, Withdraw:0', google2fa:'Google 2FA', genQr:'Generate QR',
+      scanQr:'Scan with Google Authenticator', inputCode:'Enter 6-digit code', confirmBind:'Confirm',
+      genFailed:'2FA generation failed',
+      loadFailed:'Load Failed', approveBtn:'Approve', rejectBtn:'Reject', lockBtn:'Lock', unlockBtn:'Unlock',
+      remarkBtn:'Remark', rechargeType:'Recharge', withdrawType:'Withdraw',
+      lockedByOther:'Locked by another agent. Please refresh and try again.', missingOrderId:'Missing order ID',
+      confirmAction:'Confirm action on order', actionLabel:'Action', enterRemark:'Enter remark (admin only):',
+      remarkSaved:'Remark saved', operationFailed:'Operation failed', serverError:'Server error',
+      remarkFailed:'Remark failed: ', unknownError:'Unknown error', remarkException:'Remark exception',
+      enterRejectReason:'Enter reject reason (required)'
+    },
+    th: {
+      dashboard:'แดชบอร์ด', todayRecharge:'เติมเงินวันนี้', todayWithdraw:'ถอนเงินวันนี้', totalPnl:'กำไร/ขาดทุนรวม',
+      riskAlerts:'แจ้งเตือนความเสี่ยง', rejected:'ปฏิเสธแล้ว', pending:'รอดำเนินการ', buysellMgmt:'จัดการ Buy/Sell',
+      rechargeMgmt:'จัดการเติมเงิน', withdrawMgmt:'จัดการถอนเงิน', memberMgmt:'จัดการสมาชิก',
+      orderRecords:'บันทึกคำสั่งซื้อ', sysSettings:'ตั้งค่าระบบ', adminMgmt:'จัดการบัญชีผู้ดูแล',
+      account:'บัญชีผู้ดูแล', nickname:'ชื่อเล่น', initPwd:'รหัสผ่านเริ่มต้น', recharge:'เติมเงิน', withdraw:'ถอนเงิน',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'ปรับยอด', createAdmin:'เพิ่มผู้ดูแล', loading:'กำลังโหลด...', noAdmins:'ไม่มีผู้ดูแล',
+      permissions:'สิทธิ์', loginLink:'ลิงก์เข้าสู่ระบบ', copyLink:'คัดลอกลิงก์', status:'สถานะ', online:'ออนไลน์',
+      offline:'ออฟไลน์', enabled:'เปิดใช้งาน', disabled:'ปิดใช้งาน', enable:'เปิด', disable:'ปิด', update:'อัปเดต',
+      del:'ลบ', kick:'เตะออก', kickConfirm:'ยืนยันการเตะผู้ดูแล', creator:'ผู้สร้าง', orders:'คำสั่ง/สมาชิก/กระเป๋า', time:'เวลา', userId:'รหัสผู้ใช้', type:'ประเภท',
+      amount:'จำนวน', currency:'สกุลเงิน', estUSDT:'USDT โดยประมาณ', wallet:'กระเป๋า', ip:'IP', operation:'ดำเนินการ',
+      operator:'ผู้ดำเนินการ', note:'หมายเหตุ', search:'ค้นหา', downloadRecords:'ดาวน์โหลด', todayData:'วันนี้',
+      viewYesterday:'เมื่อวาน', autoRefresh:'รีเฟรชอัตโนมัติ', off:'ปิด', sec15:'15 วินาที', sec30:'30 วินาที',
+      sec60:'60 วินาที', reset:'รีเซ็ต', processing:'กำลังดำเนินการ', success:'สำเร็จ', failed:'ล้มเหลว',
+      locked:'ล็อก', allStatus:'สถานะทั้งหมด', allCurrency:'ทุกสกุลเงิน', start:'เริ่ม', end:'สิ้นสุด',
+      memberId:'รหัสสมาชิก', memberLevel:'ระดับสมาชิก', phone:'โทรศัพท์', email:'อีเมล', tags:'แท็ก',
+      newMember:'สมาชิกใหม่', normalMember:'สมาชิกปกติ', testAccount:'บัญชีทดสอบ', abnormalMember:'สมาชิกผิดปกติ',
+      noRecords:'ไม่มีบันทึก', clickSearch:'คลิกค้นหาเพื่อโหลด', updated:'อัปเดตเมื่อ', system:'ระบบ',
+      language:'ภาษา', logout:'ออกจากระบบ', soundOn:'แจ้งเตือนคำสั่งซื้อ (เปิด)', soundOff:'แจ้งเตือนคำสั่งซื้อ (ปิด)',
+      noSound:'การแจ้งเตือน (ปิด)', createSuccess:'สร้างสำเร็จ', accountColon:'บัญชี', nicknameColon:'ชื่อเล่น',
+      initPwdColon:'รหัสผ่าน', loginUrlColon:'URL เข้าสู่ระบบ', createFailed:'สร้างไม่สำเร็จ', unknown:'ไม่ทราบ',
+      confirmDel:'ยืนยันการลบผู้ดูแล', delFailed:'ลบไม่สำเร็จ', updateFailed:'อัปเดตไม่สำเร็จ',
+      pwdReset:'รีเซ็ตรหัสผ่านถอนเงิน', verifyType:'วิธีการยืนยัน', walletAddr:'กระเป๋า/รหัส/เลขคำสั่ง',
+      side:'ทิศทาง', buy:'ซื้อ', sell:'ขาย', qty:'จำนวน', planMgmt:'จัดการแผน', transfer:'โอน',
+      bellNewOrder:'คุณมีคำสั่งซื้อใหม่', newOrderNotify:'คำสั่งซื้อใหม่', rechargeCount:'รายการ', withdrawCount:'รายการ',
+      usdt:'USDT', realtime:'เรียลไทม์', detailRejected:'เติมเงิน:0, ถอน:0',
+      google2fa:'Google 2FA', genQr:'สร้าง QR', scanQr:'สแกนด้วย Google Authenticator',
+      inputCode:'ใส่รหัส 6 หลัก', confirmBind:'ยืนยัน', genFailed:'สร้าง 2FA ไม่สำเร็จ',
+      loadFailed:'โหลดล้มเหลว', approveBtn:'อนุมัติ', rejectBtn:'ปฏิเสธ', lockBtn:'ล็อก', unlockBtn:'ปลดล็อก',
+      remarkBtn:'หมายเหตุ', rechargeType:'เติมเงิน', withdrawType:'ถอนเงิน',
+      lockedByOther:'ถูกล็อกโดยเจ้าหน้าที่อื่น กรุณารีเฟรชแล้วลองใหม่', missingOrderId:'ไม่มีรหัสคำสั่งซื้อ',
+      confirmAction:'ยืนยันการดำเนินการกับคำสั่งซื้อ', actionLabel:'ดำเนินการ', enterRemark:'กรอกหมายเหตุ (เฉพาะผู้ดูแล):',
+      remarkSaved:'บันทึกหมายเหตุแล้ว', operationFailed:'การดำเนินการล้มเหลว', serverError:'ข้อผิดพลาดเซิร์ฟเวอร์',
+      remarkFailed:'หมายเหตุล้มเหลว: ', unknownError:'ข้อผิดพลาดที่ไม่รู้จัก', remarkException:'ข้อยกเว้นหมายเหตุ',
+      enterRejectReason:'กรอกเหตุผลการปฏิเสธ (จำเป็น)'
+    },
+    vi: {
+      dashboard:'Bảng điều khiển', todayRecharge:'Nạp hôm nay', todayWithdraw:'Rút hôm nay', totalPnl:'Tổng Lãi/Lỗ',
+      riskAlerts:'Cảnh báo rủi ro', rejected:'Đã từ chối', pending:'Đang xử lý', buysellMgmt:'Quản lý Buy/Sell',
+      rechargeMgmt:'Quản lý nạp tiền', withdrawMgmt:'Quản lý rút tiền', memberMgmt:'Quản lý thành viên',
+      orderRecords:'Hồ sơ đơn hàng', sysSettings:'Cài đặt', adminMgmt:'Quản lý tài khoản admin',
+      account:'Tài khoản admin', nickname:'Biệt danh', initPwd:'Mật khẩu ban đầu', recharge:'Nạp tiền', withdraw:'Rút tiền',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'Điều chỉnh số dư', createAdmin:'Thêm admin', loading:'Đang tải...', noAdmins:'Không có admin',
+      permissions:'Quyền', loginLink:'Liên kết đăng nhập', copyLink:'Sao chép', status:'Trạng thái', online:'Trực tuyến',
+      offline:'Ngoại tuyến', enabled:'Đã kích hoạt', disabled:'Đã vô hiệu', enable:'Kích hoạt', disable:'Vô hiệu',
+      update:'Cập nhật', del:'Xóa', kick:'Đá ra', kickConfirm:'Xác nhận đá admin', creator:'Người tạo', orders:'Đơn/Thành viên/Ví', time:'Thời gian',
+      userId:'ID người dùng', type:'Loại', amount:'Số tiền', currency:'Tiền tệ', estUSDT:'USDT ước tính',
+      wallet:'Ví', ip:'IP', operation:'Thao tác', operator:'Người thao tác', note:'Ghi chú', search:'Tìm kiếm',
+      downloadRecords:'Tải xuống', todayData:'Hôm nay', viewYesterday:'Hôm qua', autoRefresh:'Tự động làm mới',
+      off:'Tắt', sec15:'15 giây', sec30:'30 giây', sec60:'60 giây', reset:'Đặt lại',
+      processing:'Đang xử lý', success:'Thành công', failed:'Thất bại', locked:'Đã khóa', allStatus:'Tất cả trạng thái',
+      allCurrency:'Tất cả tiền tệ', start:'Bắt đầu', end:'Kết thúc', memberId:'ID thành viên',
+      memberLevel:'Cấp thành viên', phone:'Điện thoại', email:'Email', tags:'Thẻ',
+      newMember:'Thành viên mới', normalMember:'Bình thường', testAccount:'Tài khoản test', abnormalMember:'Bất thường',
+      noRecords:'Không có dữ liệu', clickSearch:'Nhấn tìm kiếm để tải', updated:'Cập nhật lúc', system:'Hệ thống',
+      language:'Ngôn ngữ', logout:'Đăng xuất', soundOn:'Thông báo đơn hàng (BẬT)', soundOff:'Thông báo đơn hàng (TẮT)',
+      noSound:'Thông báo (TẮT)', createSuccess:'Tạo thành công', accountColon:'Tài khoản', nicknameColon:'Biệt danh',
+      initPwdColon:'Mật khẩu', loginUrlColon:'URL đăng nhập', createFailed:'Tạo thất bại', unknown:'Không xác định',
+      confirmDel:'Xác nhận xóa admin', delFailed:'Xóa thất bại', updateFailed:'Cập nhật thất bại',
+      pwdReset:'Đặt lại mật khẩu rút tiền', verifyType:'Phương thức xác minh', walletAddr:'Ví/ID/Số đơn',
+      side:'Hướng', buy:'Mua', sell:'Bán', qty:'Số lượng', planMgmt:'Quản lý kế hoạch', transfer:'Chuyển khoản',
+      bellNewOrder:'Bạn có đơn hàng mới', newOrderNotify:'Đơn hàng mới', rechargeCount:'giao dịch', withdrawCount:'giao dịch',
+      usdt:'USDT', realtime:'Thời gian thực', detailRejected:'Nạp:0, Rút:0',
+      google2fa:'Google 2FA', genQr:'Tạo QR', scanQr:'Quét bằng Google Authenticator',
+      inputCode:'Nhập mã 6 chữ số', confirmBind:'Xác nhận', genFailed:'Tạo 2FA thất bại',
+      loadFailed:'Tải thất bại', approveBtn:'Phê duyệt', rejectBtn:'Từ chối', lockBtn:'Khóa', unlockBtn:'Mở khóa',
+      remarkBtn:'Ghi chú', rechargeType:'Nạp tiền', withdrawType:'Rút tiền',
+      lockedByOther:'Bị khóa bởi nhân viên khác. Vui lòng làm mới và thử lại.', missingOrderId:'Thiếu mã đơn hàng',
+      confirmAction:'Xác nhận thao tác với đơn hàng', actionLabel:'Thao tác', enterRemark:'Nhập ghi chú (chỉ admin):',
+      remarkSaved:'Đã lưu ghi chú', operationFailed:'Thao tác thất bại', serverError:'Lỗi máy chủ',
+      remarkFailed:'Ghi chú thất bại: ', unknownError:'Lỗi không xác định', remarkException:'Ngoại lệ ghi chú',
+      enterRejectReason:'Nhập lý do từ chối (bắt buộc)'
+    }
+  };
+
+  let currentLang = localStorage.getItem('nexbit_lang') || 'zh';
+  function __(key) { return (I18N[currentLang] && I18N[currentLang][key]) || key; }
+  function switchLanguage(lang) {
+    currentLang = lang;
+    localStorage.setItem('nexbit_lang', lang);
+    document.querySelectorAll('.lang-opt').forEach(el => el.classList.toggle('active', el.textContent.trim()===(lang==='zh'?'中文':lang==='en'?'English':lang==='th'?'ไทย':'Tiếng Việt')));
+    document.getElementById('adminDropdown')?.classList.remove('open');
+    applyTranslations();
+    // 刷新当前页面数据
+    const activeIcon = document.querySelector('.header-nav .icon.active');
+    if (activeIcon) activeIcon.click();
+  }
+  function applyTranslations() {
+    const lang = currentLang;
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if (key === 'text') el.textContent = __(el.getAttribute('data-key'));
+      else if (key === 'placeholder') el.placeholder = __(el.getAttribute('data-key'));
+      else if (key === 'title') el.title = __(el.getAttribute('data-key'));
+    });
+    // 更新 bell title
+    const bell = document.getElementById('bellIcon');
+    if (bell) {
+      const isMuted = bell.classList.contains('muted');
+      bell.title = __(isMuted ? 'noSound' : 'soundOn');
+    }
+  }
+
+  // ===== 管理员下拉菜单 =====
+  function toggleAdminMenu() {
+    document.getElementById('adminDropdown').classList.toggle('open');
+  }
+  document.addEventListener('click', function(e) {
+    const dd = document.getElementById('adminDropdown');
+    if (dd && !dd.contains(e.target)) dd.classList.remove('open');
+  });
+
+  // ===== 退出 =====
+  function logout() {
+    localStorage.removeItem('nexbit_admin_token');
+    localStorage.removeItem('admin_user');
+    const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
+    if (subLoginId) {
+      location.href = 'dashboard-brand.html?login=' + encodeURIComponent(subLoginId);
+    } else {
+      location.href = 'login.html';
+    }
+  }
+
+  // 获取 2FA 密钥和二维码
+    async function generateGoogle2FA() {
+      const adminId = document.getElementById('gaAdminId').value.trim();
+      if (!adminId) {
+        alert('请输入管理员账号');
+        return;
+      }
+
+      const response = await fetch('/api/admin/generate-2fa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId })
+      });
+      const data = await response.json();
+
+      if (data.ok) {
+        document.getElementById('gaQr').src = data.qr_code;  // 显示二维码
+        document.getElementById('gaBox').style.display = 'block';  // 显示输入框
+      } else {
+        alert('生成2FA绑定失败');
+      }
+    }
+
+    // 验证2FA验证码
+   async function verifyGoogle2FA() {
+  const code = document.getElementById('gaCode').value.trim();
+  const adminId = document.getElementById('gaAdminId').value.trim();
+  if (!code) {
+    alert('请输入验证码');
     return;
   }
 
-  for (const chatId of chats) {
-    try {
-      // 先发文字
-      await axios.post(
-        `https://api.telegram.org/bot${token}/sendMessage`,
-        {
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML'
-        },
-        { timeout: 10000 }
-      );
-
-      // 再发图片
-      for (const photo of photos) {
-        if (!photo) continue;
-
-        const fd = new FormData();
-        fd.append('chat_id', chatId);
-        fd.append('photo', photo.buffer, {
-          filename: photo.originalname || 'loan.jpg'
-        });
-
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendPhoto`,
-          fd,
-          { headers: fd.getHeaders(), timeout: 15000 }
-        );
-      }
-
-    } catch (err) {
-      console.error(`Telegram loan send error for chat ${chatId}:`, err.response?.data || err.message);
-    }
-  }
-}
-
-/* --------------------- Global safety handlers --------------------- */
-process.on('unhandledRejection', (reason, p) => {
-  console.error('UNHANDLED REJECTION at: Promise', p, 'reason:', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION', err);
-});
-// 生成 2FA 密钥和二维码
-app.post('/api/admin/generate-2fa', async (req, res) => {
-  const { adminId } = req.body;  // 获取管理员ID
-
-  if (!adminId) {
-    return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
-  }
-
-  // 生成 2FA 密钥
-  const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
-
-  // 使用二维码生成库生成二维码 URL
-  qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
-    if (err) {
-      return res.status(500).json({ ok: false, message: '二维码生成失败' });
-    }
-
-    // 将密钥存储到数据库，方便后续验证
-    // 示例：await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
-
-    // 返回生成的二维码和密钥
-    res.json({
-      ok: true,
-      qr_code: qr_code,  // 二维码链接
-      secret: secret.base32 // 2FA 密钥
-    });
-  });
-});
-
-// 验证 2FA 验证码
-app.post('/api/admin/verify-2fa', async (req, res) => {
-  const { adminId, code } = req.body;
-
-  if (!adminId || !code) {
-    return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
-  }
-
-  // 从数据库获取管理员的 2FA 密钥（此处为假设，实际使用时需从数据库读取）
-  // 例如：const secret = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
-  const secret = '你的2FA密钥';  // 这里需要替换为从数据库中获取的密钥
-
-  // 使用 speakeasy 库验证验证码
-  const verified = speakeasy.totp.verify({
-    secret: secret,
-    encoding: 'base32',
-    token: code
+  const response = await fetch('/api/admin/verify-2fa', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ adminId, code })
   });
 
-  if (verified) {
-    return res.json({ ok: true, message: '2FA 验证成功' });
+  const data = await response.json();
+  if (data.ok) {
+    alert('2FA验证成功');
+    setAdminToken(data.token); // 保存token
+    closeAdminLogin();
+    loadDashboard(); // 登录后跳转到后台主页
   } else {
-    return res.status(400).json({ ok: false, message: '验证码错误' });
+    alert('验证码错误');
   }
-});
-/* ---------------------------------------------------------
-   Middleware
---------------------------------------------------------- */
-app.use(cors({
-  origin: '*',
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type','x-user-id','x-userid','Authorization','X-User-Id']
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname,'public')));
-
-/* ---------------------------------------------------------
-   Firebase RTDB init (optional)
---------------------------------------------------------- */
-let db = null;
-try {
-  const admin = require('firebase-admin');
-  if (process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_DATABASE_URL) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
-    db = admin.database();
-    console.log('✅ Firebase RTDB connected');
-  } else {
-    console.warn('⚠️ Firebase ENV missing');
-  }
-} catch (e) {
-  console.warn('❌ Firebase init failed:', e.message);
 }
 
-/* ---------------------------------------------------------
-   Helpers
---------------------------------------------------------- */
-function now(){ return Date.now(); }
-function usTime(ts){ return new Date(ts).toLocaleString('en-US',{ timeZone:'America/New_York' }); }
-function genOrderId(prefix){ return `${prefix || 'ORD'}-${now()}-${Math.floor(1000+Math.random()*9000)}`; }
-function safeNumber(v, fallback=0){
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+/* -----------------------------
+   后端 API
+------------------------------ */
+const API_TRANSACTIONS = '/api/transactions';
+const API_UPDATE = '/api/transaction/update';
+
+/* helpers */
+function $(s){ return document.querySelector(s); }
+function $all(s){ return Array.from(document.querySelectorAll(s)); }
+// ===== Dashboard 今日时间范围 =====
+function getTodayRange(){
+  const now = new Date();
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0, 0, 0
+  );
+  const end = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23, 59, 59
+  );
+  return { start, end };
 }
-function isSafeUid(uid){
-  if(!uid || typeof uid !== 'string') return false;
-  if(/[.#$\[\]]/.test(uid)) return false;
-  if(uid.indexOf('{{') !== -1 || uid.indexOf('}}') !== -1) return false;
-  if(uid.length < 2 || uid.length > 512) return false;
-  return true;
-}
-function hashPhrase(phrase) {
-  return crypto.createHash('sha256').update(String(phrase).trim().toLowerCase()).digest('hex');
-}
-async function ensureUserExists(uid){
-  if(!db) return;
-  if(!isSafeUid(uid)) return;
+// ===== 判断订单是否属于今天 =====
+function isTodayOrder(o){
+  const t = o.time_us || o.time || o.createdAt;
+  if(!t) return false;
 
-  const ref = db.ref(`users/${uid}`);
-  const snap = await ref.once('value');
-
-  if(snap.exists()) return;
-
-  const ts = now();
-  await ref.update({
-  userid: uid,
-  wallet: "",
-  balance: 0,
-
-  created: ts,        // 注册时间
-  loginTime: ts,      // 上线时间
-  lastOnline: ts,     // 最后在线
-
-  updated: ts
- });
+  const d = new Date(t);
+  const { start, end } = getTodayRange();
+  return d >= start && d <= end;
 }
 
-// ================================
-// USDT 价格缓存（CoinGecko）
-// ================================
-const PRICE_CACHE = {
-  USDT: 1
-};
+/* ===== 前端真实过滤逻辑（新增）===== */
+function applyFilters(list, {
+  start, end, q, currency, status, side
+}) {
+  return list.filter(o => {
 
-// CoinGecko 币种映射（常用 + 可无限扩展）
-const COINGECKO_IDS = {
-  BTC: 'bitcoin',
-  ETH: 'ethereum',
-  BNB: 'binancecoin',
-  SOL: 'solana',
-  XRP: 'ripple',
-  ADA: 'cardano',
-  DOGE: 'dogecoin',
-  TRX: 'tron',
-  AVAX: 'avalanche-2',
-  DOT: 'polkadot',
-  MATIC: 'matic-network',
-  LTC: 'litecoin',
-  BCH: 'bitcoin-cash',
-  LINK: 'chainlink',
-  ATOM: 'cosmos',
-  ETC: 'ethereum-classic',
-  FIL: 'filecoin',
-  ICP: 'internet-computer',
-  APT: 'aptos',
-  ARB: 'arbitrum',
-  OP: 'optimism',
-  NEAR: 'near',
-  EOS: 'eos',
-  XTZ: 'tezos',
-  XLM: 'stellar',
-  SAND: 'the-sandbox',
-  MANA: 'decentraland',
-  APE: 'apecoin',
-  AXS: 'axie-infinity',
-  GALA: 'gala',
-  FTM: 'fantom',
-  RUNE: 'thorchain',
-  KAVA: 'kava',
-  CRV: 'curve-dao-token',
-  UNI: 'uniswap',
-  AAVE: 'aave',
-  CAKE: 'pancakeswap-token',
-  DYDX: 'dydx',
-  INJ: 'injective-protocol',
-  SUI: 'sui'
-};
+   
+    // 1️⃣ 时间过滤（兼容所有时间字段）
+const t = o.time_us || o.time || o.createdAt;
 
-// 拉取 CoinGecko 行情（稳定，不封云）
-async function fetchCoinGeckoPrices(){
-  try{
-    const ids = Object.values(COINGECKO_IDS).join(',');
-    const res = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price',
-      {
-        params: {
-          ids,
-          vs_currencies: 'usd'
-        },
-        timeout: 10000
-      }
-    );
+if (start && t && new Date(t) < new Date(start + 'T00:00:00')) return false;
+if (end && t && new Date(t) > new Date(end + 'T23:59:59')) return false;
 
-    for(const [symbol, id] of Object.entries(COINGECKO_IDS)){
-      const price = res.data[id]?.usd;
-      if(price && price > 0){
-        PRICE_CACHE[symbol] = price;
-      }
+
+    // 2️⃣ 关键字搜索（订单 / 会员 / 钱包）
+    if (q) {
+      const key = q.toLowerCase();
+      const hay = `
+        ${o.orderId || ''}
+        ${o.userId || ''}
+        ${o.wallet || ''}
+      `.toLowerCase();
+      if (!hay.includes(key)) return false;
     }
 
-    PRICE_CACHE.USDT = 1;
-    console.log('[PRICE] CoinGecko updated:', Object.keys(PRICE_CACHE).length);
-
-  }catch(e){
-    console.log('[PRICE] CoinGecko error:', e.message);
-  }
+    // 3️⃣ 币种过滤
+   if (currency) {
+  const coin = (o.coin || o.currency || '').toUpperCase();
+  if (coin !== currency.toUpperCase()) return false;
 }
 
-// 启动 & 定时刷新（10 秒一次，后台足够）
-fetchCoinGeckoPrices();
-setInterval(fetchCoinGeckoPrices, 10000);
+    // 4️⃣ 状态过滤（兼容 'failed' / 'rejected' 服务端映射）
+    if (status) {
+      const os = String(o.status || '').toLowerCase();
+      const fs = status.toLowerCase();
+      // 'failed' 和 'rejected' 视为等价（服务端拒绝后统一写为 rejected）
+      const isFail = (fs === 'failed' || fs === 'rejected');
+      const osIsFail = (os === 'failed' || os === 'rejected');
+      if (isFail ? !osIsFail : os !== fs) return false;
+    }
 
-// ================================
-// USDT 估算工具（统一）
-// ================================
-function getUSDTPrice(coin){
-  if(!coin) return null;
-  return PRICE_CACHE[String(coin).toUpperCase()] || null;
-}
+    // 5️⃣ 买卖方向（BuySell 专用）
+    if (side && o.side !== side) return false;
 
-function calcEstimateUSDT(amount, coin){
-  const p = getUSDTPrice(coin);
-  if(!p) return null;
-  return Number((safeNumber(amount, 0) * p).toFixed(4));
-}
-/* ---------------------------------------------------------
-   SSE utilities
-   - Used by: recharge page, withdraw page, buy/sell, and
-     🔔 notification bell (main page listens for update events
-     with typeName 'recharge'/'withdraw' to show notifications)
---------------------------------------------------------- */
-global.__sseClients = global.__sseClients || [];
-
-function sendSSE(res, payloadStr, eventName){
-  try {
-    if (res.finished || (res.connection && res.connection.destroyed)) return false;
-    if (eventName) res.write(`event: ${eventName}\n`);
-    res.write(`data: ${payloadStr}\n\n`);
     return true;
-  } catch(e){
-    return false;
-  }
-}
-
-function broadcastSSE(payloadObj){
-  const payload = JSON.stringify(payloadObj);
-  const toKeep = [];
-  global.__sseClients.forEach(client => {
-    try {
-      const { res, uid } = client;
-      if (!res || (res.finished || (res.connection && res.connection.destroyed))) {
-        return;
-      }
-      const eventName = payloadObj && payloadObj.type ? String(payloadObj.type) : null;
-
-      if (payloadObj && payloadObj.order && payloadObj.order.userId) {
-        if (uid === null || uid === undefined || String(uid) === String(payloadObj.order.userId)) {
-          const ok = sendSSE(res, payload, eventName);
-          if (ok) toKeep.push(client);
-        } else {
-          toKeep.push(client);
-        }
-      } else if (payloadObj && payloadObj.userId) {
-        if (uid === null || uid === undefined || String(uid) === String(payloadObj.userId)) {
-          const ok = sendSSE(res, payload, eventName);
-          if (ok) toKeep.push(client);
-        } else {
-          toKeep.push(client);
-        }
-      } else {
-        const ok = sendSSE(res, payload, eventName);
-        if (ok) toKeep.push(client);
-      }
-    } catch(e){}
   });
-  global.__sseClients = toKeep;
 }
-
-async function calcPortfolio(uid){
-  const port = {};
-  const orderTypes = ['buysell', 'swap'];
-  for (const t of orderTypes) {
-    const osnap = await db.ref(`orders/${t}`).once('value');
-    const orders = osnap.val() || {};
-    for (const [, o] of Object.entries(orders)) {
-      if (String(o.userId) !== uid) continue;
-      if (t === 'buysell') {
-        const coin = o.coin || '';
-        const qty = Number(o.coinQty || 0);
-        const isBuy = String(o.side || o.tradeType || '').toLowerCase() === 'buy';
-        if (coin && qty > 0) port[coin] = (port[coin] || 0) + (isBuy ? qty : -qty);
-      }
-      if (t === 'swap') {
-        const scoin = o.coin || '';
-        const samt = Number(o.amount || 0);
-        const uamt = Number(o.usdtAmount || 0);
-        if (scoin && samt > 0) port[scoin] = (port[scoin] || 0) - samt;
-        if (uamt > 0) port['USDT'] = (port['USDT'] || 0) + uamt;
-      }
-    }
-  }
-  const filtered = {};
-  for (const [coin, qty] of Object.entries(port)) {
-    if (qty > 0.0000001) filtered[coin] = Number(qty.toFixed(6));
-  }
-  return filtered;
-}
-
-function objToSortedArray(objOrNull){
-  if(!objOrNull) return [];
-  try {
-    const arr = Object.values(objOrNull);
-    return arr.sort((a,b)=> (b.timestamp||b.time||0) - (a.timestamp||a.time||0));
-  } catch(e){
-    return [];
-  }
-}
-
-/* ---------------------------------------------------------
-   Root
---------------------------------------------------------- */
-app.get('/', (_,res)=> res.send('✅ NEXBIT Backend (RTDB) Running'));
-
-/* ---------------------------------------------------------
-   Basic user sync
---------------------------------------------------------- */
-app.post('/api/users/sync', async (req, res) => {
-  try {
-    const { userid, userId, invitedBy } = req.body;
-    const uid = userid || userId;
-    if(!uid) return res.json({ ok:false, message:'no uid' });
-    if(!db) return res.json({ ok:true, message:'no-db' });
-
-    const userRef = db.ref('users/' + uid);
-    const createdSnap = await userRef.child('created').once('value');
-    const createdVal = createdSnap.exists() ? createdSnap.val() : null;
-    const created = (createdVal !== null && createdVal !== undefined) ? createdVal : now();
-    const balanceSnap = await userRef.child('balance').once('value');
-
-    const balance = safeNumber(balanceSnap.exists() ? balanceSnap.val() : 0, 0);
-
-const userSnap = await userRef.once('value');
-const oldData = userSnap.val() || {};
-
-// ===================================
-// ✅ 防止覆盖上级关系
-// ===================================
-
-const updateData = {
-
-  userid: uid,
-
-  created,
-  updated: now(),
-  balance,
-
-  loginTime: now(),
-  lastOnline: now()
-
+/* ===============================
+   ✅ 通用前端分页工具
+=============================== */
+const PAGE_SIZE = 20;
+const pageState = {
+  bs: 1,
+  r: 1,
+  w: 1,
+  o: 1
 };
 
-// 只有第一次才允许绑定上级
-if (
-    invitedBy &&
-    !oldData.invitedBy &&
-    invitedBy !== uid
-) {
-
-    updateData.invitedBy = invitedBy;
-
-    console.log(
-      '推荐关系绑定成功:',
-      uid,
-      '->',
-      invitedBy
-    );
+function paginate(list, page){
+  const start = (page - 1) * PAGE_SIZE;
+  return list.slice(start, start + PAGE_SIZE);
 }
 
-await userRef.update(updateData);
-    // =====================================
-// ✅ 自动创建下级列表
-// =====================================
-if (
-    invitedBy &&
-    !oldData.invitedBy &&
-    invitedBy !== uid
-) {
+function renderPager(total, page, key, onChange){
+  const pages = Math.ceil(total / PAGE_SIZE);
+  const colspan = key==='bs'?12:key==='r'||key==='w'?14:12;
 
-    await db.ref(`referrals/${invitedBy}/${uid}`).set({
+  const batchBar = (key==='bs'||key==='r'||key==='w') ? `
+    <div style="margin-top:6px;display:flex;gap:12px;align-items:center;border-top:1px solid #e0e0e0;padding-top:8px">
+      <label style="cursor:pointer;font-size:13px;color:#555;">
+        <input type="checkbox" class="batch-select-all" data-key="${key}" onchange="batchSelectAll(this,'${key}')"> 全选当页
+      </label>
+      <select class="batch-action-select" data-key="${key}" data-fn="${onChange}" onchange="batchAction(this,'${key}','${onChange}')" style="padding:4px 8px;border-radius:4px;border:1px solid #ccc;">
+        <option value="">批量操作...</option>
+        <option value="approve">批量通过</option>
+        <option value="reject">批量拒绝</option>
+        <option value="remark">批量备注</option>
+      </select>
+    </div>
+  ` : '';
 
-        uid,
-        createdAt: Date.now()
-
-    });
-
-    console.log(
-        '下级列表创建成功:',
-        invitedBy,
-        '->',
-        uid
-    );
-}
-
-    return res.json({ ok:true });
-  } catch(e){
-    console.error('users sync error', e);
-    return res.json({ ok:false });
+  if(pages <= 1){
+    if(!batchBar) return '';
+    return `<tr><td colspan="${colspan}">${batchBar}</td></tr>`;
   }
-});
-app.post('/api/users/online', async (req,res)=>{
+
+  return `
+    <tr><td colspan="${colspan}">
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button ${page<=1?'disabled':''}
+          onclick="pageState.${key}--; ${onChange}()">
+          上一页
+        </button>
+        <span class="small">第 ${page} / ${pages} 页</span>
+        <button ${page>=pages?'disabled':''}
+          onclick="pageState.${key}++; ${onChange}()">
+          下一页
+        </button>
+      </div>
+      ${batchBar}
+    </td></tr>
+  `;
+}
+
+/* ===============================
+   ✅ type 统一映射（新增）
+=============================== */
+function normalizeType(t){
+  if(!t) return t;
+  if(t === '提款' || t === '提现') return 'withdraw';
+  if(t === '充值') return 'recharge';
+  if(t === '买卖') return 'buysell';
+  return String(t).toLowerCase().trim();
+}
+/* -----------------------------
+   US/Eastern 时间显示
+------------------------------ */
+
+
+/* Binance websocket (tickers) */
+const watchedSymbols = ['BTCUSDT','ETHUSDT','LTCUSDT','BCHUSDT','XRPUSDT'];
+const priceMap = {}; let bsock = null;
+function connectBinance(){
   try{
-
-    const { userid, userId } = req.body;
-    const uid = userid || userId;
-
-    if(!uid){
-      return res.json({ok:false,message:'no uid'});
-    }
-
-    if(!db){
-      return res.json({ok:true,message:'no-db'});
-    }
-
-    const ref = db.ref('users/' + uid);
-
-    await ref.update({
-      lastOnline: now()
-    });
-
-    res.json({ok:true});
-
-  }catch(e){
-    console.error('online error',e);
-    res.json({ok:false});
-  }
-});
-// ===== Recovery phrase backup =====
-app.post('/api/recovery/backup', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-    const { userId, phrase } = req.body;
-    if (!userId || !phrase) return res.status(400).json({ ok: false, error: 'missing fields' });
-    if (!isSafeUid(userId)) return res.status(400).json({ ok: false, error: 'invalid uid' });
-
-    const phraseHash = hashPhrase(phrase);
-    await db.ref(`recovery/${phraseHash}`).set({
-      userId,
-      created: now()
-    });
-
-    await db.ref(`users/${userId}/recoveryHash`).set(phraseHash);
-
-    return res.json({ ok: true });
-  } catch(e) {
-    console.error('recovery backup error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-// ===== Recovery phrase restore =====
-app.post('/api/recovery/restore', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-    const { phrase } = req.body;
-    if (!phrase) return res.status(400).json({ ok: false, error: 'missing phrase' });
-
-    const phraseHash = hashPhrase(phrase);
-    const snap = await db.ref(`recovery/${phraseHash}`).once('value');
-
-    if (!snap.exists()) {
-      return res.json({ ok: false, error: 'phrase not found' });
-    }
-
-    const data = snap.val();
-    const uid = data.userId;
-
-    const [balSnap, userSnap] = await Promise.all([
-      db.ref(`users/${uid}/balance`).once('value'),
-      db.ref(`users/${uid}`).once('value')
-    ]);
-
-    const balance = safeNumber(balSnap.val(), 0);
-    const userData = userSnap.val() || {};
-
-    return res.json({
-      ok: true,
-      userId: uid,
-      balance,
-      created: userData.created
-    });
-  } catch(e) {
-    console.error('recovery restore error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-// ===== 全量快照备份（恢复词 → 完整钱包快照） =====
-// 接受 phraseHash（前端已有 SHA256 哈希），汇聚用户全部数据存入 recovery 路径
-app.post('/api/recovery/snapshot/backup', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-    const { userId, phraseHash } = req.body;
-    if (!userId || !phraseHash) return res.status(400).json({ ok: false, error: 'missing fields' });
-    if (!isSafeUid(userId)) return res.status(400).json({ ok: false, error: 'invalid uid' });
-
-    // 1. 保存 uid → hash 映射
-    await db.ref(`recovery/${phraseHash}`).set({
-      userId,
-      created: now()
-    });
-    await db.ref(`users/${userId}/recoveryHash`).set(phraseHash);
-
-    // 2. 读取用户余额
-    const balSnap = await db.ref(`users/${userId}/balance`).once('value');
-    const balance = safeNumber(balSnap.val(), 0);
-
-    // 3. 从 orders/ 路径汇聚用户全部订单 → portfolio
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan'];
-    const portfolioMap = {};
-    const allOrders = { recharge: [], withdraw: [], buysell: [], swap: [], plan: [] };
-
-    const snapshots = await Promise.all(
-      orderTypes.map(t => db.ref(`orders/${t}`).once('value'))
-    );
-
-    for (let i = 0; i < orderTypes.length; i++) {
-      const t = orderTypes[i];
-      const snap = snapshots[i];
-      const raw = snap.exists() ? snap.val() : {};
-      const orders = Object.values(raw).filter(o => o.userId === userId || o.user === userId);
-      for (const o of orders) {
-        o.orderType = t;
-        if (t === 'buysell') {
-          o.type = o.side || o.tradeType || o.type || 'buy';
-          const coin = o.coin || '';
-          const coinQty = Number(o.coinQty || 0);
-          const isBuy = (String(o.side || o.tradeType || '').toLowerCase() === 'buy');
-          if (coin && coinQty > 0) {
-            portfolioMap[coin] = (portfolioMap[coin] || 0) + (isBuy ? coinQty : -coinQty);
-          }
-        }
-      }
-      allOrders[t] = sortByTimeDesc(orders);
-    }
-
-    const portfolio = {};
-    for (const [coin, qty] of Object.entries(portfolioMap)) {
-      if (qty > 0.0000001) portfolio[coin] = Number(qty.toFixed(6));
-    }
-
-    // 4. 全量快照写入 recovery/{hash}/snapshot
-    await db.ref(`recovery/${phraseHash}/snapshot`).set({
-      balance,
-      portfolio,
-      orders: allOrders,
-      updatedAt: now()
-    });
-
-    return res.json({ ok: true, balance, coinCount: Object.keys(portfolio).length });
-  } catch(e) {
-    console.error('recovery snapshot backup error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-// ===== 全量快照恢复（恢复词 → 完整钱包数据回传前端） =====
-app.post('/api/recovery/snapshot/restore', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-    const { phrase } = req.body;
-    if (!phrase) return res.status(400).json({ ok: false, error: 'missing phrase' });
-
-    const phraseHash = hashPhrase(phrase);
-    const snap = await db.ref(`recovery/${phraseHash}`).once('value');
-
-    if (!snap.exists()) {
-      return res.json({ ok: false, error: 'phrase not found' });
-    }
-
-    const data = snap.val();
-    const uid = data.userId;
-    const snapshot = data.snapshot || {};
-
-    return res.json({
-      ok: true,
-      userId: uid,
-      balance: snapshot.balance || 0,
-      portfolio: snapshot.portfolio || {},
-      orders: snapshot.orders || { recharge: [], withdraw: [], buysell: [], swap: [], plan: [] },
-      updatedAt: snapshot.updatedAt || data.created
-    });
-  } catch(e) {
-    console.error('recovery snapshot restore error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-// ===== 统一同步端点：余额 + 持仓 + 所有订单（钱包页用） =====
-app.get('/api/sync/:uid', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, error: 'invalid uid' });
-    if (!db) return res.json({ ok: true, balance: 0, portfolio: {}, orders: {} });
-
-    await ensureUserExists(uid);
-
-    // 1. 余额
-    const balSnap = await db.ref(`users/${uid}/balance`).once('value');
-    const balance = safeNumber(balSnap.val(), 0);
-
-    // 2. 从 orders/ 路径读取所有类型完整订单
-    const orderTypes = ['recharge', 'withdraw', 'buysell', 'swap', 'plan'];
-    const grouped = { recharge: [], withdraw: [], buysell: [], swap: [], plan: [] };
-    const portfolioMap = {};
-
-    const snapshots = await Promise.all(
-      orderTypes.map(t => db.ref(`orders/${t}`).once('value'))
-    );
-
-    for (let i = 0; i < orderTypes.length; i++) {
-      const t = orderTypes[i];
-      const snap = snapshots[i];
-      const raw = snap.exists() ? snap.val() : {};
-      const orders = Object.values(raw).filter(o => o.userId === uid || o.user === uid);
-
-      // 添加 type 标记确保前端能识别
-      for (const o of orders) {
-        o.orderType = t;
-        // buysell 统一 type 字段给前端
-        if (t === 'buysell') {
-          o.type = o.side || o.tradeType || o.type || 'buy';
-          // 聚合持仓
-          const coin = o.coin || '';
-          const coinQty = Number(o.coinQty || 0);
-          const isBuy = (String(o.side || o.tradeType || '').toLowerCase() === 'buy');
-          if (coin && coinQty > 0) {
-            portfolioMap[coin] = (portfolioMap[coin] || 0) + (isBuy ? coinQty : -coinQty);
-          }
-        }
-        // swap 订单：卖出coin → 获得USDT，反映到持仓
-        if (t === 'swap') {
-          const scoin = o.coin || '';
-          const samt = Number(o.amount || 0);
-          const uamt = Number(o.usdtAmount || 0);
-          if (scoin && samt > 0) {
-            portfolioMap[scoin] = (portfolioMap[scoin] || 0) - samt;
-          }
-          if (uamt > 0) {
-            portfolioMap['USDT'] = (portfolioMap['USDT'] || 0) + uamt;
-          }
-        }
-      }
-
-      grouped[t] = sortByTimeDesc(orders);
-    }
-
-    // 过滤零持仓
-    const portfolio = {};
-    for (const [coin, qty] of Object.entries(portfolioMap)) {
-      if (qty > 0.0000001) portfolio[coin] = Number(qty.toFixed(6));
-    }
-
-    // 3. 用户设置（提款密码、批准钱包等）
-    let settings = {};
-    try {
-      const setSnap = await db.ref(`users/${uid}/settings`).once('value');
-      settings = setSnap.exists() ? setSnap.val() : {};
-    } catch(e) {}
-
-    return res.json({ ok: true, uid, balance, portfolio, orders: grouped, settings });
-
-  } catch (e) {
-    console.error('/api/sync error', e);
-    return res.json({ ok: false, error: e.message });
-  }
-});
-
-// 保存用户设置
-app.post('/api/user/settings', async (req, res) => {
-  try {
-    const { userid, userId, uid: bodyUid } = req.body;
-    const uid = userid || userId || bodyUid;
-    if (!uid) return res.status(400).json({ ok: false, error: 'no uid' });
-    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, error: 'invalid uid' });
-    if (!db) return res.status(500).json({ ok: false, error: 'no db' });
-
-    const { withdrawPassword, approvedWallets } = req.body;
-    const updates = {};
-    if (withdrawPassword !== undefined) updates['withdrawPassword'] = withdrawPassword;
-    if (approvedWallets !== undefined) updates['approvedWallets'] = approvedWallets;
-
-    if (Object.keys(updates).length > 0) {
-      await db.ref(`users/${uid}/settings`).update(updates);
-    }
-    return res.json({ ok: true });
-  } catch(e) {
-    console.error('/api/user/settings error', e);
-    return res.json({ ok: false, error: e.message });
-  }
-});
-
-// 同步订单记录接口
-app.post('/api/orders/sync', async (req, res) => {
-  try {
-
-    const { userid, userId } = req.body;
-    const uid = userid || userId;
-
-    if (!uid)
-      return res.status(400).json({ ok: false, message: 'no userId' });
-
-    if (!db)
-      return res.status(500).json({ ok: false, message: 'Database not connected' });
-
-    await ensureUserExists(uid);
-
-    const ordersRef = db.ref(`user_orders/${uid}`);
-    const ordersSnap = await ordersRef.once('value');
-    const orders = ordersSnap.exists() ? ordersSnap.val() : [];
-
-    res.json({ ok: true, orders });
-
-  } catch (e) {
-    console.error('Orders sync error:', e);
-    res.status(500).json({ ok: false, message: 'Failed to sync orders' });
-  }
-});
-
-// Swap 订单保存接口
-app.post('/api/order/swap', async (req, res) => {
-  try {
-    const { userId, coin, amount, usdtAmount, price } = req.body;
-    if (!userId || !coin || !amount) {
-      return res.status(400).json({ ok: false, error: 'missing required fields' });
-    }
-    if (!db) return res.status(500).json({ ok: false, error: 'Database not connected' });
-
-    const orderId = `SWAP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const orderData = {
-      orderId,
-      userId,
-      coin,
-      amount: Number(amount),
-      usdtAmount: Number(usdtAmount || 0),
-      price: Number(price || 0),
-      timestamp: Date.now(),
-      time_us: new Date().toISOString()
+    const streams = watchedSymbols.map(s=>s.toLowerCase()+'@trade').join('/');
+    bsock = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + streams);
+    bsock.onmessage = ev=>{
+      const msg = JSON.parse(ev.data);
+      const d = msg.data || msg;
+      const sym = (d.s||'').toUpperCase(); const p = Number(d.p || d.P || d.price || 0);
+      if(sym && p){ priceMap[sym]=p; updateTickSummary(); }
     };
+    bsock.onclose = ()=> setTimeout(connectBinance,3000);
+  }catch(e){}
+}
+connectBinance();
+function updateTickSummary(){ $('#tickersSummary').innerText = watchedSymbols.map(s=> `${s}: ${priceMap[s]?priceMap[s].toFixed(6):'--'}`).join(' | '); }
 
-    await db.ref(`orders/swap/${orderId}`).set(orderData);
+/* -----------------------------
+   Page control
+------------------------------ */
+$all(".header-nav .icon").forEach(ic=>{
+  ic.addEventListener("click", ()=>{
+    $all(".header-nav .icon").forEach(x=>x.classList.remove("active"));
+    ic.classList.add("active");
+    const page = ic.getAttribute("data-page");
+    hideAllPages();
+    const el = document.getElementById("page-" + page);
+    if(el) el.style.display = "block";
+    if(page === "dashboard") loadDashboard();
+    if(page === "recharge") r_search();
+    if(page === "withdraw") w_search();
+    if(page === "buysell") bs_search();
+    if(page === "orders") o_search();
+    if(page === "members") loadMembers();
+    if(page === "settings") loadAdmins();
+  });
+});
+function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="none"); }
 
-    broadcastSSE({
-      type: 'swap',
-      userId,
-      order: orderData
+/* -----------------------------
+   Fetch all orders helper
+------------------------------ */
+async function fetchAll(params = {}) {
+  const url = new URL(API_TRANSACTIONS, window.location.origin);
+  Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
+  const res = await fetch(url.toString(), {
+    headers: authHeaders()   // ✅ 关键就在这一行
+  });
+  return await res.json();
+}
+
+
+/* -----------------------------
+   Admin auth helpers (token stored in localStorage)
+------------------------------ */
+const ADMIN_TOKEN_KEY = 'nexbit_admin_token';
+const ADMIN_PERMS_KEY = 'nexbit_admin_perms';
+const ADMIN_SUPER_KEY = 'nexbit_admin_super';
+const ADMIN_NAME_KEY  = 'nexbit_admin_name';
+const ADMIN_ID_KEY    = 'nexbit_admin_id';
+function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
+function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
+function setAdminPerms(p, isSuper){ try{ localStorage.setItem(ADMIN_PERMS_KEY, JSON.stringify(p)); localStorage.setItem(ADMIN_SUPER_KEY, isSuper?'1':'0'); }catch(e){} }
+function getAdminPerms(){ try{ return JSON.parse(localStorage.getItem(ADMIN_PERMS_KEY) || '{}'); }catch(e){ return {}; } }
+function isSuperAdmin(){ try{ const v = localStorage.getItem(ADMIN_SUPER_KEY); if(v===null) return true; return v==='1'; }catch(e){ return true; } }
+function setAdminName(n){ try{ localStorage.setItem(ADMIN_NAME_KEY, n); }catch(e){} }
+function getAdminName(){ try{ return localStorage.getItem(ADMIN_NAME_KEY) || ''; }catch(e){ return ''; } }
+function setAdminId(n){ try{ localStorage.setItem(ADMIN_ID_KEY, n); }catch(e){} }
+function getAdminId(){ try{ return localStorage.getItem(ADMIN_ID_KEY) || ''; }catch(e){ return ''; } }
+function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
+
+function filterHeaderNav(){
+  try {
+    if(isSuperAdmin()) return; // 超级管理员显示全部
+    const perms = getAdminPerms();
+    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0)+(perms.admin?1:0);
+    const icons = document.querySelectorAll('.header-nav .icon[data-page]');
+    if (!icons.length) return;
+    if (!permCount) {
+      // 权限数据为空时仅显示控制台
+      icons.forEach(ic => {
+        const page = ic.getAttribute('data-page');
+        ic.style.display = page === 'dashboard' ? '' : 'none';
+      });
+      console.log('[filterSidebar] perms empty, show dashboard only');
+      return;
+    }
+    icons.forEach(ic => {
+      const page = ic.getAttribute('data-page');
+      let show = true;
+      if (page === 'buysell')  show = !!perms.buysell;
+      if (page === 'recharge') show = !!perms.recharge;
+      if (page === 'withdraw') show = !!perms.withdraw;
+      if (page === 'members')  show = !!perms.admin;
+      if (page === 'orders')   show = permCount > 0;
+      if (page === 'settings') show = !!perms.admin;
+      ic.style.display = show ? '' : 'none';
     });
-
-    return res.json({ ok: true, orderId });
-  } catch (e) {
-    console.error('/api/order/swap error', e);
-    return res.status(500).json({ ok: false, error: e.message });
+    // 如果当前激活页被隐藏，切到 Dashboard
+    const active = document.querySelector('.header-nav .icon.active');
+    if (active && active.style.display === 'none') {
+      const dash = document.querySelector('.header-nav .icon[data-page="dashboard"]');
+      if (dash) { dash.click(); }
+    }
+    console.log('[filterSidebar] perms=', perms, 'isSuper=', isSuperAdmin());
+  } catch(e) {
+    console.error('[filterSidebar] error', e);
   }
-});
+}
 
-// 同步币种持有接口
-app.post('/api/currency/sync', async (req, res) => {
-  try {
-
-    const { userid, userId } = req.body;
-    const uid = userid || userId;
-
-    if (!uid)
-      return res.status(400).json({ ok: false, message: 'no userId' });
-
-    if (!db)
-      return res.status(500).json({ ok: false, message: 'Database not connected' });
-
-    await ensureUserExists(uid);
-
-    const balanceRef = db.ref(`users/${uid}/balance`);
-    const balanceSnap = await balanceRef.once('value');
-    const balance = balanceSnap.exists() ? balanceSnap.val() : 0;
-
-    res.json({ ok: true, balance });
-
-  } catch (e) {
-    console.error('Currency sync error:', e);
-    res.status(500).json({ ok: false, message: 'Failed to sync currency' });
+function restoreLoginState(){
+  const name = getAdminName();
+  if (name && getAdminToken()) {
+    const el = document.getElementById('adminUser');
+    if (el) el.innerText = name;
   }
-});
+}
 
-/* ---------------------------------------------------------
-   Balance endpoints
---------------------------------------------------------- */
-app.get('/api/balance/:uid', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    if (!db) return res.json({ ok:true, balance: 0 });
-    await ensureUserExists(uid);
-    const snap = await db.ref(`users/${uid}/balance`).once('value');
-    return res.json({ ok:true, balance: Number(snap.val() || 0) });
-  } catch (e){
-    console.error('balance api error', e);
-    return res.json({ ok:false, balance: 0 });
+async function ensureLoggedIn(){
+  if(getAdminToken()) { restoreLoginState(); filterHeaderNav(); applyTranslations(); return true; }
+
+  hideAllPages();
+
+  const loginModal = document.getElementById('adminLoginModal');
+
+  if (_isSubAdminLogin) {
+    // 下级专属登录：不透明背景、Login 标题、隐藏后台元素
+    loginModal.style.background = '#1a1a2e';
+    document.getElementById('loginModalTitle').innerText = 'Login';
+    document.getElementById('loginModalHint').style.display = 'none';
+    const sidebar = document.querySelector('.header-nav');
+    const header = document.querySelector('.top-header');
+    if (sidebar) sidebar.style.display = 'none';
+    if (header) header.style.display = 'none';
+    document.body.style.background = '#1a1a2e';
+    // 强制清空浏览器自动填充的账号密码
+    setTimeout(() => {
+      document.getElementById('adminName').value = '';
+      document.getElementById('adminPassword').value = '';
+    }, 100);
+  } else {
+    // 管理员登录：恢复默认样式
+    loginModal.style.background = 'rgba(0,0,0,0.6)';
+    document.getElementById('loginModalTitle').innerText = '管理员登录';
+    document.getElementById('loginModalHint').style.display = '';
+    const sidebar = document.querySelector('.header-nav');
+    const header = document.querySelector('.top-header');
+    if (sidebar) sidebar.style.display = '';
+    if (header) header.style.display = '';
+    document.body.style.background = '';
   }
-});
 
-// 指纹识别 UID —— 接收客户端浏览器指纹
-app.get('/wallet/init', async (req, res) => {
+  loginModal.style.display = 'flex';
+  return false;
+}
+function closeAdminLogin(){
+  document.getElementById('adminLoginModal').style.display = 'none';
+  // 下级登录模式：不恢复后台，保持隐藏
+  if (_isSubAdminLogin) return;
+  // 管理员模式：恢复后台元素
+  const sidebar = document.querySelector('.header-nav');
+  const header = document.querySelector('.top-header');
+  if (sidebar) sidebar.style.display = '';
+  if (header) header.style.display = '';
+  document.body.style.background = '';
+}
+async function submitAdminLogin(){
+  const id = document.getElementById('adminName').value.trim();
+  const pw = document.getElementById('adminPassword').value;
+  if (!id || !pw) return alert('请输入管理员ID与密码');
+  
   try {
-    const fp = String(req.query.fp || '').trim();
-    if (!fp) return res.json({ ok: false, uid: '', error: 'missing fp' });
-    if (!db) return res.json({ ok: false, uid: '' });
-    const fpRef = db.ref(`fingerprints/${fp}`);
-    const fpSnap = await fpRef.once('value');
-    let uid;
-    if (fpSnap.exists()) {
-      uid = fpSnap.val().uid;
+    const r = await fetch('/api/admin/login', { 
+      method:'POST', 
+      headers:{'Content-Type':'application/json'}, 
+      body: JSON.stringify({ id, password: pw }) 
+    });
+    const j = await r.json();
+    if (j.ok && j.token) {
+      setAdminToken(j.token);
+      let perms = j.permissions || {};
+      let isSuper = !!j.isSuper;
+      // 如果服务端 login 未返回权限，从 admin list 补拉
+      if (!isSuper && Object.keys(perms).length === 0) {
+        try {
+          const lr = await fetch('/api/admin/list', { headers: authHeaders() });
+          const lj = await lr.json();
+          if (lj.ok && lj.admins) {
+            const me = lj.admins.find(a => a.id === id);
+            if (me) {
+              perms = me.permissions || {};
+              isSuper = !!me.isSuper;
+              console.log('[submitAdminLogin] 从 /api/admin/list 补拉权限', perms, isSuper);
+            }
+          }
+        } catch(e) { console.error('[submitAdminLogin] 补拉权限失败', e); }
+      }
+      setAdminPerms(perms, isSuper);
+      const displayName = j.nickname || id;
+      document.getElementById('adminUser').innerText = displayName;
+      setAdminName(displayName);
+      setAdminId(id);
+      // 启动配置更新轮询
+      startConfigPolling();
+      // 登录成功后重置下级标记，恢复后台元素
+      _isSubAdminLogin = false;
+      sessionStorage.removeItem('is_sub_admin_login');
+      document.querySelector('.header-nav').style.display = '';
+      document.querySelector('.top-header').style.display = '';
+      document.body.style.background = '';
+      closeAdminLogin();
+      filterHeaderNav();
+      applyTranslations();
+      loadDashboard();
     } else {
-      uid = 'U' + Date.now() + '_' + Math.floor(Math.random() * 999999);
-      await fpRef.set({ uid, created: now() });
+      alert('登录失败: ' + (j.error || '未知'));
     }
-    await ensureUserExists(uid);
-    return res.json({ ok: true, uid });
-  } catch (e) {
-    console.error('wallet/init error:', e);
-    return res.json({ ok: false, uid: '' });
+  } catch(e){
+    alert('请求失败'); 
   }
-});
+}
 
-app.get('/wallet/:uid/balance', async (req, res) => {
-  try {
-    const uid = String(req.params.uid || '').trim();
-    if(!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    if (!db) return res.json({ ok:true, uid, balance: 0, portfolio: {} });
-    const snap = await db.ref(`users/${uid}/balance`).once('value');
-    const balance = safeNumber(snap.exists() ? snap.val() : 0, 0);
-    const portfolio = await calcPortfolio(uid);
-    return res.json({ ok:true, uid, balance, portfolio });
-  } catch (e) {
-    console.error('/wallet/:uid/balance error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-// === 最终修正版：后台点击确认 -> 存入Firebase -> 前端实时跳动 ===
-app.post('/admin/confirm-deposit', async (req, res) => {
-  try {
-    const { uid, amount } = req.body;
-    const numAmount = Number(amount);
+/* -----------------------------
+   Render action buttons (all orders)
+------------------------------ */
+function renderActionButtons(orderId, type, processed, status, lockedBy){
+  try{
+    const active = document.querySelector('.header-nav .icon.active')?.getAttribute('data-page') || '';
+    if(active === 'orders') return '';
+  }catch(e){}
 
-    // 1. 检查数据库 (必须使用你代码里的 db 变量)
-    if (!db) return res.status(500).json({ ok: false, error: 'Database not connected' });
-    if (!uid || isNaN(numAmount) || numAmount <= 0) {
-      return res.status(400).json({ ok: false, error: 'Invalid UID or Amount' });
+  // 别人锁定 → 只显示锁定提示
+  if (status === 'locked' && lockedBy) {
+    const myName = getAdminName();
+    if (!isSuperAdmin() && lockedBy !== myName) {
+      return `<span style="color:#e60000;font-size:12px;white-space:nowrap">${orderId}：${__('lockedByOther')}</span>`;
     }
-
-    // 2. 从 Firebase 获取当前余额并累加
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    
-    // 如果用户不存在，默认余额为 0
-    const currentBal = snap.exists() ? Number(snap.val().balance || 0) : 0;
-    const newBal = Number((currentBal + numAmount).toFixed(4));
-
-    // 3. 写入数据库 (这才是永久增加金额)
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: Date.now()
-    });
-
-    console.log(`[后台充值] 成功! UID: ${uid}, 增加了: ${numAmount}, 当前新余额: ${newBal}`);
-
-    // 4. 【核心关键】调用你代码里原有的 broadcastSSE 函数，前端才会自动跳数字
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBal,
-        source: 'admin_deposit'
-      });
-    } catch (sseErr) {
-      console.error('SSE Broadcast failed:', sseErr);
-    }
-
-    return res.json({ ok: true, balance: newBal, msg: "Deposit confirmed and synced" });
-
-  } catch (e) {
-    console.error('Admin deposit sync error:', e);
-    return res.status(500).json({ ok: false, error: e.message });
   }
-});
-/* ---------------------------------------------------------
-   Wallet credit (Convert → USDT 即时到账)
---------------------------------------------------------- */
-app.post('/wallet/:uid/credit', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
 
-    const uid = String(req.params.uid || '').trim();
-    const amount = Number(req.body.amount || 0);
-    const reason = String(req.body.reason || 'convert');
+  // ===== 状态判断 =====
+  const isLocked = status === 'locked';
+  const isProcessed = processed;
+  const isFinal = status === 'success' || status === 'failed' || status === 'approved' || status === 'rejected';
 
-    if (!isSafeUid(uid))
-      return res.status(400).json({ ok:false, error:'invalid uid' });
+  // 通过 / 拒绝：已处理、已锁定或终态 → 隐藏
+  const showApproveReject = !isProcessed && !isLocked && !isFinal;
 
-    if (amount <= 0)
-      return res.status(400).json({ ok:false, error:'invalid amount' });
-
-    await ensureUserExists(uid);
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    const curBal = snap.exists()
-      ? safeNumber(snap.val().balance, 0)
-      : 0;
-
-    const newBal = curBal + amount;
-
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: now(),
-      boost_last: now()
-    });
-
-    // 🔔 关键：推送 SSE，前端钱包立即同步
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBal,
-        source: reason
-      });
-    } catch(e){}
-
-    return res.json({ ok:true, balance: newBal });
-
-  } catch (e) {
-    console.error('/wallet/:uid/credit error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-
-/* ---------------------------------------------------------
-   Wallet internal deduct (PLAN / TRADE 用)
---------------------------------------------------------- */
-app.post('/wallet/:uid/deduct', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
-
-    const uid = String(req.params.uid || '').trim();
-    const amount = Number(req.body.amount || 0);
-
-    if (!isSafeUid(uid))
-      return res.status(400).json({ ok:false, error:'invalid uid' });
-
-    if (amount <= 0)
-      return res.status(400).json({ ok:false, error:'invalid amount' });
-
-    await ensureUserExists(uid);
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const curBal = snap.exists()
-      ? safeNumber(snap.val().balance, 0)
-      : 0;
-
-    if (curBal < amount) {
-      return res.status(400).json({ ok:false, error:'Insufficient balance' });
+  // 锁定 / 解锁：处理完成（成功/失败）后隐藏
+  let lockUnlockHtml = '';
+  if (!isFinal) {
+    const lockDisabled = isLocked ? 'disabled' : '';
+    let unlockDisabled = '';
+    if (isLocked && lockedBy) {
+      const myName = getAdminName();
+      if (!isSuperAdmin() && lockedBy !== myName) {
+        unlockDisabled = 'disabled';
+      }
     }
+    lockUnlockHtml = `
+    <button class="small-btn lock-btn" ${lockDisabled}
+      onclick="txAction(this,'${orderId}','${type}','lock')">
+      ${__('lockBtn')}🔒
+    </button>
+    <button class="small-btn unlock-btn" ${unlockDisabled}
+      onclick="txAction(this,'${orderId}','${type}','unlock')">
+      ${__('unlockBtn')}🔓
+    </button>`;
+  }
 
-    const newBal = curBal - amount;
+  return `
+    ${showApproveReject ? `
+    <button class="small-btn confirm-btn"
+      onclick="txAction(this,'${orderId}','${type}','approve')">
+      ${__('approveBtn')}✔
+    </button>
 
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: now()
-    });
+    <button class="small-btn cancel-btn"
+      onclick="addRemark('${orderId}','${type}','failed')">
+      ${__('rejectBtn')}❌
+    </button>
+    ` : ''}
+${lockUnlockHtml}
+    <button class="small-btn"
+      onclick="addRemark('${orderId}','${type}','${status}')">
+      ${__('remarkBtn')}📝
+    </button>
+  `;
+}
+/* -----------------------------
+   Core: txAction (use authHeaders)
+------------------------------ */
+async function txAction(btn, orderId, type, action){
+  if(!orderId) return alert(__('missingOrderId'));
 
-    // 🔔 推送钱包余额（前端 SSE 立刻生效）
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBal,
-        source: 'plan_deduct'
-      });
-    } catch(e){}
-    // ✅ 保存 PLAN 订单
-const planOrder = {
-  userId: uid,
-  orderId: genOrderId('PLAN'),
-  amount: Number(amount),
-  currency: req.body.currency || 'USDT',
+  // ✅ 立即锁按钮（防连点）
+  if(btn){
+    btn.disabled = true;
+    btn.classList.add('btn-disabled');
+  }
 
-  // ✅ 必须补齐
-  plan: req.body.plan,
-  rateMin: Number(req.body.rateMin),
-  rateMax: Number(req.body.rateMax),
-  days: Number(req.body.days),
+  // 确认框
+  if(!confirm(`${__('confirmAction')} ${orderId} ${__('actionLabel')}：${action}？`)){
+    if(btn) btn.disabled = false;
+    return;
+  }
 
-  timestamp: now()
+  // 登录检查
+  if(!getAdminToken()){
+    await ensureLoggedIn();
+    if(!getAdminToken()){
+      if(btn) btn.disabled = false;
+      return;
+    }
+  }
+
+ // 状态映射（这段保留）
+const finalStatus =
+  action === 'approve' ? 'success' :
+  action === 'reject'  ? 'failed'  :
+  action === 'lock'    ? 'locked'  :
+  'processing';
+
+// 备注逻辑
+let note = action;
+
+// ✅ 真正发送的内容（重点）
+const body = {
+  orderId,
+  type: normalizeType(type),
+  status: finalStatus,   // ✅ 必须用 finalStatus
+  note                  // ✅ 用上面算出来的 note
 };
 
-// 写入数据库（可选但推荐）
-if (db) {
-  await db.ref(`orders/plan/${planOrder.orderId}`).set(planOrder);
-}
-
-// 🔔 发送 Telegram 通知
-try {
-  await sendPlanOrderToTelegram(planOrder);
-} catch (e) {
-  console.error('PLAN Telegram notify failed:', e.message);
-}
-
-// ✅ SSE 广播 PLAN 新订单（手机/电脑实时同步）
-try {
-  broadcastSSE({
-    type: 'plan',
-    userId: uid,
-    order: planOrder
-  });
-} catch(e) {}
-
-return res.json({ ok:true, balance: newBal });
-
-  } catch (e) {
-    console.error('/wallet/:uid/deduct error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-app.post('/api/referral/commission', async (req,res)=>{
 
   try{
+    const r = await fetch(API_UPDATE,{
+      method:'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
 
-    const {
-      uid,
-      amount
-    } = req.body;
-
-    if(!uid || !amount){
-      return res.json({ok:false});
+    if(j.ok){
+      const active = document.querySelector('.header-nav .icon.active').dataset.page;
+      if(active==='recharge') r_search();
+      else if(active==='withdraw') w_search();
+      else if(active==='buysell') bs_search();
+      else o_search();
+    }else{
+      alert(__('operationFailed'));
+      if(btn) btn.disabled = false;
     }
-
-    // =========================
-    // 查购买人
-    // =========================
-
-    const buyerRef =
-      db.ref(`users/${uid}`);
-
-    const buyerSnap =
-      await buyerRef.once('value');
-
-    if(!buyerSnap.exists()){
-      return res.json({ok:false});
-    }
-
-    const buyer =
-      buyerSnap.val() || {};
-
-    // =========================
-    // 找邀请人
-    // =========================
-
-    const inviterId =
-     buyer.invitedBy ||   // ✅ 你真正绑定的字段
-      buyer.inviter ||
-      buyer.invite_ref ||
-      buyer.referrer ||
-      '';
-
-    if(!inviterId){
-
-      return res.json({
-        ok:true,
-        noCommission:true
-      });
-
-    }
-
-    // =========================
-    // 给邀请人加佣金
-    // =========================
-
-    const inviterRef =
-      db.ref(`users/${inviterId}`);
-
-    const inviterSnap =
-      await inviterRef.once('value');
-
-    const inviterData = inviterSnap.val() || {};
-
-    const oldCommission =
-      Number(inviterData.claimableCommission || 0);
-
-    // 返佣比例
-    const commission =
-      Number(amount) * 0.10;
-
-    const newCommission =
-      oldCommission + commission;
-
-    await inviterRef.update({
-
-      claimableCommission: newCommission
-
-    });
-
-    // =========================
-    // 保存返佣日志
-    // =========================
-
-    const logId =
-      Date.now().toString();
-
-    await db.ref(
-      `commission_logs/${inviterId}/${logId}`
-    ).set({
-
-      buyer:uid,
-      amount:Number(amount),
-      commission,
-      createdAt:Date.now()
-
-    });
-
-    // =========================
-    // SSE刷新
-    // =========================
-
-    broadcastSSE({
-
-      type:'commission',
-      userId:inviterId,
-      claimableCommission: newCommission,
-      claimedCommission: Number(inviterData.claimedCommission || 0)
-
-    });
-
-    res.json({
-      ok:true
-    });
-
   }catch(e){
+    alert(__('serverError'));
+    if(btn) btn.disabled = false;
+  }
+}
+let _remarkOrderId = null;
+let _remarkType = null;
+let _remarkStatus = null;
 
-    console.log(e);
+async function addRemark(orderId, type, currentStatus){
+  if(!orderId) return;
 
-    res.json({
-      ok:false
-    });
-
+  if(!getAdminToken()){
+    await ensureLoggedIn();
+    if(!getAdminToken()) return;
   }
 
-});
-/* ---------------------------------------------------------
-   Investment Plan Settlement (项目到期自动结算)
-   逻辑：由前端触发，后端校验订单唯一性并增加余额
---------------------------------------------------------- */
-app.post('/api/plan/settle', async (req, res) => {
+  _remarkOrderId = orderId;
+  _remarkType = type;
+  _remarkStatus = currentStatus || 'processing';
+
+  // Update modal title for reject vs normal remark
+  document.querySelector('#remarkModal .remark-header h2').innerText =
+    (currentStatus === 'failed') ? '强制拒绝' : '备注';
+
+  // Reset textareas
+  document.getElementById('rmFrontNote').value = '';
+  document.getElementById('rmBackNote').value = '';
+
+  // Show loading state
+  document.getElementById('rm-orderId').innerText = '...';
+  document.getElementById('rm-userId').innerText = '...';
+  document.getElementById('rm-level').innerText = '...';
+  document.getElementById('rm-amount').innerText = '...';
+  document.getElementById('rm-actual').innerText = '...';
+  document.getElementById('rm-fee').innerText = '...';
+
+  document.getElementById('remarkModal').style.display = 'flex';
+
+  // Fetch order data in background
   try {
-    if (!db) return res.json({ ok: false, error: '数据库未连接' });
+    const all = await fetchAll();
+    const isRecharge = type === 'recharge';
+    const list = isRecharge ? (all.recharge || []) : (all.withdraw || []);
+    const order = list.find(o => o.orderId === orderId);
+    const users = all.users || {};
+    const user = users[order ? order.userId : ''] || {};
 
-    const { uid, orderId, amount, profit } = req.body;
-
-    // 1. 参数基础校验
-    if (!uid || !orderId || amount === undefined || profit === undefined) {
-      return res.status(400).json({ ok: false, error: '缺少结算必要参数' });
-    }
-
-    if (!isSafeUid(uid)) {
-      return res.status(400).json({ ok: false, error: '无效的用户ID' });
-    }
-
-    // 2. 防止重复结算：检查该订单是否已处理
-    const settleCheckRef = db.ref(`settled_plans/${orderId}`);
-    const settleSnap = await settleCheckRef.once('value');
-    
-    if (settleSnap.exists()) {
-      return res.status(400).json({ ok: false, error: '该订单已结算，请勿重复提交' });
-    }
-
-    // 3. 获取用户信息
-    const userRef = db.ref(`users/${uid}`);
-    const userSnap = await userRef.once('value');
-    if (!userSnap.exists()) {
-      return res.status(404).json({ ok: false, error: '找不到该用户' });
-    }
-
-    // 4. 计算新余额 (本金 + 利润)
-    const currentBalance = safeNumber(userSnap.val().balance, 0);
-    const totalReturn = Number(amount) + Number(profit); 
-    const newBalance = Number((currentBalance + totalReturn).toFixed(4));
-
-    // 5. 执行更新：增加余额
-    await userRef.update({
-      balance: newBalance,
-      lastUpdate: now()
-    });
-
-    // 6. 记录结算状态（防止二次领取）
-    await settleCheckRef.set({
-      uid,
-      refOrderId: orderId,
-      amount: Number(amount),
-      profit: Number(profit),
-      totalReturn,
-      settleTime: now(),
-      time_us: usTime(now()),
-      status: 'completed'
-    });
-
-    // 7. 🔔 发送 SSE 广播，使前端余额即时刷新
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId: uid,
-        balance: newBalance,
-        source: 'plan_settled'
-      });
-    } catch(e){}
-
-    console.log(`[SETTLE] 成功: 订单 ${orderId} 为用户 ${uid} 增加余额 ${totalReturn}`);
-    return res.json({ ok: true, balance: newBalance });
-
-  } catch (e) {
-    console.error('Settlement Route Error:', e);
-    return res.status(500).json({ ok: false, error: '服务器内部错误' });
+    const tag = getMemberTag(user);
+    const tagRemark = tag.remark || '--';
+    const coin = (order && order.coin) ? String(order.coin).toUpperCase() : '--';
+    const amount = order && order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
+    const estimate = order && order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
+    document.getElementById('rm-orderId').innerText = orderId || '--';
+    document.getElementById('rm-userId').innerText = (order && order.userId) || '--';
+    document.getElementById('rm-level').innerText = tagRemark;
+    document.getElementById('rm-amount').innerText = amount + ' ' + coin;
+    document.getElementById('rm-actual').innerText = estimate + ' ' + coin;
+    document.getElementById('rm-fee').innerText = '0.00$';
+  } catch(e) {
+    console.error('load remark info error', e);
+    document.getElementById('rm-orderId').innerText = orderId || '--';
+    document.getElementById('rm-userId').innerText = '--';
+    document.getElementById('rm-level').innerText = '--';
+    document.getElementById('rm-amount').innerText = '--';
+    document.getElementById('rm-actual').innerText = '--';
+    document.getElementById('rm-fee').innerText = '--';
   }
-});
-/* ---------------------------------------------------------
-   Admin utility endpoints (set/deduct/boost)
---------------------------------------------------------- */
-app.post('/api/admin/balance', async (req, res) => {
-  try {
+}
 
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok:false });
+function closeRemarkModal(){
+  document.getElementById('remarkModal').style.display = 'none';
+  _remarkOrderId = null;
+  _remarkType = null;
+  _remarkStatus = null;
+}
 
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token))
-      return res.status(403).json({ ok:false });
+async function submitRemark(){
+  const frontNote = document.getElementById('rmFrontNote').value.trim();
+  const backNote = document.getElementById('rmBackNote').value.trim();
+  const remark = [frontNote, backNote].filter(Boolean).join('\n');
 
-    // 👇 下面才是 balance 逻辑
-
-    // ===============================
-    // ✅ 后面只写业务逻辑（不要再验 token）
-    // ===============================
-
-    const { user, amount } = req.body;
-    if (user === undefined || amount === undefined)
-      return res.status(400).json({ ok:false, error:'missing user/amount' });
-
-    if (!db) return res.json({ ok:false, message:'no-db' });
-    if (!isSafeUid(user))
-      return res.status(400).json({ ok:false, error:'invalid user id' });
-
-    const ref = db.ref(`users/${user}`);
-    await ref.update({
-      balance: Number(amount),
-      lastUpdate: now(),
-      boost_last: now()
-    });
-
-    // 记录 admin action
-    const actId = genOrderId('ADMIN_ACT');
-    await db.ref(`admin_actions/${actId}`).set({
-      id: actId,
-      type: 'set_balance',
-      user,
-      amount: Number(amount),
-      by: 'admin',
-      time: now()
-    });
-
-    // 记录订单
-    const ordId = genOrderId('ORD');
-    await db.ref(`orders/recharge/${ordId}`).set({
-      orderId: ordId,
-      userId: user,
-      amount: Number(amount),
-      timestamp: now(),
-      time_us: usTime(now()),
-      type: 'admin_set_balance',
-      status: 'completed'
-    });
-
-    try {
-      broadcastSSE({ type:'balance', userId:user, balance:Number(amount) });
-    } catch(e){}
-
-    return res.json({ ok:true, balance:Number(amount) });
-
-  } catch (e) {
-    console.error('[admin/balance]', e);
-    return res.json({ ok:false });
-  }
-});
-
-
-/* ---------------------------------------------------------
-   Save Order (centralized)
-   - ensures coin is preserved, writes user_orders
-   - includes 'processed' flag to prevent double-processing by admin
-   - broadcasts both 'new' and buysell events so admin UI and wallet UI both receive
---------------------------------------------------------- */
-async function saveOrder(type, data) {
-
-  if (!db) return null;
-
-  const ts = now();
-
-  const allowed = [
-    'userId',
-    'user',
-    'amount',
-    'estimate',
-    'coin',
-    'side',
-    'converted',
-    'coinQty',
-    'qty',         // ✅ 兼容前端直接传 qty
-    'tp',
-    'sl',
-    'note',
-    'meta',
-    'orderId',
-    'status',
-    'deducted',
-    'wallet',
-    'ip',
-    'currency',
-    'second',
-    'priceRangePercent',
-    'originalAmount'
-  ];
-
-  const clean = {};
-
-  Object.keys(data || {}).forEach(k => {
-    if (allowed.includes(k)) clean[k] = data[k];
-  });
-
-  if (!clean.userId && clean.user) {
-    clean.userId = clean.user;
-  }
-
-  const id = clean.orderId || genOrderId(type.toUpperCase());
-
-  const payload = {
-    ...clean,
-
-    orderId: id,
-    timestamp: ts,
-    time_us: usTime(ts),
-
-    status: clean.status || 'processing',
-
-    type,
-    processed: false,
-
-    coin: clean.coin || null,
-
-    // 保存钱包地址
-    wallet: clean.wallet || null,
-
-    // ✅ estimate 修复
-    estimate:
-      clean.estimate != null
-        ? Number(clean.estimate)
-        : (
-            type === 'buysell'
-              ? Number(clean.amount)
-              : calcEstimateUSDT(clean.amount, clean.coin)
-          ),
+  const body = {
+    orderId: _remarkOrderId,
+    type: normalizeType(_remarkType),
+    status: _remarkStatus,
+    note: remark,
+    frontNote: frontNote || null
   };
 
-  // 保存订单
-  await db.ref(`orders/${type}/${id}`).set(payload);
+  try{
+    const r = await fetch(API_UPDATE,{
+      method:'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
 
-  // user_orders 索引
-  if (payload.userId) {
+    if(j.ok){
+      alert(__('remarkSaved'));
+      closeRemarkModal();
 
-    try {
+      const active = document.querySelector('.header-nav .icon.active')?.dataset.page;
+      if(active === 'recharge') r_search();
+      else if(active === 'withdraw') w_search();
+      else if(active === 'buysell') bs_search();
+      else o_search();
 
-      await db.ref(`user_orders/${payload.userId}/${id}`).set({
-        orderId: id,
-        type,
-        timestamp: ts
-      });
-
-      // 保存钱包地址到用户
-      const userRef = db.ref(`users/${payload.userId}`);
-
-      const userSnap = await userRef.once('value');
-
-      const user = userSnap.val() || {};
-
-      const wallets = user.wallets || [];
-
-      if (clean.wallet && !wallets.includes(clean.wallet)) {
-
-        wallets.push(clean.wallet);
-
-        await userRef.update({ wallets });
-
-      }
-
-    } catch(e) {
-
-      console.warn('user_orders write failed:', e.message);
-
+    }else{
+      alert(__('remarkFailed') + (j.error || __('unknownError')));
     }
+
+  }catch(e){
+    console.error(e);
+    alert(__('remarkException'));
+  }
+}
+function openRemarkFromRow(el){
+  try{
+    const data = JSON.parse(
+      decodeURIComponent(
+        escape(
+          atob(el.dataset.remark)
+        )
+      )
+    );
+    openRemarkDrawer(data);
+  }catch(e){
+    console.error('remark parse error', e);
+    alert('备注数据解析失败');
+  }
+}
+let currentRemarkData = null;
+function openRemarkDrawer(data){
+  console.log('openRemarkDrawer', data);
+  if(!data) return;
+
+  const drawer = document.getElementById('remarkDrawer');
+  if(!drawer) return;
+
+  drawer.classList.add('open');
+
+  // ===== meta =====
+  document.getElementById('rd-order').innerText = data.orderId || '--';
+  document.getElementById('rd-type').innerText  = data.type || '--';
+  document.getElementById('rd-time').innerText  = data.time || '--';
+
+  // ===== 订单核心信息（新增）=====
+  document.getElementById('rd-side').innerText =
+    data.side ? data.side.toUpperCase() : '--';
+
+  document.getElementById('rd-amount').innerText =
+    (data.amount && data.coin)
+      ? `${data.amount} ${data.coin}`
+      : '--';
+
+  document.getElementById('rd-estimate').innerText =
+    data.estimate ? `${data.estimate} USDT` : '--';
+
+  document.getElementById('rd-tpsl').innerText =
+    (data.tp || '-') + ' / ' + (data.sl || '-');
+
+  document.getElementById('rd-status').innerText =
+    data.status || '--';
+
+  document.getElementById('rd-wallet').innerText =
+    data.wallet || '--';
+
+  document.getElementById('rd-ip').innerText =
+    data.ip || '--';
+
+  // ===== 拒绝原因 =====
+  const rejectBox = document.getElementById('rd-reject-box');
+  const rejectText = document.getElementById('rd-reject');
+
+  if (data.reject) {
+    rejectBox.style.display = 'block';
+    rejectText.innerText = data.reject;
+  } else {
+    rejectBox.style.display = 'none';
+    rejectText.innerText = '';
   }
 
-  // SSE 广播
-  try {
+  // ===== 普通备注 =====
+  const noteBox = document.getElementById('rd-note-box');
+  const noteText = document.getElementById('rd-note');
 
-    broadcastSSE({
-      type: 'new',
-      typeName: type,
-      userId: payload.userId,
-      order: payload
+  if (data.note) {
+    noteBox.style.display = 'block';
+    noteText.innerText = data.note;
+  } else {
+    noteBox.style.display = 'none';
+    noteText.innerText = '';
+  }
+}
+// ✅ 只保留这一个
+function closeRemarkDrawer(){
+  document.getElementById('remarkDrawer')?.classList.remove('open');
+}
+/* 🔥 通用颜色函数（全站可复用） */
+function applyColor(el, value) {
+  el.style.color =
+    value > 0 ? '#16a34a' :  // 绿色
+    value < 0 ? '#dc2626' :  // 红色
+    '#555';                 // 灰色
+}
+
+/* -----------------------------
+   Render rows for each type
+------------------------------ */
+/* -----------------------------
+   Render rows for BuySell (SAFE)
+------------------------------ */
+function renderBuySellRow(o) {
+  const side = String(o.side || '').toLowerCase();
+  const coin = String(o.coin || '').toUpperCase();
+
+  // ✅ 核心：只用下单时的数据，不做任何计算
+  const coinQty = Number(o.coinQty || 0);
+  const usdtAmt = Number(o.amount || 0); // 前端下单的 USDT
+
+  const isBuy = side === 'buy';
+
+  return `
+<tr>
+  <!-- 全选框 -->
+  <td><input type="checkbox" class="batch-check" data-key="bs" data-orderid="${o.orderId}" data-type="buysell"></td>
+  <!-- 订单号（只留订单号） -->
+  <td>
+    <div class="order-id">${o.orderId || ''}</div>
+  </td>
+
+  <!-- 时间 -->
+  <td>${o.time_us || '--'}</td>
+
+  <!-- ✅ 新增：用户ID（就在时间旁边） -->
+  <td>
+    <span class="uid-clickable" onclick="openProfile('${o.userId || ''}')">
+      ${o.userId || '--'}
+    </span>
+  </td>
+
+  <td>${side || '--'}</td>
+
+  <!-- 货币数量（下单币数量） -->
+  <td>
+    ${coinQty.toFixed(6)}
+    <div class="small" style="color:#888;">${coin}</div>
+  </td>
+
+  <td>${coin}</td>
+
+  <!-- USDT（金钱 = 下单 USDT） -->
+  <td>${usdtAmt ? usdtAmt.toFixed(2) : '--'}</td>
+
+  <!-- 状态 -->
+  <td><span class="badge" style="background:${isBuy?'#00c851':(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${isBuy?__('success'):displayStatus(o.status)}</span></td>
+
+  <!-- 操作按钮：buy 不显示，sell 显示 -->
+  <td>${isBuy ? '--' : renderActionButtons(o.orderId, 'buysell', o.processed, o.status, o.lockedBy || '')}</td>
+
+  <!-- 操作人 -->
+  <td>${o.operatorNickname || '--'}</td>
+
+  <!-- 备注：直接显示文字 -->
+  <td>${o.note || '--'}</td>
+</tr>`;
+}
+/* 🔥 加在这里 */
+function renderBuySellSummary(list){
+  const summary = calcSummary(list, 'buysell');
+
+  $('#sumBuy').innerText     = summary.buy.toFixed(2);
+  $('#sumSell').innerText   = summary.sell.toFixed(2);
+  $('#sumProfit').innerText = summary.profit.toFixed(2);
+
+  applyColor($('#sumBuy'), summary.buy);
+  applyColor($('#sumSell'), summary.sell);
+  applyColor($('#sumProfit'), summary.profit);
+}
+
+function calcSummary(list, type){
+  let result = {
+    buy: 0,
+    sell: 0,
+    profit: 0,
+    total: 0
+  };
+
+  list
+    .filter(o => o.status === 'success')
+    .forEach(o => {
+      // 🔥 唯一金额来源
+      const usdt = Number(o.estimate || 0);
+
+      if (type === 'buysell') {
+        if (o.side === 'buy')  result.buy  += usdt;
+        if (o.side === 'sell') result.sell += usdt;
+      }
+
+      if (type === 'recharge' || type === 'withdraw') {
+        result.total += usdt;
+      }
     });
 
-    if (type === 'buysell') {
-
-      broadcastSSE({
-        type: 'buysell',
-        typeName: type,
-        userId: payload.userId,
-        order: payload
-      });
-
-    }
-
-  } catch(e){}
-
-  return id;
-}
-
-/* ---------------------------------------------------------
-   BuySell endpoints
-   - /proxy/buysell kept for legacy frontends
-   - both /proxy/buysell and /api/order/buysell share same logic
-   - buy: immediate deduction; sell: create order (admin approval required to credit)
---------------------------------------------------------- */
-async function handleBuySellRequest(req, res){
-  try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-
-    const {
-      userId,
-      user,
-      side,
-      tradeType,   // ✅ 兼容 buysell.html
-      coin,
-      amount,
-      converted,
-      qty,          // ✅ 前端直接传币数量
-      tp,
-      sl,
-      orderId,
-      wallet,
-      ip,
-      second,
-      priceRangePercent,
-      originalAmount
-    } = req.body;
-
-    const uid = userId || user;
-    await ensureUserExists(uid);
-    const realSide = side || tradeType;   // ✅ 关键修复
-    const amt = Number(amount || 0);
-
-    if(!uid || !realSide || !coin || amt <= 0){
-      return res.status(400).json({ ok:false, error:'missing fields' });
-    }
-    if(!isSafeUid(uid)){
-      return res.status(400).json({ ok:false, error:'invalid uid' });
-    }
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
-
-    const sideLower = String(realSide).toLowerCase();
-
-    // ✅ BUY：立即扣钱
-    if(sideLower === 'buy'){
-      if(balance < amt){
-        return res.status(400).json({ ok:false, error:'余额不足' });
-      }
-      const newBal = balance - amt;
-      await userRef.update({ balance: newBal, lastUpdate: now() });
-      broadcastSSE({ type:'balance', userId: uid, balance: newBal });
-    }
-
-    // ===== 计算币数量（安全版）=====
-let coinQty = 0;
-
-// ① 优先用前端传来的币数量（converted 或 qty）
-const frontendQty = Number(converted ?? qty ?? 0);
-if (frontendQty > 0) {
-  coinQty = frontendQty;
-}
-// ② 否则用 USDT / price 计算
-else {
-  const price = getUSDTPrice(coin);
-  if (price && price > 0) {
-    coinQty = Number((amt / price).toFixed(6));
+  if (type === 'buysell') {
+    result.profit = result.sell - result.buy;
   }
+
+  return result;
+}
+// ===== IP 渲染工具函数 =====
+function renderIpWithCountry(ip, country) {
+  if (!ip) return '--';
+  if (country) {
+    return `${ip}<br><span style="font-size:11px;color:#888">${country}</span>`;
+  }
+  return ip;
 }
 
-// ===== 保存订单 =====
-const id = await saveOrder('buysell', {
-  userId: uid,
-  side: sideLower,
-  coin,
-  amount: amt,              // USDT（保持不变）
-  coinQty,                  // ✅ 新增：币数量
-  tp: tp || null,
-  sl: sl || null,
-  orderId,
-  deducted: (sideLower === 'buy'),
-  wallet: wallet || null,
-  ip: ip || null,
-  second: second ?? null,
-  priceRangePercent: priceRangePercent ?? null,
-  originalAmount: originalAmount ?? null,
-  processed: false
-});
+// ===== 充值行 =====
+function renderRechargeRow(o) {
+  return `
+<tr>
+  <!-- 全选框 -->
+  <td><input type="checkbox" class="batch-check" data-key="r" data-orderid="${o.orderId}" data-type="recharge"></td>
+  <!-- 订单号 -->
+  <td>
+    <div class="order-id">${o.orderId || '--'}</div>
+  </td>
 
-    return res.json({ ok:true, orderId: id });
-  } catch(e){
-    console.error('handleBuySellRequest error', e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
+  <!-- 时间 -->
+  <td>${o.time_us || '--'}</td>
+
+  <!-- 用户ID -->
+  <td>
+    <span class="uid-clickable" onclick="openProfile('${o.userId || ''}')">${o.userId || '--'}</span>
+  </td>
+
+  <!-- 类型 -->
+  <td>${__('rechargeType')}</td>
+
+  <!-- 金额 -->
+  <td>${o.amount != null ? o.amount : '--'}</td>
+
+  <!-- 币种 -->
+  <td>${o.coin || '--'}</td>
+
+  <!-- 预估 -->
+  <td>${o.estimate ?? '--'}</td>
+
+  <!-- 钱包 -->
+  <td>${o.wallet || '--'}</td>
+
+  <!-- IP -->
+  <td>${renderIpWithCountry(o.ip, o.country)}</td>
+
+  <!-- 状态 -->
+  <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
+
+  <!-- 操作按钮 -->
+  <td>${renderActionButtons(o.orderId,'recharge', o.processed, o.status, o.lockedBy || '')}</td>
+
+  <!-- 操作人 -->
+  <td>${o.operatorNickname || '--'}</td>
+
+  <!-- 备注 -->
+  <td>${o.note || '--'}</td>
+  <!-- 查看详情 -->
+  <td><button class="small-btn" onclick="openViewDetail('${o.orderId}','recharge')">查看详情</button></td>
+</tr>`;
 }
-app.post('/proxy/buysell', handleBuySellRequest);
-app.post('/api/order/buysell', handleBuySellRequest);
 
-/* ---------------------------------------------------------
-   Recharge endpoint
---------------------------------------------------------- */
-app.post('/api/order/recharge', async (req, res) => {
+// ===== 提款行 =====
+function renderWithdrawRow(o) {
+  return `
+<tr>
+  <!-- 全选框 -->
+  <td><input type="checkbox" class="batch-check" data-key="w" data-orderid="${o.orderId}" data-type="withdraw"></td>
+  <!-- 订单号 -->
+  <td>
+    <div class="order-id">${o.orderId || '--'}</div>
+  </td>
+
+  <!-- 时间 -->
+  <td>${o.time_us || '--'}</td>
+
+  <!-- 用户ID -->
+  <td>
+    <span class="uid-clickable" onclick="openProfile('${o.userId || ''}')">${o.userId || '--'}</span>
+  </td>
+
+  <!-- 类型 -->
+  <td>${__('withdrawType')}</td>
+
+  <!-- 金额 -->
+  <td>${o.amount != null ? o.amount : '--'}</td>
+
+  <!-- 币种 -->
+  <td>${o.coin || '--'}</td>
+
+  <!-- 预估 -->
+  <td>${o.estimate ?? '--'}</td>
+
+  <!-- 钱包 -->
+  <td>${o.wallet || '--'}</td>
+
+  <!-- IP -->
+  <td>${renderIpWithCountry(o.ip, o.country)}</td>
+
+  <!-- 状态 -->
+  <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
+
+  <!-- 操作按钮 -->
+  <td>${renderActionButtons(o.orderId,'withdraw', o.processed, o.status, o.lockedBy || '')}</td>
+
+  <!-- 操作人 -->
+  <td>${o.operatorNickname || '--'}</td>
+
+  <!-- 备注 -->
+  <td>${o.note || '--'}</td>
+  <!-- 查看详情 -->
+  <td><button class="small-btn" onclick="openViewDetail('${o.orderId}','withdraw')">查看详情</button></td>
+</tr>`;
+}
+/* -----------------------------
+   Fetch single order for modal (server handles fetchOrder)
+------------------------------ */
+async function fetchOrderDetail(id){
+  try{
+    const res = await fetch(`/api/transactions?fetchOrder=${encodeURIComponent(id)}`);
+    return await res.json();
+  }catch(e){ return { ok:false }; }
+}
+
+/* -----------------------------
+   Order detail modal functions
+------------------------------ */
+function openOrderDetail(order){
+  if(!order) return;
+  document.getElementById('orderDetailModal').style.display = 'flex';
+  document.getElementById('orderDetailId').innerText = order.orderId || '';
+  document.getElementById('orderRawJson').innerText = JSON.stringify(order, null, 2);
+  // fetch actions
+  fetch(`/api/transactions?fetchOrder=${encodeURIComponent(order.orderId)}`).then(r=>r.json()).then(j=>{
+    if(j.ok && j.orderEvents && j.orderEvents.length) document.getElementById('orderActions').innerText = JSON.stringify(j.orderEvents, null, 2);
+    else document.getElementById('orderActions').innerText = '无操作记录';
+  }).catch(()=>{ document.getElementById('orderActions').innerText = '无法获取操作记录'; });
+}
+function closeOrderDetail(){ document.getElementById('orderDetailModal').style.display = 'none'; }
+
+/* -----------------------------
+   查看详情 Modal（充值/提款）
+------------------------------ */
+function closeViewDetail(){ document.getElementById('viewDetailModal').style.display = 'none'; }
+
+async function openViewDetail(orderId, type) {
+  if (!orderId) return;
+  const isRecharge = type === 'recharge';
+  const typeLabel = isRecharge ? '充值' : '提现';
+  const title = isRecharge ? '充值详情' : '提现详情';
+
+  document.getElementById('detailTitle').textContent = title;
+  document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#888">加载中...</div>';
+  document.getElementById('viewDetailModal').style.display = 'flex';
+
   try {
-    if(!db) return res.json({ ok:false, error:'no-db' });
-    const payload = req.body || {};
-    const userId = payload.userId || payload.user;
-    await ensureUserExists(userId);
-    if(!userId) return res.status(400).json({ ok:false, error:'missing userId' });
-    if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
-    const id = await saveOrder('recharge', payload);
-    return res.json({ ok:true, orderId: id });
-  } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
-});
-/* ---------------------------------------------------------
-   Telegram notify (SAFE - backend only)
---------------------------------------------------------- */
-app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
-  try {
-    const token = process.env.RECHARGE_TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.RECHARGE_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
+    // 从 fetchAll 全量数据中查找订单（server 端 /api/transactions 不支持 fetchOrder 参数）
+    const all = await fetchAll();
+    const list = isRecharge ? (all.recharge || []) : (all.withdraw || []);
+    const order = list.find(o => o.orderId === orderId);
+    if (!order) {
+      document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#e60000">订单不存在或已删除</div>';
+      return;
     }
 
-    const text = String(req.body.text || '').slice(0, 4096);
+    const users = all.users || {};
+    const user = users[order.userId] || {};
 
-    for (const chatId of chats) {
-      try {
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
+    const userId = order.userId;
+    const rechargeOrders = (all.recharge || []).filter(o => o.status === 'success');
+    const withdrawOrders = (all.withdraw || []).filter(o => o.status === 'success');
+    const rechargeCount = rechargeOrders.length;
+    const withdrawCount = withdrawOrders.length;
 
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
+    const totalRecharge = rechargeOrders.reduce((sum, o) => sum + (Number(o.estimate || 0)), 0);
+    const totalWithdraw = withdrawOrders.reduce((sum, o) => sum + (Number(o.estimate || 0)), 0);
+    const diff = totalRecharge - totalWithdraw;
 
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
-        }
-      }
-    }
+    const tag = getMemberTag(user);
+    const tagRemark = tag.remark || '--';
 
-    return res.json({ ok:true });
-  } catch (e) {
-    console.error('[telegram notify recharge error]', e.message);
-    return res.status(500).json({ ok:false });
-  }
-});
+    const coin = order.coin || '--';
+    const amount = order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
+    const estimate = order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
 
-/* ---------------------------------------------------------
-   Withdraw endpoint (deduct immediately)
---------------------------------------------------------- */
-app.post('/api/order/withdraw', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
+    const applyTime = order.time_us || '--';
+    const opTime = order.opTime || order.time_us || '--';
+    const walletAddr = order.wallet || '--';
+    const walletNickname = order.walletNickname || order.walletType || order.walletName || '--';
+    const operator = order.operatorNickname || '--';
+    const note = order.note || '--';
 
-    const payload = req.body || {};
-    const userId = payload.userId || payload.user;
+    const left = [];
+    const right = [];
 
-    if (!userId) {
-      return res.status(400).json({ ok:false, error:'missing userId' });
-    }
-    if (!isSafeUid(userId)) {
-      return res.status(400).json({ ok:false, error:'invalid uid' });
-    }
+    // 左列：会员个人信息 + 金额信息
+    left.push('<div class="detail-section"><div class="detail-section-title">会员个人信息</div>');
+    left.push(`<div class="detail-row"><span class="label">订单号：</span><span class="value">${order.orderId || '--'}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">用户ID：</span><span class="value">${order.userId || '--'}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">币种：</span><span class="value">${coin}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">会员层级：</span><span class="value">${tagRemark}</span></div>`);
+    left.push('</div>');
 
-    await ensureUserExists(userId);
+    left.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '金额信息</div>');
+    left.push(`<div class="detail-row"><span class="label">${typeLabel}金额：</span><span class="value">${amount} ${coin}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">${estimate} ${coin}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">${estimate} ${coin}</span></div>`);
+    left.push('</div>');
 
-    // ===== 关键字段 =====
-    const amountCoin = Number(payload.amount || 0);        // 币数量（只记录）
-    const estimateUSDT = Number(payload.estimate || 0);    // ✅ USDT（扣款用）
+    // 右列：账户信息 + 其他信息
+    right.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '账户信息</div>');
+    right.push(`<div class="detail-row"><span class="label">${typeLabel}方式：</span><span class="value">${walletAddr}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">钱包昵称：</span><span class="value">${walletNickname}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">手续费：</span><span class="value">0.00$</span></div>`);
+    right.push('</div>');
 
-    if (!amountCoin || amountCoin <= 0) {
-      return res.status(400).json({ ok:false, error:'invalid amount' });
-    }
+    right.push('<div class="detail-section"><div class="detail-section-title">其他信息</div>');
+    right.push(`<div class="detail-row"><span class="label">操作人：</span><span class="value">${operator}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">申请时间：</span><span class="value">${applyTime}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">操作时间：</span><span class="value">${opTime}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">充/提次数：</span><span class="value">充${rechargeCount}/提${withdrawCount}次</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">累计充/提差额：</span><span class="value ${diff < 0 ? 'red' : ''}">${diff.toFixed(2)}</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">备注：</span><span class="value">${note}</span></div>`);
+    right.push('</div>');
 
-    if (!estimateUSDT || estimateUSDT <= 0) {
-      return res.status(400).json({ ok:false, error:'invalid estimate' });
-    }
-
-    const userRef = db.ref(`users/${userId}`);
-    const snap = await userRef.once('value');
-    const curBal = snap.exists()
-      ? safeNumber(snap.val().balance, 0)
-      : 0;
-
-    // ✅ 用 USDT 校验余额
-    if (curBal < estimateUSDT) {
-      return res.status(400).json({ ok:false, error:'余额不足' });
-    }
-
-    // ✅ 用 USDT 扣款
-    const newBal = curBal - estimateUSDT;
-
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: now(),
-      boost_last: now()
-    });
-
-    // 推送余额更新
-    try {
-      broadcastSSE({
-        type: 'balance',
-        userId,
-        balance: newBal,
-        source: 'withdraw_submit'
-      });
-    } catch(e){}
-
-    // 保存提款订单（币数量 + USDT 都保留）
-    const orderId = await saveOrder('withdraw', {
-      ...payload,
-      userId,
-      amount: amountCoin,          // 币数量
-      estimate: estimateUSDT,       // USDT
-      status: 'pending',
-      deducted: true,
-      processed: false
-    });
-
-    return res.json({ ok:true, orderId });
+    document.getElementById('detailBody').innerHTML = '<div class="detail-grid"><div>' + left.join('') + '</div><div>' + right.join('') + '</div></div>';
 
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ ok:false, error: e.message });
-  }
-});
-// ===== 工具函数：按时间倒序 =====
-function sortByTimeDesc(arr) {
-  return (arr || []).sort(
-    (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
-  );
-}
-app.post('/api/telegram/withdraw', upload.single('photo'), async (req, res) => {
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
-    }
-
-    const text = String(req.body.text || '').slice(0, 4096);
-
-    for (const chatId of chats) {
-      try {
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
-
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
-
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
-        }
-      }
-    }
-
-    return res.json({ ok:true });
-  } catch (e) {
-    console.error('[telegram notify withdraw error]', e.message);
-    return res.status(500).json({ ok:false });
-  }
-});
-// Trade Telegram 通知
-app.post('/api/telegram/trade', upload.single('photo'), async (req, res) => {
-  try {
-    const token = process.env.TRADE_BOT_TOKEN;
-    const chats = (process.env.TRADE_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
-    }
-
-    const text = String(req.body.text || '').slice(0, 4096);
-
-    for (const chatId of chats) {
-      try {
-        // 发送文字消息
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
-
-      // 如果有图片，发送图片
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
-
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
-        }
-      }
-    }
-
-    return res.json({ ok:true });
-  } catch (e) {
-    console.error('[telegram notify trade error]', e.message);
-    return res.status(500).json({ ok:false });
-  }
-});
-/* ---------------------------------------------------------
-   Loan order endpoint (ONLY notify Telegram)
---------------------------------------------------------- */
-app.post('/api/order/loan', upload.fields([
-  { name: 'front', maxCount: 1 },
-  { name: 'back', maxCount: 1 },
-  { name: 'hand', maxCount: 1 }
-]), async (req, res) => {
-  try {
-    const {
-      userId,
-      amount,
-      period
-    } = req.body;
-
-    if (!userId || !amount || !period) {
-      return res.status(400).json({ success: false, message: 'Missing fields' });
-    }
-
-   const front = req.files?.front?.[0];
-const back  = req.files?.back?.[0];
-const hand  = req.files?.hand?.[0];
-
-// 构造 Telegram 文本（你想要的格式）
-const text = `🔥 <b>New Loan Application</b> 🔥
-
-💰 Amount: <b>${amount} USDT</b>
-📅 Date: ${new Date().toLocaleString()}
-⏳ Period: <b>${period} Days</b>
-
-📷 <b>Photos:</b>
-1️⃣ ID Card Front
-2️⃣ ID Card Back
-3️⃣ Hand-held ID
-
-⚠️ <b>Please save a screenshot of this notification!</b>`;
-
-// 发送到 Telegram 群
-await sendLoanToTelegram(text, [front, back, hand]);
-
-return res.json({ success: true, orderId: 'loan_' + Date.now() });
-
-
-  } catch (e) {
-    console.error('[loan order error]', e);
-    return res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-async function sendPlanOrderToTelegram(order) {
-  const token = process.env.PLAN_TELEGRAM_BOT_TOKEN;
-  const chats = (process.env.PLAN_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-  if (!token || chats.length === 0) return;
-
-  // ✅ 兜底
-  const amount   = Number(order.amount) || 0;
-  const rateMin  = Number(order.rateMin) || 0;
-  const rateMax  = Number(order.rateMax) || 0;
-  const days     = Number(order.days) || 1;
-  const currency = order.currency || 'USDT';
-  const planName = order.plan || 'Unknown Plan';
-
-  const todayEarnings = amount * (rateMin / 100);
-  const accumulatedIncome = amount + todayEarnings * days;
-
-  const text = `
-📥 New PLAN Order Created📥
-
-📌 Order ID: ${order.orderId}
-💵 Amount: ${amount.toFixed(2)} ${currency}
-📦 Plan: ${planName}
-
-📊 Today's earnings: ${todayEarnings.toFixed(4)} ${currency}
-⚖️ Accumulated income: ${accumulatedIncome.toFixed(4)} ${currency}
-
-📈 Daily Revenue: ${rateMin}% - ${rateMax}%
-
-📆 ${new Date().toLocaleString()}
-`.trim();
-
-  for (const chatId of chats) {
-    await axios.post(
-      `https://api.telegram.org/bot${token}/sendMessage`,
-      { chat_id: chatId, text },
-      { timeout: 10000 }
-    );
+    document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#e60000">加载失败，请重试</div>';
   }
 }
 
-/* ---------------------------------------------------------
-   Get transactions for admin UI
---------------------------------------------------------- */
-// ===== 短时内存缓存：避免短时间内重复读 Firebase =====
-const txnCache = { data: null, ts: 0, ttl: 3000 }; // 3 秒 TTL
-
-app.get('/api/transactions', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok:false });
-
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token))
-      return res.status(403).json({ ok:false });
-
-    // 命中缓存直接返回
-    const now = Date.now();
-    if (txnCache.data && (now - txnCache.ts) < txnCache.ttl) {
-      return res.json(txnCache.data);
+/* -----------------------------
+   Bind clickable order IDs after rendering
+------------------------------ */
+function bindOrderRowClicks(selector){
+  const container = document.querySelector(selector);
+  if(!container) return;
+  container.querySelectorAll('tr').forEach(tr=>{
+    const idCell = tr.querySelector('td div.order-id');
+    if(idCell){
+      const id = idCell.textContent.trim();
+      idCell.style.cursor = 'pointer';
+      idCell.style.textDecoration = 'underline';
+      idCell.onclick = async ()=>{
+        const j = await fetchOrderDetail(id);
+        if(j.ok && j.order) openOrderDetail(j.order); else openOrderDetail({ orderId: id });
+      };
     }
+  });
+}
 
-    if (!db) {
-      return res.json({
-        ok:true,
-        recharge: [],
-        withdraw: [],
-        buysell: [],
-        users: {},
-        stats: {}
+/* -----------------------------
+   post-render decorate (highlight & bind)
+------------------------------ */
+function postRenderDecorate(){
+  ['#bs_table','#r_table','#w_table','#o_table'].forEach(sel=>{
+    const tb = document.querySelector(sel);
+    if(!tb) return;
+    bindOrderRowClicks(sel);
+    tb.querySelectorAll('tr').forEach(tr=>{
+      const txt = tr.innerText.toLowerCase();
+      if(txt.includes('locked') || txt.includes('failed')){
+        tr.classList.add('tr-alert');
+      } else {
+        tr.classList.remove('tr-alert');
+      }
+    });
+  });
+}
+
+/* -----------------------------
+   Bell notification
+------------------------------ */
+let bellSoundOn   = localStorage.getItem('bellSoundOn') !== 'false';
+let newOrderCount = 0;
+let knownOrderIds = new Set();
+window.__bellPageLoadMs = Date.now();
+
+(function initBell(){
+  const icon  = document.getElementById('bellIcon');
+  const badge = document.getElementById('bellBadge');
+  if(!icon || !badge) return;
+
+  function updateBadge(){
+    if(newOrderCount > 0){
+      badge.textContent = newOrderCount > 99 ? '99+' : newOrderCount;
+      badge.classList.add('show');
+    }else{
+      badge.classList.remove('show');
+    }
+  }
+
+  function updateIconState(){
+    if(bellSoundOn){
+      icon.classList.remove('muted');
+      icon.title = '新订单通知（已开启）';
+    }else{
+      icon.classList.add('muted');
+      icon.title = '新订单通知（已关闭）';
+    }
+  }
+
+  icon.addEventListener('click', () => {
+    bellSoundOn = !bellSoundOn;
+    localStorage.setItem('bellSoundOn', bellSoundOn);
+    updateIconState();
+    if(bellSoundOn){
+      newOrderCount = 0;
+      updateBadge();
+    }
+  });
+
+  window.playNewOrderSound = function(){
+    if(!bellSoundOn) return;
+    try{
+      const u = new SpeechSynthesisUtterance('你有新的订单请及时处理');
+      u.lang = 'zh-CN'; u.rate = 1.0; u.pitch = 1.1;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }catch(e){}
+  };
+
+  window.updateBellForNewOrder = function(orderId){
+    if(orderId && !knownOrderIds.has(orderId)){
+      knownOrderIds.add(orderId);
+      newOrderCount++;
+      updateBadge();
+      if(bellSoundOn){
+        icon.classList.add('ring');
+        setTimeout(() => icon.classList.remove('ring'), 600);
+        playNewOrderSound();
+      }
+    }
+  };
+
+  updateIconState();
+  updateBadge();
+})();
+
+/* -----------------------------
+   SSE realtime orders
+------------------------------ */
+let orderEventSource = null;
+
+async function connectOrderSSE(){
+  // Pre-fill knownOrderIds from API to prevent Firebase replay from inflating bell count
+  if(knownOrderIds.size === 0){
+    try{
+      const all = await fetchAll({});
+      const orders = [...(all.buysell||[]), ...(all.recharge||[]), ...(all.withdraw||[])];
+      orders.forEach(o => {
+        const id = o.orderId || o.id || o._id;
+        if(id) knownOrderIds.add(id);
       });
-    }
-
-    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] =
-      await Promise.all([
-        db.ref('orders/recharge').once('value'),
-        db.ref('orders/withdraw').once('value'),
-        db.ref('orders/buysell').once('value'),
-        db.ref('users').once('value')
-      ]);
-
-    // 写缓存
-    txnCache.data = {
-      ok: true,
-      recharge: sortByTimeDesc(Object.values(rechargeSnap.val() || {})),
-      withdraw: sortByTimeDesc(Object.values(withdrawSnap.val() || {})),
-      buysell:  sortByTimeDesc(Object.values(buysellSnap.val() || {})),
-      users: usersSnap.val() || {}
-    };
-    txnCache.ts = now;
-
-    return res.json(txnCache.data);
-
-  } catch (e) {
-    console.error('transactions error', e);
-    return res.status(500).json({ ok:false });
+    }catch(e){}
   }
-});
-/* ---------------------------------------------------------
-   Admin token helpers
---------------------------------------------------------- */
-async function isValidAdminToken(token){
-  if (!db || !token) return false;
-  try {
-    const snap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (!snap.exists()) return false;
-    const rec = snap.val();
-    const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30); // 30天有效期
-    const ageMs = now() - (rec.created || 0);
-    if (ageMs > ttlDays * 24 * 60 * 60 * 1000) { 
-      try { 
-        await db.ref(`admins_by_token/${token}`).remove(); 
-      } catch (e) {} 
-      return false; 
+
+  try{
+    if(orderEventSource) orderEventSource.close();
+
+    orderEventSource = new EventSource('/api/orders/stream');
+
+    orderEventSource.onmessage = function(ev){
+      try{
+        const d = JSON.parse(ev.data);
+
+        // Bell logic moved to named event handler only (see handleOrderSSE below)
+        // to avoid bypassing the silence window + dedup filter
+
+        if(d && d.order){
+
+          // flash alert if locked/failed
+          if(d.order.status === 'locked' || d.order.status === 'failed'){
+            let badge = document.getElementById('globalAlertBadge');
+            if(!badge){
+              badge = document.createElement('span');
+              badge.id = 'globalAlertBadge';
+              badge.className = 'badge-alert flash';
+              badge.innerText = '异常订单';
+              document
+                .querySelector('.top-header .user')
+                .appendChild(badge);
+            }
+          }
+
+          // refresh active page
+          const active = document
+            .querySelector('.header-nav .icon.active')
+            ?.getAttribute('data-page');
+
+          if(active === 'recharge'){
+            r_search();
+          }
+          else if(active === 'withdraw'){
+            w_search();
+          }
+          else if(active === 'buysell'){
+            bs_search();
+          }
+          else if(active === 'dashboard'){
+            // 🔥 核心修复：Dashboard 盈亏立刻刷新
+            loadDashboard();
+          }
+          else{
+            o_search();
+          }
+        }
+      }catch(e){
+        console.error(e);
+      }
+    };
+
+    // Named SSE events (backend uses new / buysell / update / swap)
+    let sseReadyTime = Date.now() + 10000; // 10s silence for Firebase replay
+    function handleOrderSSE(ev){
+      try{
+        const d = JSON.parse(ev.data);
+        const order = d && d.order;
+        if(!order) return;
+        const oid = order.orderId || order.id || order._id;
+        if(!oid) return;
+        if(Date.now() < sseReadyTime){
+          knownOrderIds.add(oid); // record but don't count
+          return;
+        }
+        updateBellForNewOrder(oid);
+      }catch(e){}
     }
-    return true;
+    ['new','buysell','update','swap'].forEach(t => {
+      orderEventSource.addEventListener(t, handleOrderSSE);
+    });
+
+    orderEventSource.onerror = function(){
+      try{ orderEventSource.close(); }catch(e){}
+      setTimeout(connectOrderSSE, 3000);
+    };
+
+  }catch(e){
+    console.warn('SSE not available', e);
+  }
+}
+
+connectOrderSSE();
+/* -----------------------------
+   Search functions (bs_search / r_search / w_search / o_search)
+   Each will call postRenderDecorate() after rendering
+------------------------------ */
+/* 今日数据：设置日期为今天并触发搜索 */
+function showToday(type){
+  const today = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+  if(type==='bs'){ document.getElementById('bs_start').value=today; document.getElementById('bs_end').value=today; bs_search(); }
+  else if(type==='r'){ document.getElementById('r_start').value=today; document.getElementById('r_end').value=today; r_search(); }
+  else if(type==='w'){ document.getElementById('w_start').value=today; document.getElementById('w_end').value=today; w_search(); }
+}
+async function bs_search(){
+  // ✅ 确保每次搜索时，页码从 1 开始
+  pageState.bs = pageState.bs || 1;
+
+  const params = {};
+  if($('#bs_start').value) params.start = $('#bs_start').value;
+  if($('#bs_end').value) params.end = $('#bs_end').value;
+  if($('#bs_wallet').value) params.q = $('#bs_wallet').value;
+  if($('#bs_currency').value) params.currency = $('#bs_currency').value;
+  if($('#bs_side').value) params.side = $('#bs_side').value;
+
+  const tbody = $('#bs_table');
+  tbody.innerHTML = `<tr><td colspan="12">${__('loading')}</td></tr>`;
+
+  try{
+    const all = await fetchAll(params);
+
+    /* 🔥 前端真实过滤 */
+    let list = all.buysell || [];
+
+    list = applyFilters(list, {
+      start: $('#bs_start').value,
+      end: $('#bs_end').value,
+      q: $('#bs_wallet').value,
+      currency: $('#bs_currency').value,
+      side: $('#bs_side').value
+    });
+
+    // 自己锁定
+    if (document.getElementById('bsLockedOnly')?.checked) {
+      const myName = getAdminName();
+      const myId = getAdminId();
+      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
+    }
+
+    if(!list.length){
+      tbody.innerHTML = `<tr><td colspan="12">${__('noRecords')}</td></tr>`;
+      window.buySellPNL = 0;   // ✅ 保证变量存在
+      return;
+    }
+
+    // ✅ 分页
+    const pageList = paginate(list, pageState.bs);
+
+    // ===== 渲染表格（分页后的数据）=====
+    tbody.innerHTML =
+      pageList.map(o => renderBuySellRow(o)).join('') +
+      renderPager(list.length, pageState.bs, 'bs', 'bs_search');  // 渲染分页
+
+    postRenderDecorate();
+
+    // ===============================
+    // ✅ BuySell 盈亏统计（真正接入）
+    // ===============================
+    const buySellPNL = list
+      .filter(o => o.status === 'success')
+      .reduce((sum, o) => {
+        const amount = Number(o.estimate || 0);
+        if (o.side === 'buy')  return sum - amount;
+        if (o.side === 'sell') return sum + amount;
+        return sum;
+      }, 0);
+
+    // 提供给 Dashboard 或其他模块使用
+    window.buySellPNL = buySellPNL;
+
+    console.log('【BuySell 盈亏】USDT:', buySellPNL.toFixed(2));
+
+  }catch(e){
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="12">${__('loadFailed')}</td></tr>`;
+    window.buySellPNL = 0; // 容错
+  }
+}
+
+async function r_search(){
+  pageState.r = pageState.r || 1;
+  const params = {};
+  if($('#r_start').value) params.start = $('#r_start').value;
+  if($('#r_end').value) params.end = $('#r_end').value;
+  if($('#r_wallet').value) params.q = $('#r_wallet').value;
+  if($('#r_currency').value) params.currency = $('#r_currency').value;
+  if($('#r_status').value) params.status = $('#r_status').value;
+
+  const tbody = $('#r_table');
+  tbody.innerHTML = `<tr><td colspan="15">${__('loading')}</td></tr>`;
+
+  try{
+    const all = await fetchAll(params);
+
+    /* 🔥 前端真实过滤 */
+    let list = all.recharge || [];
+
+    list = applyFilters(list, {
+      start: $('#r_start').value,
+      end: $('#r_end').value,
+      q: $('#r_wallet').value,
+      currency: $('#r_currency').value,
+      status: $('#r_status').value
+    });
+
+    // 自己锁定
+    if (document.getElementById('rLockedOnly')?.checked) {
+      const myName = getAdminName();
+      const myId = getAdminId();
+      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
+    }
+
+    if(!list.length){
+      tbody.innerHTML = `<tr><td colspan="15">${__('noRecords')}</td></tr>`;
+      window.rechargeProfit = 0;
+      return;
+    }
+
+    // ✅ 分页
+    pageState.r = pageState.r || 1;
+    const rPageList = paginate(list, pageState.r);
+
+    // ===== 渲染表格（分页后） =====
+    tbody.innerHTML = rPageList.map(o => renderRechargeRow(o)).join('') +
+      renderPager(list.length, pageState.r, 'r', 'r_search');
+    postRenderDecorate();
+
+    // ===============================
+    // ✅ 充值盈余统计（真正接入）
+    // ===============================
+
+const summary = calcSummary(list, 'recharge');
+
+// 提供给 Dashboard / 其他模块
+window.rechargeProfit = summary.total;
+
+console.log('【充值金额】USDT:', summary.total.toFixed(2));
+
+
+  }catch(e){
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="15">${__('loadFailed')}</td></tr>`;
+    window.rechargeProfit = 0; // 容错
+  }
+}
+async function w_search(){
+  const params = {};
+  if($('#w_start').value) params.start = $('#w_start').value;
+  if($('#w_end').value) params.end = $('#w_end').value;
+  if($('#w_wallet').value) params.q = $('#w_wallet').value;
+  if($('#w_currency').value) params.currency = $('#w_currency').value;
+  if($('#w_status').value) params.status = $('#w_status').value;
+
+  const tbody = $('#w_table');
+  tbody.innerHTML = `<tr><td colspan="15">${__('loading')}</td></tr>`;
+
+  try{
+    const all = await fetchAll(params);
+
+    /* 🔥 前端真实过滤 */
+    let list = all.withdraw || [];
+
+    list = applyFilters(list, {
+      start: $('#w_start').value,
+      end: $('#w_end').value,
+      q: $('#w_wallet').value,
+      currency: $('#w_currency').value,
+      status: $('#w_status').value
+    });
+
+    // 自己锁定
+    if (document.getElementById('wLockedOnly')?.checked) {
+      const myName = getAdminName();
+      const myId = getAdminId();
+      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
+    }
+
+    // 快速状态筛选
+    const quickStatus = document.getElementById('w_quickStatus')?.value;
+    if (quickStatus) {
+      switch(quickStatus) {
+        case 'pending':  list = list.filter(o => o.status === 'processing'); break;
+        case 'unlocked': list = list.filter(o => o.status === 'processing'); break;
+        case 'locked':   list = list.filter(o => o.status === 'locked'); break;
+        case 'rejected': list = list.filter(o => o.status === 'failed'); break;
+        case 'approved': list = list.filter(o => o.status === 'success'); break;
+      }
+    }
+
+ if(!list.length){
+  tbody.innerHTML = `<tr><td colspan="15">${__('noRecords')}</td></tr>`;
+  return;
+}
+
+/* ✅ 分页 */
+pageState.w = pageState.w || 1;
+const pageList = paginate(list, pageState.w);
+
+// ===== 渲染表格（分页后）=====
+tbody.innerHTML =
+  pageList.map(o => renderWithdrawRow(o)).join('') +
+  renderPager(list.length, pageState.w, 'w', 'w_search');
+
+postRenderDecorate();
+
+   // ===============================
+// ✅ 提款金额统一统计（统一口径）
+// ===============================
+const summary = calcSummary(list, 'withdraw');
+
+// 提供给 Dashboard / 其他模块
+window.withdrawLoss = summary.total;
+
+console.log('【提款支出】USDT:', summary.total.toFixed(2));
+
+  }catch(e){
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="15">${__('loadFailed')}</td></tr>`;
+    window.withdrawLoss = 0; // 容错
+  }
+}
+async function o_search(){
+  const params = {};
+  if($('#o_start').value) params.start = $('#o_start').value;
+  if($('#o_end').value) params.end = $('#o_end').value;
+  if($('#o_q').value) params.q = $('#o_q').value;
+  if($('#o_type').value) params.type = $('#o_type').value;
+  const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="12">${__('loading')}</td></tr>`;
+  try{
+    const all = await fetchAll(params);
+    let rows = [
+  ...(all.recharge || []).map(o => ({ ...o, _type: 'recharge' })),
+  ...(all.withdraw || []).map(o => ({ ...o, _type: 'withdraw' })),
+  ...(all.buysell || []).map(o => ({ ...o, _type: 'buysell' }))
+];
+
+// ✅ 前端真实过滤（和充值 / 提款一致）
+rows = applyFilters(rows, {
+  start: $('#o_start').value,
+  end: $('#o_end').value,
+  q: $('#o_q').value
+});
+
+// ✅ 类型过滤（订单记录专用）
+const type = $('#o_type').value;
+if (type) {
+  rows = rows.filter(o => o._type === type);
+}
+
+// ✅ 排序：最新在最上面
+rows.sort((a, b) => {
+  const ta = new Date(a.time_us || a.time || a.createdAt || 0).getTime();
+  const tb = new Date(b.time_us || b.time || b.createdAt || 0).getTime();
+  return tb - ta;
+});
+
+if (!rows.length) {
+  tbody.innerHTML = `<tr><td colspan="12">${__('noRecords')}</td></tr>`;
+  return;
+}
+
+// ✅ 分页（每页 20 条）
+pageState.o = pageState.o || 1;  // 确保页码从 1 开始
+const pageList = paginate(rows, pageState.o);
+
+// ✅ 渲染表格（分页后的数据）
+tbody.innerHTML =
+  pageList.map(o => {
+    const typeText = o._type === 'buysell'
+      ? (String(o.side || '').toLowerCase() || '--')
+      : ({ recharge: '充值', withdraw: '提款' }[o._type] || o._type);
+
+    return `<tr>
+      <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
+      <td>${o.time_us || '--'}</td>
+      <td>${typeText}</td>
+      <td>${o.amount}</td>
+      <td>${o.currency || o.coin || '--'}</td>
+      <td>${o.wallet || '--'}</td>
+      <td>${o.ip || '--'}</td>
+      <td>
+        <span class="badge" style="background:
+  ${ (o.status==='success' || o.status==='approved') ? '#00c851' :
+     (o.status==='failed' || o.status==='rejected' || o.status==='reject')  ? '#ff4444' :
+     o.status==='locked'  ? '#ffbb33' :
+     '#1976d2' };
+  color:#fff;"
+  ${(o.status==='failed' || o.status==='rejected') && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
+  ${displayStatus(o.status)}
+</span>
+      </td>
+    </tr>`;
+  }).join('') +
+  renderPager(rows.length, pageState.o, 'o', 'o_search');  // 渲染分页
+
+postRenderDecorate(); 
+  }catch(e){ tbody.innerHTML = `<tr><td colspan="12">${__('loadFailed')}</td></tr>`; }
+}
+
+/* -----------------------------
+   Members & Dashboard
+------------------------------ */
+/* ===== 缅甸时间格式化 ===== */
+function formatMyanmarTime(ts) {
+  if (!ts) return '--';
+  // 兼容秒级/毫秒级时间戳：小于 1e12 视为秒级
+  let ms = Number(ts);
+  if (ms < 1e12) ms = ms * 1000;
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Yangon',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(new Date(ms));
+  } catch(e) {
+    // 降级：手动 UTC+6:30
+    const d = new Date(ms);
+    const utc = d.getTime() + d.getTimezoneOffset() * 60000;
+    const mmt = new Date(utc + (6 * 60 + 30) * 60000);
+    const pad = n => String(n).padStart(2, '0');
+    return `${mmt.getFullYear()}-${pad(mmt.getMonth() + 1)}-${pad(mmt.getDate())} ${pad(mmt.getHours())}:${pad(mmt.getMinutes())}:${pad(mmt.getSeconds())}`;
+  }
+}
+
+// ========= 会员标签相关 =========
+
+// 预设备注与颜色的映射
+const TAG_PRESET_MAP = {
+  '新成员': 'yellow',
+  '正常会员': 'green',
+  '测试账号': 'black',
+  '异常会员': 'red'
+};
+
+// 获取会员标签（手动优先，否则自动计算）
+function getMemberTag(u) {
+  const manual = u.tag;
+  if (manual && manual.color) {
+    return { color: manual.color, remark: manual.remark || '', manual: true };
+  }
+  if (manual && manual.remark) {
+    return { color: '', remark: manual.remark, manual: true };
+  }
+  // 自动计算
+  const created = u.created || 0;
+  if (!created) return { color: '', remark: '' };
+  let ms = Number(created);
+  if (ms < 1e12) ms = ms * 1000;
+  const diffDays = (Date.now() - ms) / (1000 * 60 * 60 * 24);
+  if (diffDays < 1) return { color: 'yellow', remark: '新成员' };
+  if (diffDays > 30) return { color: 'green', remark: '正常会员' };
+  return { color: '', remark: '' };
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// 标签编辑器状态
+let tagEditorUid = '';
+let tagEditorColor = '';
+let tagEditorRemark = '';
+
+function openTagEditor(uid, currentColor, currentRemark) {
+  tagEditorUid = uid;
+  tagEditorColor = currentColor;
+  tagEditorRemark = currentRemark;
+
+  $('#tagEditorOverlay').style.display = 'block';
+  $('#tagEditorPanel').style.display = 'block';
+
+  // 选中预设备注按钮
+  document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.remark === currentRemark);
+  });
+
+  // 自定义输入
+  const isPreset = currentRemark && Object.keys(TAG_PRESET_MAP).includes(currentRemark);
+  $('#tagCustomRemark').value = isPreset ? '' : (currentRemark || '');
+}
+
+function closeTagEditor() {
+  $('#tagEditorOverlay').style.display = 'none';
+  $('#tagEditorPanel').style.display = 'none';
+}
+
+function selectTagColor(color, el) {
+  tagEditorColor = color;
+  document.querySelectorAll('#tagColorGroup .tag-color-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+
+  // 如果选择了颜色且当前已选了预设备注，自动匹配对应的备注
+  const currentRemark = tagEditorRemark;
+  if (currentRemark && TAG_PRESET_MAP[currentRemark] === color) return;
+
+  // 查找匹配该颜色的预设备注
+  for (const [remark, c] of Object.entries(TAG_PRESET_MAP)) {
+    if (c === color) {
+      tagEditorRemark = remark;
+      document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(btn => {
+        btn.classList.toggle('selected', btn.dataset.remark === remark);
+      });
+      $('#tagCustomRemark').value = '';
+      return;
+    }
+  }
+}
+
+function selectTagPreset(el) {
+  tagEditorColor = el.dataset.color;
+  tagEditorRemark = el.dataset.remark;
+  document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  $('#tagCustomRemark').value = '';
+}
+
+function onCustomRemarkInput() {
+  const val = $('#tagCustomRemark').value;
+  if (val) {
+    tagEditorRemark = val;
+    document.querySelectorAll('#tagPresetGroup .tag-preset-btn').forEach(b => b.classList.remove('selected'));
+  }
+}
+
+async function saveMemberTag() {
+  const uid = tagEditorUid;
+  if (!uid) return;
+
+  // 获取当前 remark（优先取自定义输入）
+  const customVal = $('#tagCustomRemark').value.trim();
+  const remark = customVal || tagEditorRemark || '';
+  const color = tagEditorColor || '';
+  const tagPayload = tagEditorColor ? { color, remark } : (remark ? { color: '', remark } : { color: '', remark: '' });
+
+  try {
+    const res = await fetch('/api/admin/member-tag', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ uid, color: tagPayload.color, remark: tagPayload.remark })
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      closeTagEditor();
+      loadMembers(false);
+    } else {
+      alert('保存失败：' + ((data && data.error) || '未知错误'));
+    }
+  } catch(e) {
+    alert('网络错误：' + e.message);
+  }
+}
+
+async function clearMemberTag() {
+  const uid = tagEditorUid;
+  if (!uid) return;
+  try {
+    const res = await fetch('/api/admin/member-tag', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ uid, color: '', remark: '' })
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      closeTagEditor();
+      loadMembers(false);
+    } else {
+      alert('清除失败：' + ((data && data.error) || '未知错误'));
+    }
+  } catch(e) {
+    alert('网络错误：' + e.message);
+  }
+}
+
+// ========= 个人资料弹窗相关 =========
+let currentProfileUid = null;
+let profilePendingChanges = {}; // 暂存未保存的修改
+const PROFILE_STORAGE_KEY = 'nexbit_profiles';
+const AVATAR_STORAGE_KEY = 'nexbit_avatars';
+
+// 已缓存的头像 { uid: base64 }，优先于 API 读取
+let _cachedAvatars = {};
+try {
+  _cachedAvatars = JSON.parse(localStorage.getItem(AVATAR_STORAGE_KEY) || '{}');
+} catch(e) {}
+
+async function getProfileFromAPI(uid) {
+  try {
+    const r = await fetch(`/api/profiles/${encodeURIComponent(uid)}`, { headers: authHeaders() });
+    const j = await r.json();
+    if (j.ok) {
+      // 同步头像到本地缓存
+      if (j.avatar) {
+        _cachedAvatars[uid] = j.avatar;
+        localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(_cachedAvatars));
+      } else if (_cachedAvatars[uid]) {
+        delete _cachedAvatars[uid];
+        localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(_cachedAvatars));
+      }
+      return j.profile || {};
+    }
+    return {};
+  } catch(e) { return {}; }
+}
+
+async function saveProfileToAPI(uid, profile, avatar) {
+  try {
+    const body = {};
+    if (profile !== undefined) body.profile = profile;
+    if (avatar !== undefined) body.avatar = avatar;
+    const r = await fetch(`/api/profiles/${encodeURIComponent(uid)}`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    return j.ok;
   } catch(e) { return false; }
 }
 
+function getAvatarUrl(uid) {
+  // 优先使用缓存的头像
+  if (_cachedAvatars[uid]) return _cachedAvatars[uid];
+  // 回退到 DiceBear 自动生成
+  return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(uid || 'user')}&backgroundColor=1976d2,0f2655,ff4444,00c851,ffbb33,9933ff`;
+}
 
+function maskValue(val) {
+  if (!val) return '--';
+  const s = String(val);
+  if (s.length <= 4) return s[0] + '***' + s[s.length-1];
+  return s.slice(0, 2) + '***' + s.slice(-2);
+}
 
-/* ---------------------------------------------------------
-   Admin create/login (kept)
---------------------------------------------------------- */
-app.post('/api/admin/create', async (req, res) => {
-  try {
-    const { id, password, createToken } = req.body;
-    if (!id || !password) {
-      return res.status(400).json({ ok: false, error: 'missing id/password' });
-    }
+let _currentProfile = {}; // 当前弹窗用户的 profile 缓存
 
-    // 验证创建 Token 是否正确
-    if (process.env.ADMIN_BOOTSTRAP_TOKEN && createToken === process.env.ADMIN_BOOTSTRAP_TOKEN) {
-      // 如果是引导令牌，允许创建
+async function openProfile(uid) {
+  if (!uid || uid === '--') return;
+  currentProfileUid = uid;
+  profilePendingChanges = {};
+  const perms = getAdminPerms();
+  const isAdmin = isSuperAdmin() && perms.admin !== false;
+  const profile = await getProfileFromAPI(uid);
+  _currentProfile = profile;
+  
+  // 头像
+  document.getElementById('profileAvatar').src = getAvatarUrl(uid);
+  // 用户ID & 币种
+  document.getElementById('profileUid').textContent = uid;
+  
+  // 定义所有字段
+  const fields = [
+    'name','idcard','nationality','gender','birthday','residence','income',
+    'email','telegram','twitter','instagram','whatsapp','zalo','facebook','line','threads','phone'
+  ];
+  
+  fields.forEach(f => {
+    const rawVal = profile[f] || '';
+    const cellEl = document.getElementById('p-' + f);
+    const btnEl = document.getElementById('eb-' + f);
+    if (!cellEl) return;
+    
+    if (isAdmin) {
+      cellEl.textContent = rawVal || '--';
+      if (btnEl) { btnEl.className = (f === 'phone') ? 'view-btn' : 'edit-btn'; btnEl.disabled = false; }
     } else {
-      const auth = req.headers.authorization || '';
-      if (!auth.startsWith('Bearer '))
-        return res.status(403).json({ ok: false, error: 'forbidden' });
+      cellEl.textContent = maskValue(rawVal);
+      if (btnEl) { btnEl.className = (f === 'phone') ? 'view-btn disabled' : 'edit-btn disabled'; btnEl.disabled = true; }
+    }
+  });
+  
+  // 保存按钮仅 admin 可见
+  const saveBtn = document.getElementById('profileSaveBtn');
+  if (saveBtn) { saveBtn.style.display = isAdmin ? '' : 'none'; }
+  
+  // 头像上传区域：仅 admin 可更换
+  const avatarWrap = document.querySelector('#profileModal .avatar-wrap');
+  if (avatarWrap) {
+    if (isAdmin) {
+      avatarWrap.title = '点击更换头像';
+      avatarWrap.style.cursor = 'pointer';
+      avatarWrap.style.opacity = '1';
+      avatarWrap.style.pointerEvents = 'auto';
+      avatarWrap.onclick = function() { document.getElementById('avatarFileInput').click(); };
+      const overlay = avatarWrap.querySelector('.avatar-overlay');
+      if (overlay) overlay.style.display = '';
+    } else {
+      avatarWrap.title = '仅管理员可更换头像';
+      avatarWrap.style.cursor = 'default';
+      avatarWrap.style.opacity = '0.7';
+      avatarWrap.style.pointerEvents = 'none';
+      avatarWrap.onclick = null;
+      const overlay = avatarWrap.querySelector('.avatar-overlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+  }
+  
+  document.getElementById('profileModal').style.display = 'flex';
+}
 
-      const adminToken = auth.slice(7);
-      if (!await isValidAdminToken(adminToken)) {
-        return res.status(403).json({ ok: false, error: 'forbidden' });
+function closeProfile() {
+  document.getElementById('profileModal').style.display = 'none';
+  currentProfileUid = null;
+  profilePendingChanges = {};
+}
+
+function editProfileField(field) {
+  if (!currentProfileUid) return;
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
+  
+  const profile = _currentProfile || {};
+  const pendingVal = profilePendingChanges[field] !== undefined ? profilePendingChanges[field] : (profile[field] || '');
+  
+  const fieldLabels = {
+    name:'姓名', idcard:'身份证', nationality:'国籍/地区', gender:'性别',
+    birthday:'生日', residence:'当前居住地', income:'收入来源',
+    email:'邮箱', telegram:'Telegram', twitter:'X (Twitter)', instagram:'Instagram',
+    whatsapp:'WhatsApp', zalo:'Zalo', facebook:'Facebook', line:'Line', threads:'Threads'
+  };
+  
+  const newVal = prompt(`请输入${fieldLabels[field] || field}：`, pendingVal);
+  if (newVal === null) return;
+  
+  // 暂存修改，不立即落盘
+  profilePendingChanges[field] = newVal.trim();
+  
+  // 刷新弹窗显示（包含暂存修改）
+  refreshProfileDisplay();
+}
+
+function refreshProfileDisplay() {
+  if (!currentProfileUid) return;
+  const perms = getAdminPerms();
+  const isAdmin = isSuperAdmin() && perms.admin !== false;
+  const profile = _currentProfile || {};
+  // 合并暂存修改
+  const merged = Object.assign({}, profile, profilePendingChanges);
+  
+  const fields = [
+    'name','idcard','nationality','gender','birthday','residence','income',
+    'email','telegram','twitter','instagram','whatsapp','zalo','facebook','line','threads','phone'
+  ];
+  
+  fields.forEach(f => {
+    const rawVal = merged[f] || '';
+    const cellEl = document.getElementById('p-' + f);
+    if (!cellEl) return;
+    
+    if (isAdmin) {
+      cellEl.textContent = rawVal || '--';
+    } else {
+      cellEl.textContent = maskValue(rawVal);
+    }
+  });
+}
+
+async function saveProfile() {
+  if (!currentProfileUid) return;
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
+  
+  // 如果有未保存的修改，先弹出确认
+  const changes = profilePendingChanges;
+  const changedFields = Object.keys(changes);
+  
+  if (changedFields.length === 0) {
+    alert('没有需要保存的修改。');
+    return;
+  }
+  
+  const confirmMsg = '即将保存以下修改：\n' + changedFields.map(f => ' - ' + f + ': ' + changes[f]).join('\n');
+  if (!confirm(confirmMsg + '\n\n确认保存？')) return;
+  
+  // 合并到已有 profile 再写入 API
+  const merged = Object.assign({}, _currentProfile, changes);
+  const ok = await saveProfileToAPI(currentProfileUid, merged);
+  if (!ok) {
+    alert('保存失败，请检查网络后重试。');
+    return;
+  }
+  
+  profilePendingChanges = {};
+  await openProfile(currentProfileUid);
+  alert('已保存。所有下级账号实时同步（数据存储于服务器）。');
+}
+
+function viewProfilePhone() {
+  if (!currentProfileUid) return;
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
+  
+  const profile = _currentProfile || {};
+  const pendingPhone = profilePendingChanges['phone'] !== undefined ? profilePendingChanges['phone'] : (profile.phone || '');
+  
+  let action = prompt('手机号操作：\n输入 1 查看完整号码\n输入 2 修改号码', '1');
+  if (action === '1') {
+    alert('完整手机号：' + (pendingPhone || '未设置'));
+    return;
+  }
+  if (action === '2') {
+    const newPhone = prompt('请输入新手机号：', pendingPhone);
+    if (newPhone === null) return;
+    profilePendingChanges['phone'] = newPhone.trim();
+    refreshProfileDisplay();
+  }
+}
+
+function uploadAvatar(event) {
+  const perms = getAdminPerms();
+  if (!currentProfileUid || !(isSuperAdmin() && perms.admin !== false)) return;
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { alert('请选择图片文件'); return; }
+  
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const base64 = e.target.result;
+    const ok = await saveProfileToAPI(currentProfileUid, undefined, base64);
+    if (ok) {
+      _cachedAvatars[currentProfileUid] = base64;
+      localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(_cachedAvatars));
+      document.getElementById('profileAvatar').src = base64;
+    } else {
+      alert('头像上传失败，请检查网络后重试。');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// 会员列表分页状态
+let memberPage = 1;
+const MEMBER_PAGE_SIZE = 20;
+
+async function loadMembers(resetPage = true){
+  if (resetPage) memberPage = 1;
+  
+  const tbody = $('#m_table');
+  tbody.innerHTML = `<tr><td colspan="9">${__('loading')}</td></tr>`;
+
+  try{
+    const all = await fetchAll();
+    const users = all.users || {};
+    const allOrders = [
+      ...(all.recharge || []),
+      ...(all.withdraw || []),
+      ...(all.buysell  || [])
+    ];
+
+    // 从提款订单中提取每个会员的钱包地址
+    const walletMap = {};
+    (all.withdraw || []).forEach(o => {
+      if (o.userId && o.wallet && !walletMap[o.userId]) {
+        walletMap[o.userId] = o.wallet;
+      }
+    });
+
+    // 从全部订单中推导每个会员的最后活动时间
+    const lastActivityMap = {};
+    allOrders.forEach(o => {
+      const uid = o.userId || o.user;
+      if (!uid) return;
+      const ts = Number(o.timestamp || 0);
+      if (ts > (lastActivityMap[uid] || 0)) {
+        lastActivityMap[uid] = ts;
+      }
+    });
+
+    if(!Object.keys(users).length){
+      tbody.innerHTML = `<tr><td colspan="9">暂无数据</td></tr>`;
+      return;
+    }
+
+    // 组装并排序：按最后活动时间降序（最新的在最上面），无订单的按注册时间排
+    let rows = Object.keys(users).map(uid => {
+      const u = users[uid];
+      const activityTs = lastActivityMap[uid];
+      // 上线时间/最后在线时间：优先用订单活动时间，其次用 DB 里的 loginTime/lastOnline
+      const loginTime = activityTs || u.loginTime;
+      const lastOnline = activityTs || u.lastOnline || u.updated;
+      // 排序键：用最后活动时间，没有则用注册时间
+      const sortKey = activityTs || u.created || 0;
+      return { uid, u, walletMap, loginTime, lastOnline, sortKey };
+    });
+
+    // 降序：最新的在最上面
+    rows.sort((a, b) => b.sortKey - a.sortKey);
+
+    // 分页
+    const total = rows.length;
+    const totalPages = Math.ceil(total / MEMBER_PAGE_SIZE);
+    if (memberPage > totalPages) memberPage = totalPages;
+    const startIdx = (memberPage - 1) * MEMBER_PAGE_SIZE;
+    const pageRows = rows.slice(startIdx, startIdx + MEMBER_PAGE_SIZE);
+
+    tbody.innerHTML = pageRows.map(r => {
+      const uid = r.uid;
+      const u  = r.u;
+      const bal = u.balance !== undefined && u.balance !== null ? Number(u.balance) : 0;
+
+      // 标签：优先使用手动设置的标签，否则自动计算
+      const tag = getMemberTag(u);
+      const tagColor = tag.color || '';
+      const tagRemark = tag.remark || '';
+      const tagCell = tagRemark
+        ? `<span class="member-tag-cell" onclick="openTagEditor('${uid}','${tagColor}','${escapeHtml(tagRemark)}')"><span class="member-tag-badge ${tagColor || 'no-color'}">${tagRemark}</span></span>`
+        : `<span class="member-tag-cell member-tag-empty" onclick="openTagEditor('${uid}','','')">点击设置...</span>`;
+
+      return `
+      <tr class="row-tag-${tagColor}">
+        <td><span class="uid-clickable" onclick="openProfile('${uid}')">${uid}</span></td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${walletMap[uid] || u.wallet || ''}">${walletMap[uid] || u.wallet || '--'}</td>
+        <td>${bal.toFixed(2)}</td>
+        <td>${(isSuperAdmin() || (getAdminPerms().balance_adjust)) ? `<button class="primary" style="margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','add')">+</button> <button class="primary" style="background:#ff4444;margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','deduct')">-</button>` : '--'}</td>
+        <td>${formatMyanmarTime(u.created)}</td>
+        <td>${formatMyanmarTime(r.loginTime)}</td>
+        <td>${renderIpWithCountry(u.ip, u.country)}</td>
+        <td>${formatMyanmarTime(r.lastOnline)}</td>
+        <td>${tagCell}</td>
+      </tr>
+      `;
+    }).join('');
+
+    // 分页控件
+    if (totalPages > 1) {
+      tbody.innerHTML += `
+      <tr>
+        <td colspan="9" style="text-align:center;padding:12px 0">
+          <button ${memberPage<=1?'disabled':''} onclick="memberPage--;loadMembers(false)">上一页</button>
+          <span class="small" style="margin:0 12px">第 ${memberPage} / ${totalPages} 页（共 ${total} 个会员）</span>
+          <button ${memberPage>=totalPages?'disabled':''} onclick="memberPage++;loadMembers(false)">下一页</button>
+        </td>
+      </tr>`;
+    }
+
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="9">${__('loadFailed')}</td></tr>`;
+  }
+}
+
+async function adjustBalance(uid, direction) {
+  const label = direction === 'add' ? '增加' : '扣除';
+  const amount = parseFloat(prompt(`请输入要${label}的金额：`, ''));
+  if (isNaN(amount) || amount <= 0) {
+    if (amount !== null && amount !== '') alert('请输入有效的正数金额');
+    return;
+  }
+  const payload = {
+    uid,
+    amount: direction === 'add' ? amount : -amount
+  };
+  try {
+    const res = await fetch('/api/admin/adjust-balance', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      alert(`${label}成功！新余额：${Number(data.newBalance).toFixed(2)}`);
+      loadMembers(false);
+    } else {
+      alert('操作失败：' + ((data && data.error) || '未知错误'));
+    }
+  } catch(e) {
+    alert('网络错误：' + e.message);
+  }
+}
+
+// ✅【就插在这里】—— loadDashboard 上面
+function isOrderApproved(o){
+  const s = String(o.status || '').toLowerCase();
+  return (
+    s === 'success' ||
+    s === 'approved' ||
+    s === 'pass' ||
+    s === '通过'
+  );
+}
+async function loadDashboard(){
+  try{
+    const all = await fetchAll();
+
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    const isSameDay = (d, base) =>
+      d.getFullYear() === base.getFullYear() &&
+      d.getMonth() === base.getMonth() &&
+      d.getDate() === base.getDate();
+
+    const recharge = all.recharge || [];
+    const withdraw = all.withdraw || [];
+    const buysell  = all.buysell  || [];
+
+    const rToday = recharge.filter(o => isSameDay(new Date(o.time_us), today));
+    const rYest  = recharge.filter(o => isSameDay(new Date(o.time_us), yesterday));
+
+    const wToday = withdraw.filter(o => isSameDay(new Date(o.time_us), today));
+    const wYest  = withdraw.filter(o => isSameDay(new Date(o.time_us), yesterday));
+
+    const bToday = buysell.filter(o => isSameDay(new Date(o.time_us), today));
+    const bYest  = buysell.filter(o => isSameDay(new Date(o.time_us), yesterday));
+
+    const sumUSDT = arr =>
+      arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
+
+
+    // ===== 今日数量（只算已通过）=====
+const rOK = rToday.filter(isOrderApproved);
+const wOK = wToday.filter(isOrderApproved);
+const bOK = bToday.filter(isOrderApproved);
+const bBuy  = bOK.filter(o => String(o.side).toLowerCase() === 'buy');
+const bSell = bOK.filter(o => String(o.side).toLowerCase() === 'sell');
+
+const allTodayOrders = [
+  ...rToday.map(o => ({ ...o, _type: 'recharge' })),
+  ...wToday.map(o => ({ ...o, _type: 'withdraw' })),
+  ...bToday.map(o => ({ ...o, _type: 'buysell' }))
+];
+const rejectedToday = allTodayOrders.filter(o =>
+  ['failed','reject','rejected','fail'].includes(
+    String(o.status).toLowerCase()
+  )
+);
+const pendingToday = allTodayOrders.filter(o =>
+  ['processing','pending','waiting','locked','审核中','open','new','submitted'].includes(
+    String(o.status).toLowerCase()
+  )
+);
+// ③ 【就在这里】算金额（你问的就是这里）
+const buySum  = sumUSDT(bBuy);
+const sellSum = sumUSDT(bSell);
+
+// 数量（已通过）
+$('#todayRecharge').innerText = rOK.length;
+$('#todayWithdraw').innerText = wOK.length;
+
+// 金额（已通过）
+$('#todayRechargeSum').innerText = sumUSDT(rOK).toFixed(2);
+$('#todayWithdrawSum').innerText = sumUSDT(wOK).toFixed(2);
+    // ===== ↑ ↓ 对比 =====
+    const arrow = (t,y) =>
+      t > y ? '↑' : t < y ? '↓' : '–';
+
+    $('#todayRecharge').innerText += ` ${arrow(rToday.length, rYest.length)}`;
+    $('#todayWithdraw').innerText += ` ${arrow(wToday.length, wYest.length)}`;
+    const rejectedRecharge = rejectedToday.filter(o => o._type === 'recharge').length;
+    const rejectedWithdraw = rejectedToday.filter(o => o._type === 'withdraw').length;
+    const rejEl = document.getElementById('todayRejected');
+    if (rejEl) rejEl.innerText = rejectedToday.length;
+    const rdEl = document.getElementById('rejectedDetail');
+    if (rdEl) {
+      const parts = ['充值：' + rejectedRecharge, '提款：' + rejectedWithdraw];
+      rdEl.innerText = parts.join('  ');
+    } else {
+      console.warn('[loadDashboard] #rejectedDetail 元素未找到');
+    }
+$('#todayPending').innerText  = pendingToday.length;
+
+    // ===== 风控 =====
+    const alerts =
+      [...rToday, ...wToday, ...bToday]
+        .filter(o => o.status === 'failed' || o.status === 'locked');
+
+    $('#alertsCount').innerText = alerts.length;
+    $('#statTime').innerText = new Date().toLocaleString();
+
+    // ==================================================
+    // 🔥 总盈亏高亮显示（保留你原来的模式）
+    // ==================================================
+    const pnl =
+  sumUSDT(rToday.filter(isOrderApproved))   // 今日充值（已通过）
+  - sumUSDT(wToday.filter(isOrderApproved)) // 今日提款（已通过）
+  + (() => {
+      return bToday
+        .filter(isOrderApproved)             // ✅ 统一状态判断
+        .reduce((sum, o) => {
+          const v = Number(o.estimate || 0);
+          if (o.side === 'buy')  return sum - v;
+          if (o.side === 'sell') return sum + v;
+          return sum;
+        }, 0);
+    })();
+
+
+    const pnlCard  = document.getElementById('pnlCard');
+    const pnlValue = document.getElementById('pnlValue');
+
+    if(pnlCard && pnlValue){
+      pnlValue.innerText =
+        (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+
+      pnlCard.classList.remove(
+        'pnl-positive',
+        'pnl-negative',
+        'pnl-flash'
+      );
+
+      if(pnl >= 0){
+        pnlCard.classList.add('pnl-positive','pnl-flash');
+      }else{
+        pnlCard.classList.add('pnl-negative','pnl-flash');
       }
     }
 
-    // 哈希化密码
-    const hashed = await bcrypt.hash(password, 10);
-    const token = uuidv4();  // 生成管理员 token
-    const created = now();   // 获取当前时间戳
+  }catch(e){
+    console.error(e);
+  }
+}
+// ✅ 充值订单：确认成功
+async function confirmRecharge(orderId) {
+  if (!confirm('确认该充值已到账？')) return;
 
-    // 提取创建人（当前登录管理员）
-    let createdBy = 'system';
-    const authHeader = req.headers.authorization || '';
-    if (authHeader.startsWith('Bearer ')) {
-      const callerToken = authHeader.slice(7);
-      const callerSnap = await db.ref(`admins_by_token/${callerToken}`).once('value');
-      if (callerSnap.exists()) {
-        createdBy = callerSnap.val().id;
-      }
+  try {
+    const res = await fetch('/api/admin/recharge/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        orderId,
+        status: 'success'
+      })
+    });
+
+    const data = await res.json();
+    if (!data.ok) {
+      alert('更新失败');
+      return;
     }
 
-    // 权限处理
-    const permissions = {
-      recharge: req.body.recharge === true || req.body.recharge === 'true',
-      withdraw: req.body.withdraw === true || req.body.withdraw === 'true',
-      buysell:  req.body.buysell  === true || req.body.buysell  === 'true',
-      admin:    req.body.admin    === true || req.body.admin    === 'true',
-      balance_adjust: req.body.balance_adjust === true || req.body.balance_adjust === 'true'
-    };
-
-    // 保存管理员信息到 Firebase 数据库
-    const nickname = req.body.nickname || id;
-    await db.ref(`admins/${id}`).set({
-      id,
-      nickname,
-      hashed,
-      created,
-      isSuper: false,   // 设置为普通管理员，修改为 true 则为超级管理员
-      isActive: true,   // 默认启用
-      status: '离线',   // 初始状态离线
-      permissions,
-      createdBy
-    });
-
-    // 生成管理员 token
-    await db.ref(`admins_by_token/${token}`).set({
-      id,
-      created
-    });
-
-    // 保存 loginToken 到 admin 记录中，用于生成专属登录链接
-    await db.ref(`admins/${id}/loginToken`).set(token);
-
-    return res.json({ ok: true, id, token, nickname });  // 返回管理员信息和 token
-
+    // 🔄 刷新充值列表
+    r_search();
   } catch (e) {
-    console.error('admin create error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    alert('网络错误');
   }
-});
+}
+// ===== 状态显示中文化（只影响显示）=====
+function displayStatus(status){
+  switch(String(status).toLowerCase()){
+    case 'success': 
+    case 'approved':
+      return __('success');
 
-// 管理员调整用户余额
-app.post('/api/admin/adjust-balance', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
+    case 'failed':
+    case 'rejected':
+      return __('failed');
 
-    const { uid, amount } = req.body;
-    if (!uid || amount === undefined || amount === null)
-      return res.status(400).json({ ok: false, error: 'missing uid/amount' });
+    case 'pending':
+    case 'processing':
+      return __('processing');
 
-    if (!isSafeUid(uid))
-      return res.status(400).json({ ok: false, error: 'invalid uid' });
+    case 'locked':
+      return __('locked');
 
-    const numAmount = Number(amount);
-    if (isNaN(numAmount))
-      return res.status(400).json({ ok: false, error: 'invalid amount' });
+    default:
+      return status;
+  }
+}
+  function downloadRecords() {
+      const records = getTableRecords();  // 获取当前显示的表格记录
+      
+      if (!records || records.length === 0) {
+          alert("没有数据可供下载");
+          return;
+      }
 
-    const balRef = db.ref(`users/${uid}/balance`);
-    const snap = await balRef.once('value');
-    const current = safeNumber(snap.exists() ? snap.val() : 0, 0);
-    const newBalance = current + numAmount;
+      const csvContent = "data:text/csv;charset=utf-8," + records.map(record => record.join(",")).join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "recharge_records.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  }
 
-    await balRef.set(newBalance);
+  function getTableRecords() {
+  const rows = document.querySelectorAll(".table tbody tr");
+  const records = [];
 
-    // 记录操作日志
-    const logRef = db.ref(`users/${uid}/balance_logs`).push();
-    await logRef.set({
-      previous: current,
-      change: numAmount,
-      after: newBalance,
-      admin: 'admin',
-      timestamp: now()
+  rows.forEach(row => {
+    const cells = row.querySelectorAll("td");
+    if (!cells.length) return;
+
+    const rowData = [];
+
+    cells.forEach((cell, index) => {
+      // ❌ 跳过「操作」「备注」两列
+      if (index === cells.length - 2) return;
+      if (index === cells.length - 1) return;
+
+      rowData.push(
+        cell.innerText
+          .replace(/\s+/g, ' ')
+          .trim()
+      );
     });
 
-    return res.json({ ok: true, newBalance, previous: current, change: numAmount });
-  } catch (e) {
-    console.error('adjust-balance error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    records.push(rowData);
+  });
+
+  return records;
+}
+
+// ===== 缅甸时间零点自动清零（今日充值 / 今日提款 / 🔥 待处理）=====
+function getMyanmarMidnight() {
+  const now = new Date();
+  const mmtOffset = (6 * 60 + 30) * 60000; // UTC+6:30
+  const mmtMs = now.getTime() + now.getTimezoneOffset() * 60000 + mmtOffset;
+  const mmtDate = new Date(mmtMs);
+  // Myanmar 午夜对应 UTC 时间戳
+  return Date.UTC(mmtDate.getFullYear(), mmtDate.getMonth(), mmtDate.getDate()) - mmtOffset;
+}
+
+
+/* ===============================
+   批量操作：全选 / 批量通过 / 拒绝 / 备注
+=============================== */
+function batchSelectAll(cb, key) {
+  document.querySelectorAll('.batch-check[data-key="' + key + '"]').forEach(c => {
+    c.checked = cb.checked;
+  });
+}
+
+async function batchAction(select, key, searchFn) {
+  const action = select.value;
+  if (!action) return;
+  
+  const checked = document.querySelectorAll('.batch-check[data-key="' + key + '"]:checked');
+  if (checked.length === 0) {
+    alert('请至少选择一条记录');
+    select.value = '';
+    return;
   }
-});
-
-// 会员标签/备注
-app.post('/api/admin/member-tag', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const { uid, color, remark } = req.body;
-    if (!uid)
-      return res.status(400).json({ ok: false, error: 'missing uid' });
-
-    if (!isSafeUid(uid))
-      return res.status(400).json({ ok: false, error: 'invalid uid' });
-
-    const tagRef = db.ref(`users/${uid}/tag`);
-    await tagRef.set({
-      color: color || '',
-      remark: remark || '',
-      updatedBy: 'admin',
-      updatedAt: now()
-    });
-
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('member-tag error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+  
+  if (!getAdminToken()) {
+    await ensureLoggedIn();
+    if (!getAdminToken()) { select.value = ''; return; }
   }
-});
-
-// 管理员列表
-app.get('/api/admin/list', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const snap = await db.ref('admins').once('value');
-    const list = [];
-    if (snap.exists()) {
-      snap.forEach(child => {
-        const a = child.val();
-        // 在线状态：5分钟内活跃的 token 视为在线
-        list.push({
-          id: a.id,
-          nickname: a.nickname || a.id,
-          loginToken: a.loginToken || '',
-          isSuper: !!a.isSuper,
-          isActive: a.isActive !== false,
-          status: a.status || '离线',
-          permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
-          createdBy: a.createdBy || 'system',
-          created: a.created || 0,
-          lastLogin: a.lastLogin || 0
-        });
+  
+  let note = '';
+  if (action === 'reject') {
+    note = prompt('请输入批量拒绝原因（必填）');
+    if (!note) { select.value = ''; return; }
+  }
+  if (action === 'remark') {
+    note = prompt('请输入批量备注内容（必填）');
+    if (!note) { select.value = ''; return; }
+  }
+  
+  if (!confirm('确定对选中的 ' + checked.length + ' 条记录执行：' + (action==='approve'?'通过':action==='reject'?'拒绝':'备注') + '？')) {
+    select.value = '';
+    return;
+  }
+  
+  const finalStatus = action === 'approve' ? 'success' : action === 'reject' ? 'failed' : undefined;
+  
+  let count = 0;
+  for (const cb of checked) {
+    const orderId = cb.dataset.orderid;
+    const type = cb.dataset.type;
+    if (!orderId || !type) continue;
+    
+    const body = { orderId, type, note };
+    if (finalStatus) body.status = finalStatus;
+    
+    try {
+      const r = await fetch(API_UPDATE, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body)
       });
+      const j = await r.json();
+      if (j && j.ok) count++;
+    } catch(e) { console.error(e); }
+  }
+  
+  select.value = '';
+  alert('批量操作完成：' + count + ' / ' + checked.length + ' 条记录');
+  window[searchFn]();
+}
+
+/* ===============================
+   缅甸时间零点自动刷新页面
+   - buysell / recharge / withdraw 到达缅甸 0 点自动重新查询
+=============================== */
+function getMyanmarMidnightMs() {
+  const now = new Date();
+  const mmtOffset = (6 * 60 + 30) * 60000; // UTC+6:30
+  const mmtMs = now.getTime() + now.getTimezoneOffset() * 60000 + mmtOffset;
+  const mmtDate = new Date(mmtMs);
+  return Date.UTC(mmtDate.getFullYear(), mmtDate.getMonth(), mmtDate.getDate()) - mmtOffset;
+}
+
+let _midnightTimer = null;
+function schedulePageMidnightRefresh() {
+  if (_midnightTimer) clearTimeout(_midnightTimer);
+  const now = Date.now();
+  const midnight = getMyanmarMidnightMs();
+  let nextMidnight = midnight;
+  if (now >= midnight) {
+    nextMidnight = midnight + 24 * 60 * 60 * 1000;
+  }
+  const delay = nextMidnight - now;
+  _midnightTimer = setTimeout(() => {
+    // 缅甸时间零点到了，自动刷新当前页面数据
+    const active = document.querySelector('.header-nav .icon.active')?.getAttribute('data-page') || '';
+    if (active === 'buysell') {
+      pageState.bs = 1;
+      if (typeof bs_search === 'function') bs_search();
+    } else if (active === 'recharge') {
+      pageState.r = 1;
+      if (typeof r_search === 'function') r_search();
+    } else if (active === 'withdraw') {
+      pageState.w = 1;
+      if (typeof w_search === 'function') w_search();
     }
-    return res.json({ ok: true, admins: list });
-  } catch (e) {
-    console.error('admin list error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    // 递归调度下一天
+    schedulePageMidnightRefresh();
+  }, delay);
+}
+schedulePageMidnightRefresh();
+
+function scheduleMidnightReset() {
+  const now = Date.now();
+  const midnight = getMyanmarMidnight();
+  let nextMidnight = midnight;
+  if (now >= midnight) {
+    nextMidnight = midnight + 24 * 60 * 60 * 1000;
   }
-});
+  const delay = nextMidnight - now;
+  setTimeout(() => {
+    var el1 = document.getElementById('todayRecharge');
+    var el2 = document.getElementById('todayWithdraw');
+    var el3 = document.getElementById('todayPending');
+    if (el1) el1.innerText = '0';
+    if (el2) el2.innerText = '0';
+    if (el3) el3.innerText = '0';
+    var el1s = document.getElementById('todayRechargeSum');
+    var el2s = document.getElementById('todayWithdrawSum');
+    if (el1s) el1s.innerText = '0.00';
+    if (el2s) el2s.innerText = '0.00';
+    var rd = document.getElementById('rejectedDetail');
+    if (rd) rd.innerText = '';
+    scheduleMidnightReset();
+  }, delay);
+}
+scheduleMidnightReset();
 
-// 删除管理员
-app.delete('/api/admin/delete', async (req, res) => {
-  try {
-    const id = req.query.id || req.body.id;
-    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+// 获取昨日数据并展示
+function loadYesterdayData() {
+  console.log('查看昨日数据按钮被点击');
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1); // 设置为昨天日期
 
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-
-    // 清理相关 token
-    const tokenSnap = await db.ref('admins_by_token').once('value');
-    if (tokenSnap.exists()) {
-      const deletions = [];
-      tokenSnap.forEach(child => {
-        if (child.val().id === id) deletions.push(child.key);
-      });
-      for (const tk of deletions) {
-        await db.ref(`admins_by_token/${tk}`).remove();
-      }
-    }
-
-    await db.ref(`admins/${id}`).remove();
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('admin delete error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-// 启用/禁用管理员
-app.post('/api/admin/toggle-status', async (req, res) => {
-  try {
-    const { id, isActive } = req.body;
-    if (!id || isActive === undefined)
-      return res.status(400).json({ ok: false, error: 'missing id/isActive' });
-
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-
-    await db.ref(`admins/${id}`).update({ isActive });
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('admin toggle-status error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-// 踢出管理员（强制下线）
-app.post('/api/admin/kick', async (req, res) => {
-  try {
-    const { id } = req.body;
-    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
-
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-
-    const admin = snap.val();
-    if (admin.isSuper)
-      return res.status(403).json({ ok: false, error: 'cannot kick super admin' });
-
-    // 清除该管理员的所有 token
-    const tokenSnap = await db.ref('admins_by_token').once('value');
-    if (tokenSnap.exists()) {
-      const deletions = [];
-      tokenSnap.forEach(child => {
-        if (child.val().id === id) deletions.push(child.key);
-      });
-      for (const tk of deletions) {
-        await db.ref(`admins_by_token/${tk}`).remove();
-      }
-    }
-
-    // 更新状态为离线，并标记强制登出时间戳
-    await db.ref(`admins/${id}`).update({ status: '离线', forceLogoutAt: Date.now() });
-
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('admin kick error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-// 检查是否被踢出（客户端轮询用）
-app.get('/api/admin/check-kicked', async (req, res) => {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) return res.status(401).json({ ok: false });
-    const tokenEntry = (await db.ref(`admins_by_token/${token}`).once('value')).val();
-    if (!tokenEntry) return res.status(401).json({ ok: false });
-    const adminSnap = await db.ref(`admins/${tokenEntry.id}`).once('value');
-    if (!adminSnap.exists()) return res.status(401).json({ ok: false });
-    const admin = adminSnap.val();
-    if (admin.forceLogoutAt) {
-      // 客户端检测到后自行清理
-      return res.json({ kicked: true });
-    }
-    return res.json({ kicked: false });
-  } catch (e) {
-    console.error('check-kicked error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-// 更新管理员权限
-app.post('/api/admin/update-permissions', async (req, res) => {
-  try {
-    const { id, permissions } = req.body;
-    if (!id || !permissions)
-      return res.status(400).json({ ok: false, error: 'missing id/permissions' });
-
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-
-    await db.ref(`admins/${id}/permissions`).set({
-      recharge: !!permissions.recharge,
-      withdraw: !!permissions.withdraw,
-      buysell:  !!permissions.buysell,
-      admin:    !!permissions.admin,
-      balance_adjust: !!permissions.balance_adjust
+  // 假设你有一个获取昨日数据的 API
+  fetch(`/api/getDataForDate?date=${yesterday.toISOString()}`)
+    .then(response => response.json())
+    .then(data => {
+      console.log(data); // 打印数据，确保你能看到返回的内容
+      // 更新页面上的数据
+      $('#yesterdayRecharge').text(data.recharge);
+      $('#yesterdayWithdraw').text(data.withdraw);
+      $('#yesterdayBuySum').text(data.buySum);
+      $('#yesterdaySellSum').text(data.sellSum);
+      $('#yesterdayOrders').text(data.orders);
+    })
+    .catch(error => {
+      console.error('获取昨日数据失败:', error);
     });
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('admin update-permissions error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+}
+
+// 在页面上找到“查看昨日数据”按钮，并绑定点击事件
+const viewYesterdayBtn = document.getElementById('viewYesterdayBtn');
+if (viewYesterdayBtn) {  // 确保按钮存在
+  viewYesterdayBtn.onclick = loadYesterdayData;
+} else {
+  console.error('查看昨日数据按钮未找到');
+}
+async function resetWithdrawPwd() {
+  const userId = document.getElementById('userId').value;
+  const verifyType = document.getElementById('verifyType').value;
+  const verifyValue = document.getElementById('verifyValue').value;
+  const newPwd = document.getElementById('newWithdrawPwd').value;
+
+  if (!userId || !verifyValue || !newPwd) {
+    alert('请填写完整信息');
+    return;
+  }
+
+  const payload = {
+    userId,
+    verifyType,
+    newWithdrawPwd: newPwd
+  };
+
+  if (verifyType === 'order') {
+    payload.orderId = verifyValue;
+  } else {
+    payload.walletAddress = verifyValue;
+  }
+
+  const res = await fetch('/api/admin/reset-withdraw-password', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+
+  if (data.success) {
+    alert('提款密码已成功重置');
+  } else {
+    alert(data.error || '请求失败，请稍后再试');
+  }
+}
+function initAutoRefresh(selectId, refreshFn) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  const key = selectId + '_value';
+  const saved = localStorage.getItem(key);
+  if (saved) select.value = saved;
+
+  if (saved && saved !== '0') {
+    startTimer(selectId, parseInt(saved, 10), refreshFn);
+  }
+
+  select.addEventListener('change', () => {
+    const sec = select.value;
+    localStorage.setItem(key, sec);
+    stopTimer(selectId);
+    if (sec !== '0') startTimer(selectId, parseInt(sec, 10), refreshFn);
+  });
+}
+
+function startTimer(timerId, sec, fn) {
+  stopTimer(timerId);
+  window._autoTimers = window._autoTimers || {};
+  window._autoTimers[timerId] = setInterval(fn, sec * 1000);
+}
+
+function stopTimer(timerId) {
+  window._autoTimers = window._autoTimers || {};
+  if (window._autoTimers[timerId]) {
+    clearInterval(window._autoTimers[timerId]);
+    window._autoTimers[timerId] = null;
+  }
+}
+
+/* 分页面初始化 */
+initAutoRefresh('autoRefreshSelect_recharge', () => {
+  if (typeof r_search === 'function') r_search();
+});
+
+initAutoRefresh('autoRefreshSelect_draw', () => {
+  if (typeof w_search === 'function') w_search();
+});
+
+initAutoRefresh('autoRefreshSelect_buysell', () => {
+  if (typeof bs_search === 'function') bs_search();
+});
+/* ===============================
+   查看昨日数据（统一修复版）
+=============================== */
+
+function getYesterdayRange() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+
+  return {
+    start: dateStr,
+    end: dateStr
+  };
+}
+
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest('.view-yesterday-btn');
+  if (!btn) return;
+
+  const activePage =
+    document.querySelector('.header-nav .icon.active')?.dataset.page;
+
+  if (!activePage) return;
+
+  const { start, end } = getYesterdayRange();
+
+  if (activePage === 'buysell') {
+    document.getElementById('bs_start').value = start;
+    document.getElementById('bs_end').value = end;
+    pageState.bs = 1;
+    bs_search();
+  }
+
+  if (activePage === 'recharge') {
+    document.getElementById('r_start').value = start;
+    document.getElementById('r_end').value = end;
+    pageState.r = 1;
+    r_search();
+  }
+
+  if (activePage === 'withdraw') {
+    document.getElementById('w_start').value = start;
+    document.getElementById('w_end').value = end;
+    pageState.w = 1;
+    w_search();
   }
 });
+/* =========================
+   BuySell 管理重置
+========================= */
+function resetBuySellPage() {
+  const page = document.getElementById('page-buysell');
+  if (!page) return;
+
+  // 1️⃣ 清空输入框
+  page.querySelectorAll('input').forEach(el => {
+    if (el.type === 'text' || el.type === 'date') {
+      el.value = '';
+    }
+  });
+
+  // 2️⃣ 重置下拉框
+  page.querySelectorAll('select').forEach(el => {
+    el.selectedIndex = 0;
+  });
+
+  // 3️⃣ 取消自己锁定
+  const cb = document.getElementById('bsLockedOnly');
+  if (cb) cb.checked = false;
+
+  // 4️⃣ 停止自动刷新
+  stopTimer('autoRefreshSelect_buysell');
+
+  // 5️⃣ 重新加载 BuySell 数据（不刷新页面）
+  if (typeof bs_search === 'function') {
+    bs_search();
+  }
+}
+
+
+/* =========================
+   充值管理重置
+========================= */
+function resetRechargePage() {
+  const page = document.getElementById('page-recharge');
+  if (!page) return;
+
+  // 1️⃣ 清空筛选条件
+  const ids = ['r_start', 'r_end', 'r_wallet', 'r_currency', 'r_status'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') {
+      el.selectedIndex = 0;
+    } else {
+      el.value = '';
+    }
+  });
+
+  // 2️⃣ 重置自动刷新下拉
+  const autoSel = document.getElementById('autoRefreshSelect_recharge');
+  if (autoSel) autoSel.selectedIndex = 0;
+
+  // 3️⃣ 取消自己锁定
+  const cb = document.getElementById('rLockedOnly');
+  if (cb) cb.checked = false;
+
+  // 4️⃣ 停止自动刷新
+  stopTimer('autoRefreshSelect_recharge');
+
+  // 4️⃣ 重新加载充值数据（不刷新页面）
+  if (typeof r_search === 'function') {
+    r_search();
+  }
+}
+
+
+/* =========================
+   提款管理重置
+========================= */
+function resetWithdrawPage() {
+  const page = document.getElementById('page-withdraw');
+  if (!page) return;
+
+  // 1️⃣ 清空筛选条件
+  const ids = ['w_start', 'w_end', 'w_wallet', 'w_currency', 'w_status', 'w_quickStatus'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') {
+      el.selectedIndex = 0;
+    } else {
+      el.value = '';
+    }
+  });
+
+  // 2️⃣ 重置自动刷新下拉
+  const autoSel = document.getElementById('autoRefreshSelect_draw');
+  if (autoSel) autoSel.selectedIndex = 0;
+
+  // 3️⃣ 取消自己锁定
+  const cb = document.getElementById('wLockedOnly');
+  if (cb) cb.checked = false;
+
+  // 4️⃣ 停止自动刷新
+  stopTimer('autoRefreshSelect_draw');
+
+  // 4️⃣ 重新加载提款数据（不刷新页面）
+  if (typeof w_search === 'function') {
+    w_search();
+  }
+}
+/* -----------------------------
+   Init
+------------------------------ */
+  // 检查 URL 中的 login 参数：清除旧登录态，触发下级登录样式
+  let _isSubAdminLogin = sessionStorage.getItem('is_sub_admin_login') === '1';
+  (function prefillLoginFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const loginId = params.get('login');
+    if (!loginId) return;
+
+    _isSubAdminLogin = true;
+    sessionStorage.setItem('is_sub_admin_login', '1');
+    sessionStorage.setItem('nexbit_sub_login_id', loginId);
+
+    // 清除已有的登录态，确保显示登录页面
+    try {
+      localStorage.removeItem('nexbit_admin_token');
+      localStorage.removeItem('nexbit_admin_perms');
+      localStorage.removeItem('nexbit_admin_super');
+      localStorage.removeItem('nexbit_admin_name');
+    } catch(e) {}
+
+    // 清除 URL 参数
+    if (window.history && window.history.replaceState) {
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+  })();
+
+  ensureLoggedIn().then(ok => { if (ok) loadDashboard(); });
+
+</script>
+<script>
+async function resetWithdrawPassword() {
+  const verifyType = document.getElementById('verifyType').value;
+  const wallet = document.getElementById('searchWithdrawWallet').value.trim();
+  const orderId = document.getElementById('searchWithdrawOrder').value.trim();
+  const userId = document.getElementById('searchWithdrawUserId').value.trim();
+  const newPwd = document.getElementById('newWithdrawPassword').value.trim();
+
+  if (!newPwd) {
+    alert('新提款密码不能为空');
+    return;
+  }
+
+  // 至少填一个校验字段
+  if (!wallet && !orderId && !userId) {
+    alert('请至少填写一个校验信息（钱包地址 / 订单号 / 用户ID）');
+    return;
+  }
+
+  const payload = {
+    newWithdrawPwd: newPwd
+  };
+
+  if (wallet) payload.walletAddress = wallet;
+  if (orderId) payload.orderId = orderId;
+  if (userId) payload.userId = userId;
+
+  const res = await fetch('/api/admin/reset-withdraw-password', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + (localStorage.getItem('nexbit_admin_token') || '')
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+
+  if (data.success) {
+    localStorage.setItem(
+      'withdraw_password',
+      data.newWithdrawPassword
+    );
+    alert('提款密码已成功重置');
+  } else {
+    alert(data.error || '校验失败，无法重置');
+  }
+}
+
+/* -----------------------------
+   Settings - Admin Management
+------------------------------ */
+async function loadAdmins(){
+  const btn = document.getElementById('btnRefreshAdmins');
+  const origText = btn ? btn.textContent : '刷新';
+  if (btn) { btn.disabled = true; btn.textContent = '刷新中...'; }
+  try {
+    const r = await fetch('/api/admin/list', { headers: authHeaders() });
+    const j = await r.json();
+    if (!j.ok) { alert('加载管理员列表失败: ' + (j.error || '未知')); if (btn) { btn.disabled = false; btn.textContent = origText; } return; }
+    renderAdminTable(j.admins || []);
+  } catch(e) {
+    alert('加载管理员列表失败: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
+}
+
+function renderAdminTable(admins){
+  const tbody = document.getElementById('adminTable');
+  // 过滤掉空白ID的异常账号
+  admins = admins.filter(a => a.id && a.id.trim());
+  if (!admins.length) {
+    tbody.innerHTML = '<tr><td colspan="5">暂无管理员</td></tr>';
+    return;
+  }
+  let html = '';
+  // 非超级管理员只能看到自己和自己创建的下级账号
+  if (!isSuperAdmin()) {
+    const myId = getAdminId();
+    admins = admins.filter(a => a.id === myId || a.createdBy === myId);
+  }
+  admins.forEach(a => {
+    const perms = a.permissions || {};
+    const statusColor = a.status === '在线' ? 'green' : '#999';
+    const activeLabel = a.isActive ? '已启用' : '已禁用';
+    const toggleLabel = a.isActive ? '禁用' : '启用';
+    const toggleClass = a.isActive ? 'secondary' : 'primary';
+    const star = a.isSuper ? ' <span style="color:gold">★</span>' : '';
+    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(a.id);
+
+    html += '<tr>' +
+      '<td>' + escHtml1(a.id) + star + '</td>' +
+      '<td style="white-space:nowrap">' +
+        '<label><input type="checkbox" data-field="recharge" ' + (perms.recharge ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 充值</label> ' +
+        '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
+        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
+        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label> ' +
+        '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label>' +
+      '</td>' +
+      '<td>' +
+        '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
+        '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
+      '</td>' +
+      '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
+      '<td>' +
+        '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
+        '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
+        (a.isSuper ? '' : '<button class="danger" style="padding:4px 10px" onclick="if(confirm(\'确认踢出管理员 ' + escHtml1(a.id) + '？\'))kickAdmin(\'' + escHtml1(a.id) + '\')">踢出</button> ') +
+        '<button class="danger" onclick="if(confirm(\'确认删除管理员 ' + escHtml1(a.id) + '？\'))deleteAdmin(\'' + escHtml1(a.id) + '\')">删除</button>' +
+        '<div class="small">创建人: ' + escHtml1(a.createdBy || 'system') + '</div>' +
+      '</td>' +
+    '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function escHtml1(s){
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function createAdmin(){
+  const idEl = document.getElementById('newAdminId');
+  const nickEl = document.getElementById('newAdminNickname');
+  const pwEl = document.getElementById('newAdminPassword');
+  const id = idEl.value.trim();
+  const nickname = nickEl.value.trim();
+  const password = pwEl.value;
+  if (!id || !password) return alert('请输入管理员账号和密码');
+
+  const cb = name => {
+    const el = document.querySelector('#page-settings input[type="checkbox"][value="' + name + '"]');
+    return el ? el.checked : false;
+  };
+
+  try {
+    const r = await fetch('/api/admin/create', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        id, nickname: nickname || id, password,
+        recharge: cb('recharge'),
+        withdraw: cb('withdraw'),
+        buysell:  cb('buysell'),
+        admin: cb('admin'),
+        balance_adjust: cb('balance_adjust')
+      })
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('创建失败: ' + (j.error || '未知')); return; }
+    idEl.value = '';
+    nickEl.value = '';
+    pwEl.value = '';
+    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(id);
+    alert('创建成功！\n账号：' + id + '\n昵称：' + (nickname || id) + '\n初始密码：' + password + '\n专属登录链接：\n' + uniqueUrl);
+    loadAdmins();
+  } catch(e) {
+    alert('创建失败: ' + e.message);
+  }
+}
+
+async function toggleAdminStatus(id, isActive){
+  try {
+    const r = await fetch('/api/admin/toggle-status', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id, isActive })
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('操作失败: ' + (j.error || '未知')); return; }
+    loadAdmins();
+  } catch(e) {
+    alert('操作失败: ' + e.message);
+  }
+}
+
+async function deleteAdmin(id){
+  if (!id) { alert('缺少管理员ID'); return; }
+  try {
+    const r = await fetch('/api/admin/delete?id=' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: authHeaders()
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('删除失败: ' + (j.error || '未知')); return; }
+    loadAdmins();
+  } catch(e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+async function kickAdmin(id){
+  if (!id) { alert('缺少管理员ID'); return; }
+  try {
+    const r = await fetch('/api/admin/kick', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('踢出失败: ' + (j.error || '未知')); return; }
+    alert('已踢出管理员 ' + id);
+    loadAdmins();
+  } catch(e) {
+    alert('踢出失败: ' + e.message);
+  }
+}
+
+async function updateAdminPermissions(id, ev){
+  const tr = ev.target.closest('tr');
+  const cbs = tr.querySelectorAll('input[data-field]');
+  const perms = { recharge: false, withdraw: false, buysell: false, admin: false, balance_adjust: false };
+  cbs.forEach(cb => {
+    perms[cb.getAttribute('data-field')] = cb.checked;
+  });
+
+  try {
+    const r = await fetch('/api/admin/update-permissions', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id, permissions: perms })
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('更新失败: ' + (j.error || '未知')); loadAdmins(); }
+  } catch(e) {
+    alert('更新失败: ' + e.message);
+    loadAdmins();
+  }
+}
+
+async function resetAdminLoginPassword(){
+  const id = document.getElementById('resetAdminId').value.trim();
+  const newPassword = document.getElementById('resetAdminPassword').value;
+  if (!id || !newPassword) return alert('请输入管理员账号和新密码');
+
+  try {
+    const r = await fetch('/api/admin/reset-password', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id, newPassword })
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('重置失败: ' + (j.error || '未知')); return; }
+    alert('密码已重置');
+    document.getElementById('resetAdminId').value = '';
+    document.getElementById('resetAdminPassword').value = '';
+  } catch(e) {
+    alert('重置失败: ' + e.message);
+  }
+}
+
+function copyLoginLink(url) {
+  navigator.clipboard.writeText(url).then(() => {
+    alert('专属登录链接已复制！\n\n下级打开链接后输入密码即可登录。');
+  }).catch(() => {
+    prompt('请手动复制登录链接：', url);
+  });
+}
 
 // 推送配置更新给下级管理员
-app.post('/api/admin/push-update', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
+async function pushAdminUpdate(id, btn) {
+  if (!id) return;
 
-    const { id } = req.body;
-    if (!id)
-      return res.status(400).json({ ok: false, error: 'missing id' });
+  // 先保存当前复选框权限到 Firebase（确保点击更新时权限已落库）
+  if (btn) {
+    const tr = btn.closest('tr');
+    const cbs = tr.querySelectorAll('input[data-field]');
+    const perms = { recharge: false, withdraw: false, buysell: false, admin: false };
+    cbs.forEach(cb => {
+      perms[cb.getAttribute('data-field')] = cb.checked;
+    });
 
-    await db.ref(`admins/${id}/configVersion`).set(now());
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('admin push-update error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    await fetch('/api/admin/update-permissions', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id, permissions: perms })
+    });
   }
-});
 
-// 检查是否有配置更新
-app.get('/api/admin/check-update', async (req, res) => {
   try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const id = req.query.id || '';
-    if (!id)
-      return res.status(400).json({ ok: false, error: 'missing id' });
-
-    const snap = await db.ref(`admins/${id}/configVersion`).once('value');
-    return res.json({ ok: true, configVersion: snap.exists() ? snap.val() : 0 });
-  } catch (e) {
-    console.error('admin check-update error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    const r = await fetch('/api/admin/push-update', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      alert('已推送更新给 ' + id + '，下级管理后台将自动刷新。');
+    } else {
+      alert('推送失败: ' + (j.error || '未知'));
+    }
+  } catch(e) {
+    alert('推送失败: ' + e.message);
   }
-});
+}
 
-// 重置管理员登录密码
-app.post('/api/admin/reset-password', async (req, res) => {
+// 每 5 秒检查是否有配置更新，如有则刷新页面
+let _lastConfigVersion = 0;
+let _configPollTimer = null;
+async function checkConfigUpdate() {
+  const myId = getAdminId();
+  if (!myId) return;
   try {
-    const { id, newPassword } = req.body;
-    if (!id || !newPassword)
-      return res.status(400).json({ ok: false, error: 'missing id/newPassword' });
-
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-
-    const hashed = await bcrypt.hash(newPassword, 10);
-    await db.ref(`admins/${id}/hashed`).set(hashed);
-
-    // 使其所有现有 token 失效
-    const tokenSnap = await db.ref('admins_by_token').once('value');
-    if (tokenSnap.exists()) {
-      const deletions = [];
-      tokenSnap.forEach(child => {
-        if (child.val().id === id) deletions.push(child.key);
-      });
-      for (const tk of deletions) {
-        await db.ref(`admins_by_token/${tk}`).remove();
-      }
-    }
-
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('admin reset-password error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-// 重置用户提款密码（管理员操作）
-app.post('/api/admin/reset-withdraw-password', async (req, res) => {
-  try {
-    if (!db) return res.status(500).json({ success: false, error: 'no db' });
-
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ success: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ success: false, error: 'forbidden' });
-
-    const { newWithdrawPwd, orderId, walletAddress, userId } = req.body;
-
-    if (!newWithdrawPwd) {
-      return res.status(400).json({ success: false, error: '新提款密码不能为空' });
-    }
-
-    let targetUid = null;
-
-    // 1. 如果直接提供了 userId，先验证用户存在
-    if (userId) {
-      const userSnap = await db.ref(`users/${userId}`).once('value');
-      if (userSnap.exists()) {
-        targetUid = userId;
-      }
-    }
-
-    // 2. 通过订单号在提款订单中查找 userId
-    if (!targetUid && orderId) {
-      const orderSnap = await db.ref(`orders/withdraw/${orderId}`).once('value');
-      if (orderSnap.exists()) {
-        targetUid = orderSnap.val().userId;
-      }
-    }
-
-    // 3. 通过钱包地址在提款订单中查找 userId
-    if (!targetUid && walletAddress) {
-      const withdrawSnap = await db.ref('orders/withdraw').once('value');
-      if (withdrawSnap.exists()) {
-        const orders = withdrawSnap.val();
-        for (const [oid, order] of Object.entries(orders)) {
-          if (order.wallet && order.wallet.toLowerCase() === walletAddress.toLowerCase()) {
-            targetUid = order.userId;
-            break;
+    const r = await fetch('/api/admin/check-update?id=' + encodeURIComponent(myId), {
+      headers: authHeaders()
+    });
+    const j = await r.json();
+    if (!j.ok) return;
+    const ver = j.configVersion || 0;
+    if (_lastConfigVersion === 0) {
+      _lastConfigVersion = ver;
+    } else if (ver > _lastConfigVersion) {
+      clearInterval(_configPollTimer);
+      // 先从服务器拉取最新权限，确保刷新后权限生效
+      try {
+        const listRes = await fetch('/api/admin/list', { headers: authHeaders() });
+        const listData = await listRes.json();
+        if (listData.ok && Array.isArray(listData.admins)) {
+          const me = listData.admins.find(a => a.id === myId);
+          if (me) {
+            setAdminPerms(me.permissions || {}, !!me.isSuper);
           }
         }
-      }
+      } catch(e) { /* 静默忽略 */ }
+      alert('配置已更新，页面将自动刷新以生效。');
+      location.reload();
     }
-
-    // 4. 综合兜底：如果以上都没匹配到，用所有提供的字段遍历提款订单
-    if (!targetUid && (orderId || userId || walletAddress)) {
-      const withdrawSnap = await db.ref('orders/withdraw').once('value');
-      if (withdrawSnap.exists()) {
-        const orders = withdrawSnap.val();
-        for (const [oid, order] of Object.entries(orders)) {
-          if (orderId && order.orderId === orderId) { targetUid = order.userId; break; }
-          if (userId && order.userId === userId) { targetUid = order.userId; break; }
-          if (walletAddress && order.wallet && order.wallet.toLowerCase() === walletAddress.toLowerCase()) { targetUid = order.userId; break; }
-        }
-      }
-    }
-
-    if (!targetUid) {
-      return res.status(404).json({ success: false, error: '未找到匹配的用户，请检查输入的订单号/用户ID/钱包地址是否正确' });
-    }
-
-    // 更新提款密码
-    await db.ref(`users/${targetUid}/settings/withdrawPassword`).set(newWithdrawPwd);
-
-    return res.json({
-      success: true,
-      newWithdrawPassword: newWithdrawPwd,
-      userId: targetUid
-    });
-
-  } catch (e) {
-    console.error('reset-withdraw-password error', e);
-    return res.status(500).json({ success: false, error: 'internal server error' });
-  }
-});
-
-// 根据 token 获取当前管理员信息（用于自动登录）
-app.get('/api/admin/me', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const token = auth.slice(7);
-    const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (!tokenSnap.exists())
-      return res.status(403).json({ ok: false, error: 'invalid token' });
-    const adminId = tokenSnap.val().id;
-    const adminSnap = await db.ref(`admins/${adminId}`).once('value');
-    if (!adminSnap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-    const admin = adminSnap.val();
-    return res.json({
-      ok: true,
-      id: admin.id,
-      nickname: admin.nickname || admin.id,
-      permissions: admin.permissions || {},
-      isSuper: !!admin.isSuper
-    });
-  } catch (e) {
-    console.error('admin me error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-
-/* --------------------------------------------------
-   Utils
--------------------------------------------------- */
-app.post('/api/admin/login', async (req, res) => {
-  try {
-    const { id, password } = req.body;
-    if (!id || !password)
-      return res.status(400).json({ ok: false, error: 'missing id/password' });
-
-    const snap = await db.ref(`admins/${id}`).once('value');
-    if (!snap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-
-    const admin = snap.val();
-    const passOk = await bcrypt.compare(password, admin.hashed);  // 比较密码
-    if (!passOk)
-      return res.status(401).json({ ok: false, error: 'incorrect password' });
-
-    // 检查是否被禁用
-    if (admin.isActive === false)
-      return res.status(403).json({ ok: false, error: '账号已被禁用，请联系超级管理员' });
-
-    const token = uuidv4();  // 生成新 token
-    await db.ref(`admins_by_token/${token}`).set({
-      id,
-      created: now()  // 保存 token 和创建时间
-    });
-
-    // 更新状态为在线并记录最后登录时间
-    await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
-
-    return res.json({ ok: true, token, nickname: admin.nickname || admin.id, permissions: admin.permissions || {}, isSuper: !!admin.isSuper });  // 返回登录成功的 token 和权限
-
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
-});
-/* ---------------------------------------------------------
-   Admin: approve/decline transactions (idempotent)
-   - prevents double-processing by checking 'processed' flag
---------------------------------------------------------- */
-app.post('/api/transaction/update', async (req, res) => {
-  try {
-    if (!db) return res.json({ ok:false, error:'no-db' });
-
-const auth = req.headers.authorization || '';
-if (!auth.startsWith('Bearer '))
-  return res.status(403).json({ ok:false });
-
-const token = auth.slice(7);
-if (!await isValidAdminToken(token))
-  return res.status(403).json({ ok:false });
-
-
-    const adminRec = await db.ref(`admins_by_token/${token}`).once('value');
-    const adminId = adminRec.exists() ? adminRec.val().id : 'admin';
-    let operatorNickname = adminId;
-    try {
-      const nickSnap = await db.ref(`admins/${adminId}`).once('value');
-      if (nickSnap.exists()) {
-        operatorNickname = nickSnap.val().nickname || adminId;
-      }
-    } catch(e) { operatorNickname = adminId; }
-
-    const { type, orderId, status, note, frontNote } = req.body;
-    if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
-
-    const ref = db.ref(`orders/${type}/${orderId}`);
-    const snap = await ref.once('value');
-    if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
-
-    const order = snap.val();
-
-    // prevent double-processing
-    if (order.processed === true) {
-      // still record admin action but don't apply balance changes again
-      const actIdSkip = uuidv4();
-      await db.ref(`admin_actions/${actIdSkip}`).set({ id: actIdSkip, admin: adminId, operatorNickname, type, orderId, status, note, time: now(), skipped:true });
-      return res.json({ ok:true, message:'already processed' });
-    }
-
-    // update order status and mark processed after applying business logic
-    const actId = uuidv4();
-    await db.ref(`admin_actions/${actId}`).set({ id: actId, admin: adminId, operatorNickname, type, orderId, status, note, time: now() });
-
-    // handle balance effects
-    const userId = order && order.userId ? order.userId : null;
-    if (userId) {
-      const userRef = db.ref(`users/${userId}`);
-      const uSnap = await userRef.once('value');
-      let curBal = uSnap.exists() ? safeNumber(uSnap.val().balance, 0) : 0;
-      const amt = Number(order.estimate || 0);
-// 锁定/解锁权限控制：只有锁定的下级或超级管理员才能解锁
-const isLockAction = status === 'locked';
-const isUnlockAction = order.status === 'locked' && status !== 'locked';
-if (isUnlockAction) {
-  const lockedBy = order.lockedBy || '';
-  const adminSnap = await db.ref(`admins/${adminId}`).once('value');
-  const isSuper = adminSnap.exists() && adminSnap.val().isSuper === true;
-  if (!isSuper && lockedBy !== adminId && lockedBy !== operatorNickname) {
-    return res.status(403).json({ ok: false, error: '该订单已被 ' + (lockedBy || '其他管理员') + ' 锁定，只有锁定者或超级管理员才能解锁' });
-  }
+  } catch(e) { /* 静默忽略 */ }
+}
+function startConfigPolling() {
+  if (_configPollTimer) clearInterval(_configPollTimer);
+  _lastConfigVersion = 0;
+  _configPollTimer = setInterval(checkConfigUpdate, 5000);
 }
 
-// 1️⃣ 先更新状态（不 processed）
-const updateData = {
-  status,
-  note: note || null,
-  frontNote: frontNote || null,
-  updated: now(),
-  operatorNickname
-};
-if (isLockAction) updateData.lockedBy = operatorNickname;
-await ref.update(updateData);
-
-// 2️⃣ 统一计算状态
-const statusNorm = String(status || '').toLowerCase();
-
-// ✅ 统一批准
-const isApproved = (
-  statusNorm === 'success' ||
-  statusNorm === 'approved' ||
-  statusNorm === 'pass' ||
-  statusNorm === '通过'
-);
-
-// ✅ 统一拒绝 / 取消（补全中文 & 常见值）
-const isRejected = (
-  statusNorm === 'failed' ||
-  statusNorm === 'reject' ||
-  statusNorm === 'rejected' ||
-  statusNorm === 'cancel' ||
-  statusNorm === 'canceled' ||
-  statusNorm === 'decline' ||
-  statusNorm === 'deny' ||
-  statusNorm === '拒绝' ||
-  statusNorm === '取消'
-);
-
-if (isApproved) {
-  if (type === 'recharge') {
-    curBal += amt;
-    await userRef.update({
-      balance: curBal,
-      lastUpdate: now(),
-      boost_last: now()
+// 检查是否被踢出
+async function checkKickStatus() {
+  try {
+    const token = localStorage.getItem('adminToken');
+    if (!token) return;
+    const resp = await fetch('/api/admin/check-kicked', {
+      headers: { 'Authorization': `Bearer ${token}` }
     });
-
-    broadcastSSE({
-      type: 'balance',
-      userId,
-      balance: curBal,
-      source: 'recharge_approved'
-    });
-  }
- }
-
-// ===== 所有余额业务逻辑 =====
-// ===== withdraw 拒绝 → 退回 USDT（estimate）=====
-if (
-  type === 'withdraw' &&
-  isRejected &&
-  order.deducted === true &&
-  order.refunded !== true
-) {
-  const refundUSDT = Number(order.estimate || 0); // ✅ USDT
-
-  if (refundUSDT > 0) {
-    curBal += refundUSDT;
-
-    await userRef.update({
-      balance: curBal,
-      lastUpdate: now(),
-      boost_last: now()
-    });
-
-    await ref.update({ refunded: true });
-
-    broadcastSSE({
-      type: 'balance',
-      userId,
-      balance: curBal,
-      source: 'withdraw_refund'
-    });
-  }
+    const data = await resp.json();
+    if (data.kicked) {
+      // 清除本地状态
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminPerms');
+      localStorage.removeItem('adminName');
+      localStorage.removeItem('adminId');
+      localStorage.removeItem('isSuper');
+      alert('您的账号已被管理员强制下线，请重新登录。');
+      location.href = 'login.html';
+    }
+  } catch(e) {}
 }
 
-// ===== buysell sell 通过 → 加钱（保持原样）=====
-else if (
-  type === 'buysell' &&
-  isApproved &&
-  String(order.side || '').toLowerCase() === 'sell'
-) {
-  curBal += amt; // amt 在 buysell 里本来就是 USDT
-  await userRef.update({
-    balance: curBal,
-    lastUpdate: now(),
-    boost_last: now()
-  });
-
-  broadcastSSE({
-    type: 'balance',
-    userId,
-    balance: curBal
-  });
-}
-// ===== ✅【最终正确】统一写回最终状态 + processed =====
-let finalStatus = null;
-
-if (isApproved) finalStatus = "approved";
-if (isRejected) finalStatus = "rejected";
-
-if (finalStatus) {
-  await ref.update({
-    status: finalStatus,
-    processed: true,
-    updated: now()
-  });
+let _kickPollTimer = null;
+function startKickPolling() {
+  if (_kickPollTimer) clearInterval(_kickPollTimer);
+  _kickPollTimer = setInterval(checkKickStatus, 8000);
 }
 
-// ===== 再广播订单更新（🔔 供通知铃铛系统消费） =====
-const newSnap = await ref.once('value');
-const latestOrder = { ...newSnap.val(), orderId };
-
-broadcastSSE({
-  type: 'update',
-  typeName: type,
-  userId: latestOrder.userId,
-  order: latestOrder,
-  action: { admin: adminId, status, note }
+// 页面加载后启动轮询
+document.addEventListener('DOMContentLoaded', () => {
+  const myId = getAdminId();
+  if (myId) { startConfigPolling(); startKickPolling(); }
 });
-}
-return res.json({ ok: true });
+</script>
 
-} catch (e) {
-  console.error('transaction.update err', e);
-  return res.status(500).json({ ok:false, error: e.message });
-}
-});
 
-/* ---------------------------------------------------------
-   SSE endpoints
---------------------------------------------------------- */
-app.get('/api/orders/stream', async (req, res) => {
-  res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
-  res.flushHeaders();
-  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
-  global.__sseClients.push({ res, uid: null, ka });
-  req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
-});
-
-app.get('/wallet/:uid/sse', async (req, res) => {
-  const uid = String(req.params.uid || '').trim();
-  await ensureUserExists(uid);
-  res.set({ 'Content-Type':'text/event-stream', 'Cache-Control':'no-cache', 'Connection':'keep-alive' });
-  res.flushHeaders();
-  const ka = setInterval(()=>{ try{ res.write(':\n\n'); } catch(e){} }, 15000);
-  global.__sseClients.push({ res, uid, ka });
-  try {
-    if (!db) sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: 0, portfolio: {} }), 'balance');
-    else {
-      const snap = await db.ref(`users/${uid}/balance`).once('value');
-      const bal = safeNumber(snap.exists() ? snap.val() : 0, 0);
-      const pf = await calcPortfolio(uid);
-      sendSSE(res, JSON.stringify({ type:'balance', userId: uid, balance: bal, portfolio: pf }), 'balance');
-    }
-  } catch(e){}
-  req.on('close', () => { clearInterval(ka); global.__sseClients = global.__sseClients.filter(c => c.res !== res); });
-});
-
-/* ---------------------------------------------------------
-   Firebase watchers
---------------------------------------------------------- */
-try {
-  if (db) {
-    const ordersRef = db.ref('orders');
-    ordersRef.on('child_changed', (snap) => {
-      try {
-        const kind = snap.key;
-        const val = snap.val() || {};
-        Object.values(val).forEach(ord => { try { broadcastSSE({ type:'update', typeName: kind, order:ord }); } catch(e){} });
-      } catch(e){}
-    });
-    ordersRef.on('child_added', (snap) => {
-      try {
-        const kind = snap.key;
-        const val = snap.val() || {};
-        Object.values(val).forEach(ord => { try { broadcastSSE({ type: (kind === 'buysell' ? 'buysell' : 'new'), typeName: kind, order:ord }); } catch(e){} });
-      } catch(e){}
-    });
-
-    const usersRef = db.ref('users');
-    usersRef.on('child_changed', async (snap) => {
-      try {
-        const uid = snap.key;
-        const data = snap.val() || {};
-        if (data.balance !== undefined) {
-          const pf = await calcPortfolio(uid);
-          broadcastSSE({ type:'balance', userId: uid, balance: safeNumber(data.balance,0), portfolio: pf });
-        }
-      } catch(e){}
-    });
-  }
-} catch(e){ console.warn('SSE firebase watch failed', e.message); }
-
-/* ---------------------------------------------------------
-   Ensure default admin (bootstrap)
---------------------------------------------------------- */
-async function ensureDefaultAdmin() {
-  if (!db) return;
-
-  const snap = await db.ref('admins/admin').once('value');
-  if (snap.exists()) return;
-
-  const hashed = await bcrypt.hash('970611', 10);
-  const token = uuidv4();
-  const created = now();
-
-  await db.ref('admins/admin').set({
-    id: 'admin',
-    hashed,
-    created,
-    isSuper: true
-  });
-
-  await db.ref(`admins_by_token/${token}`).set({
-    id: 'admin',
-    created
-  });
-
-  console.log('✅ Default admin created');
-}
-ensureDefaultAdmin();
-
-/* ---------------------------------------------------------
-   【新增】自动结算定时任务 (每分钟检查一次)
-   作用：即便用户不在线，服务器也会自动检查到期的 PLAN 并打钱
---------------------------------------------------------- */
-// ✅ 修改后的代码（直接替换 server.js 最末尾的 setInterval 部分）
-setInterval(async () => {
-  if (!db) return;
-  try {
-    const nowTs = Date.now();
-    const ordersSnap = await db.ref('orders/plan').once('value');
-    if (!ordersSnap.exists()) return;
-
-    const orders = ordersSnap.val();
-
-    for (const orderId in orders) {
-      const order = orders[orderId];
-      const uid = order.userId || order.uid;
-      
-      // 1. 状态检查：只处理非 completed 的订单
-      if (order.status === 'completed' || order.status === 'settled') continue;
-
-      // 2. 强制转换数字，防止出现 NaN
-      const amount = Number(order.amount || 0);
-      const rateMin = Number(order.rateMin || 0);
-      const days = Number(order.days || 1);
-      let startTs = Number(order.timestamp);
-
-      if (isNaN(amount) || amount <= 0) {
-        console.warn(`[跳过] 订单 ${orderId} 金额异常`);
-        continue;
-      }
-
-      // 时间兼容处理
-      if (startTs < 10000000000) startTs *= 1000; 
-      const endTime = startTs + (days * 86400000);
-
-      // 3. 到期判断
-      if (nowTs >= endTime) {
-        // 二次防止重复结算
-        const settleCheck = await db.ref(`settled_plans/${orderId}`).once('value');
-        if (settleCheck.exists()) {
-          await db.ref(`orders/plan/${orderId}`).update({ status: 'completed' });
-          continue;
-        }
-
-        // 计算收益
-        const profit = Number((amount * (rateMin / 100)).toFixed(4));
-        const totalReturn = Number((amount + profit).toFixed(4));
-
-        const userRef = db.ref(`users/${uid}`);
-        const userSnap = await userRef.once('value');
-        
-        if (userSnap.exists()) {
-          const currentBal = Number(userSnap.val().balance || 0);
-          // 关键修复：确保加法运算不会产生 NaN
-          const newBal = Number((currentBal + totalReturn).toFixed(4));
-
-          if (isNaN(newBal)) {
-            console.error(`[致命错误] 结算结果为NaN: User:${uid}, Bal:${currentBal}, Return:${totalReturn}`);
-            continue; 
-          }
-
-          // 执行更新
-          await userRef.update({
-            balance: newBal,
-            lastUpdate: nowTs
-          });
-
-          // 标记已结算
-          await db.ref(`settled_plans/${orderId}`).set({
-            uid,
-            refOrderId: orderId,
-            amount,
-            profit,
-            totalReturn,
-            settleTime: nowTs,
-            status: 'completed',
-            auto: true
-          });
-
-          await db.ref(`orders/plan/${orderId}`).update({ status: 'completed' });
-
-          broadcastSSE({
-            type: 'balance',
-            userId: uid,
-            balance: newBal,
-            source: 'auto_plan_settle'
-          });
-
-          console.log(`✅ [结算成功] 订单:${orderId}, 用户:${uid}, 新余额:${newBal}`);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[自动结算任务出错]:', err.message);
-  }
-}, 60000);
-/* =========================================================
-   新平台专属：后台管理逻辑 (不影响旧平台)
-========================================================= */
-// 1. 后台拒绝提款：金额原路退回并同步
-app.post('/admin/reject-withdraw', async (req, res) => {
-  try {
-    const { uid, amount, orderId } = req.body;
-    const refundAmount = Number(amount);
-    if (!db || isNaN(refundAmount)) return res.status(400).json({ ok: false });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-    const newBal = Number(((snap.exists() ? snap.val().balance : 0) + refundAmount).toFixed(4));
-
-    // 退钱并修改订单状态
-    await userRef.update({ balance: newBal });
-    await db.ref(`orders/withdraw/${orderId}`).update({ status: 'rejected' });
-
-    // 实时推送
-    broadcastSSE({ type: 'balance', userId: uid, balance: newBal, source: 'withdraw_rejected' });
-    return res.json({ ok: true, balance: newBal });
-  } catch (e) { return res.status(500).json({ ok: false }); }
-});
-/* =========================================================
-   Esport 下注逻辑：检测余额并直接扣除
-========================================================= */
-app.post('/admin/esport-bet', async (req, res) => {
-  try {
-    const { uid, amount, gameInfo } = req.body;
-    const betAmount = Number(amount);
-
-    if (!db) return res.status(500).json({ ok: false, error: '数据库未连接' });
-    if (isNaN(betAmount) || betAmount <= 0) return res.status(400).json({ ok: false, error: '金额无效' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    if (!snap.exists()) return res.status(404).json({ ok: false, error: '用户不存在' });
-
-    const currentBal = Number(snap.val().balance || 0);
-
-    // --- 第一步：检测余额是否足够 ---
-    if (currentBal < betAmount) {
-      return res.status(400).json({ ok: false, error: '余额不足，无法下注' });
-    }
-
-    // --- 第二步：直接扣钱 ---
-    const newBal = Number((currentBal - betAmount).toFixed(4));
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: Date.now()
-    });
-
-    // --- 第三步：记录订单 (写入 Firebase) ---
-    const betId = 'BET' + Date.now();
-    await db.ref(`orders/esport/${betId}`).set({
-      uid,
-      amount: betAmount,
-      gameInfo,
-      status: 'pending',
-      time: Date.now()
-    });
-
-    // --- 第四步：实时同步前端余额 ---
-    broadcastSSE({
-      type: 'balance',
-      userId: uid,
-      balance: newBal,
-      source: 'esport_bet'
-    });
-
-    console.log(`[Esport下注] 用户 ${uid} 下注成功，扣除: ${betAmount}, 剩余: ${newBal}`);
-    
-    return res.json({ ok: true, balance: newBal, betId });
-
-  } catch (e) {
-    console.error('Esport bet error:', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-/* ---------------------------------------------------------
-   Lucky Bonus Endpoint (新添加)
---------------------------------------------------------- */
-app.post('/api/claim-bonus', async (req, res) => {
-  try {
-    const { uid, bonusAmount } = req.body;
-    const amount = parseFloat(bonusAmount);
-
-    // 安全校验：防止非法金额或缺失UID
-    if (!uid || isNaN(amount) || amount <= 0 || amount > 100) {
-      return res.status(400).json({ success: false, message: 'Invalid request' });
-    }
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    if (!snap.exists()) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-
-    const currentBal = Number(snap.val().balance || 0);
-    const newBal = Number((currentBal + amount).toFixed(4));
-
-    // 更新 Firebase 中的余额
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: Date.now()
-    });
-
-    // 记录奖金日志（可选，建议加上以便对账）
-    const bonusId = 'BN-' + Date.now();
-    await db.ref(`orders/bonus/${bonusId}`).set({
-      uid,
-      amount: amount,
-      type: 'lucky_wheel',
-      time: Date.now()
-    });
-
-    // 关键：通过 SSE 实时通知前端刷新余额
-    broadcastSSE({
-      type: 'balance',
-      userId: uid,
-      balance: newBal,
-      source: 'lucky_bonus'
-    });
-
-    return res.json({ success: true, balance: newBal });
-  } catch (e) {
-    console.error('Bonus claim error:', e);
-    return res.status(500).json({ success: false });
-  }
-});
-/* =========================================================
-   UFC/NBA 下注逻辑：检测余额并扣除 (逻辑同 esport)
-========================================================= */
-app.post('/api/bet/ufcnba', async (req, res) => {
-  try {
-    const { uid, amount, projectName, name, result } = req.body;
-    const betAmount = Number(amount);
-
-    if (!db) return res.status(500).json({ success: false, message: '数据库连接失败' });
-    if (isNaN(betAmount) || betAmount <= 0) return res.status(400).json({ success: false, message: '无效金额' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    if (!snap.exists()) return res.status(404).json({ success: false, message: '用户不存在' });
-
-    const currentBal = Number(snap.val().balance || 0);
-
-    // --- 步骤 1：余额检测 ---
-    if (currentBal < betAmount) {
-      return res.status(400).json({ success: false, message: '余额不足，请先充值' });
-    }
-
-    // --- 步骤 2：执行扣款 ---
-    const newBal = Number((currentBal - betAmount).toFixed(4));
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: Date.now()
-    });
-
-    // --- 步骤 3：记录订单 ---
-    const orderId = 'UFC-' + Date.now();
-    await db.ref(`orders/ufcnba/${orderId}`).set({
-      uid,
-      projectName,
-      teamName: name,
-      betResult: result,
-      amount: betAmount,
-      status: 'pending',
-      orderTime: Date.now()
-    });
-
-    // --- 步骤 4：实时推送 ---
-    broadcastSSE({
-      type: 'balance',
-      userId: uid,
-      balance: newBal,
-      source: 'ufcnba_bet'
-    });
-
-    return res.json({ success: true, balance: newBal });
-
-  } catch (e) {
-    console.error('UFC/NBA bet error:', e);
-    return res.status(500).json({ success: false, message: '系统错误' });
-  }
-});
-/* =========================================================
-   2-3D 彩票下注逻辑：检测余额并扣除
-========================================================= */
-app.post('/api/bet/2-3d', async (req, res) => {
-  try {
-    const { uid, amount, numbers, type, date, time } = req.body;
-    const betAmount = Number(amount);
-
-    if (!db) return res.status(500).json({ success: false, message: '数据库连接失败' });
-    if (isNaN(betAmount) || betAmount <= 0) return res.status(400).json({ success: false, message: '无效金额' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    if (!snap.exists()) return res.status(404).json({ success: false, message: '用户不存在' });
-
-    const currentBal = Number(snap.val().balance || 0);
-
-    // --- 步骤 1：余额检测 ---
-    if (currentBal < betAmount) {
-      return res.status(400).json({ success: false, message: '余额不足，无法下注' });
-    }
-
-    // --- 步骤 2：执行扣款 ---
-    const newBal = Number((currentBal - betAmount).toFixed(4));
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: Date.now()
-    });
-
-    // --- 步骤 3：记录订单 (存入 2-3d 专用路径) ---
-    const orderId = 'LOT-' + Date.now();
-    await db.ref(`orders/lottery_23d/${orderId}`).set({
-      uid,
-      betNumbers: numbers,
-      betType: type,
-      amount: betAmount,
-      selectedDate: date,
-      selectedTime: time,
-      status: 'pending',
-      createTime: Date.now()
-    });
-
-    // --- 步骤 4：实时推送余额更新 ---
-    broadcastSSE({
-      type: 'balance',
-      userId: uid,
-      balance: newBal,
-      source: '2-3d_bet'
-    });
-
-    console.log(`[2-3D下注] 用户 ${uid} 成功, 扣除: ${betAmount}, 剩余: ${newBal}`);
-
-    return res.json({ success: true, balance: newBal, orderId });
-
-  } catch (e) {
-    console.error('2-3D bet error:', e);
-    return res.status(500).json({ success: false, message: '系统繁忙' });
-  }
-});
-/* =========================================================
-   Sport (体育/足球) 下注逻辑：检测余额并扣除
-========================================================= */
-app.post('/api/bet/sport', async (req, res) => {
-  try {
-    const { uid, amount, projectName, name, result, date, time } = req.body;
-    const betAmount = Number(amount);
-
-    if (!db) return res.status(500).json({ success: false, message: '数据库连接失败' });
-    if (isNaN(betAmount) || betAmount <= 0) return res.status(400).json({ success: false, message: '无效下注金额' });
-
-    const userRef = db.ref(`users/${uid}`);
-    const snap = await userRef.once('value');
-
-    if (!snap.exists()) return res.status(404).json({ success: false, message: '用户不存在' });
-
-    const currentBal = Number(snap.val().balance || 0);
-
-    // --- 步骤 1：余额安全检测 ---
-    if (currentBal < betAmount) {
-      return res.status(400).json({ success: false, message: '余额不足，请充值后再下注' });
-    }
-
-    // --- 步骤 2：执行扣款 ---
-    const newBal = Number((currentBal - betAmount).toFixed(4));
-    await userRef.update({
-      balance: newBal,
-      lastUpdate: Date.now()
-    });
-
-    // --- 步骤 3：记录体育订单 ---
-    const orderId = 'SP-' + Date.now();
-    await db.ref(`orders/sport/${orderId}`).set({
-      uid,
-      projectName, // 比赛名称/联赛
-      teamName: name, // 下注的对象
-      betSide: result, // 下注的方向 (如：主胜/客胜/大球)
-      amount: betAmount,
-      matchDate: date,
-      matchTime: time,
-      status: 'pending',
-      createTime: Date.now()
-    });
-
-    // --- 步骤 4：实时同步前端余额 ---
-    broadcastSSE({
-      type: 'balance',
-      userId: uid,
-      balance: newBal,
-      source: 'sport_bet'
-    });
-
-    console.log(`[Sport下注] 用户 ${uid} 成功, 扣除: ${betAmount}, 剩余: ${newBal}`);
-
-    return res.json({ success: true, balance: newBal, orderId });
-
-  } catch (e) {
-    console.error('Sport bet error:', e);
-    return res.status(500).json({ success: false, message: '服务器异常' });
-  }
-});
-    /* =========================================================
-   获取佣金信息
-========================================================= */
-app.post('/api/commission/info', async (req,res)=>{
-
-    try{
-
-        const { uid } = req.body;
-
-        if(!uid){
-
-            return res.json({
-                ok:false,
-                message:'missing uid'
-            });
-
-        }
-
-        const userRef =
-            db.ref(`users/${uid}`);
-
-        const snap =
-            await userRef.once('value');
-
-        if(!snap.exists()){
-
-            return res.json({
-                ok:false,
-                message:'user not found'
-            });
-
-        }
-
-        const userData =
-            snap.val() || {};
-
-        res.json({
-
-            ok:true,
-
-            claimableCommission:
-                Number(userData.claimableCommission || 0),
-
-            claimedCommission:
-                Number(userData.claimedCommission || 0)
-
-        });
-
-    }catch(e){
-
-        console.log(e);
-
-        res.json({
-            ok:false,
-            message:e.message
-        });
-
-    }
-
-});
-    /* =========================================================
-   领取佣金
-========================================================= */
-app.post('/api/commission/claim', async (req,res)=>{
-
-    try{
-
-        const { uid } = req.body;
-
-        if(!uid){
-
-            return res.json({
-                ok:false,
-                message:'missing uid'
-            });
-
-        }
-
-        const userRef =
-            db.ref(`users/${uid}`);
-
-        const snap =
-            await userRef.once('value');
-
-        if(!snap.exists()){
-
-            return res.json({
-                ok:false,
-                message:'user not found'
-            });
-
-        }
-
-        const userData =
-            snap.val() || {};
-
-        // 当前可领取佣金
-        const claimable =
-            Number(userData.claimableCommission || 0);
-
-        if(claimable < 50){
-
-            return res.json({
-                ok:false,
-                message:'Minimum claimable amount is $50 USD'
-            });
-
-        }
-
-        // 当前余额
-        const oldBalance =
-            Number(userData.balance || 0);
-
-        // 已领取佣金
-        const oldClaimed =
-            Number(userData.claimedCommission || 0);
-
-        // 更新数据
-       await userRef.update({
-
-    balance:
-        oldBalance + claimable,
-
-    claimedCommission:
-        oldClaimed + claimable,
-
-    claimableCommission: 0
-
-});
-
-// 实时刷新余额
-broadcastSSE({
-
-    type:'balance',
-
-    userId: uid,
-
-    balance:
-        oldBalance + claimable
-
-});
-
-// 实时刷新佣金
-broadcastSSE({
-
-    type:'commission',
-
-    userId: uid,
-
-    claimableCommission: 0,
-
-    claimedCommission:
-        oldClaimed + claimable
-
-});
-
-res.json({
-
-    ok:true,
-
-    amount: claimable,
-
-    balance:
-        oldBalance + claimable
-
-});
-
-    }catch(e){
-
-        console.log(e);
-
-        res.json({
-            ok:false,
-            message:e.message
-        });
-
-    }
-
-});
-
-/* =========================================================
-   PLAN 投资返佣
-========================================================= */
-app.post('/api/plan/commission', async (req,res)=>{
-
-    try{
-
-        const {
-            uid,
-            userid,
-            userId,
-            amount
-        } = req.body;
-
-        // ======================================
-        // ✅ 自动兼容 uid / userid / userId
-        // ======================================
-        const realUid =
-            uid || userid || userId;
-
-        if(!realUid || !amount){
-
-            return res.json({
-                ok:false,
-                message:'missing params'
-            });
-
-        }
-
-        // ======================================
-        // 当前用户
-        // ======================================
-        const userRef =
-            db.ref(`users/${realUid}`);
-
-        const snap =
-            await userRef.once('value');
-
-        if(!snap.exists()){
-
-            return res.json({
-                ok:false,
-                message:'user not found'
-            });
-
-        }
-
-        const userData = snap.val() || {};
-
-        // ======================================
-        // 没有上级
-        // ======================================
-        if(!userData.invitedBy){
-
-            return res.json({
-                ok:true,
-                message:'no inviter'
-            });
-
-        }
-
-        const inviterUid =
-            userData.invitedBy;
-
-        // ======================================
-        // 🌟 返佣规则
-        // 投资 >=1000 USDT
-        // 上级获得 50 USDT
-        // ======================================
-        let commission = 0;
-
-        if(Number(amount) >= 1000){
-
-            commission = 50;
-
-        }
-
-        if(commission <= 0){
-
-            return res.json({
-                ok:true,
-                message:'no commission'
-            });
-
-        }
-
-        // ======================================
-        // 上级数据
-        // ======================================
-        const inviterRef =
-            db.ref(`users/${inviterUid}`);
-
-        const inviterSnap =
-            await inviterRef.once('value');
-
-        const inviterData =
-            inviterSnap.val() || {};
-
-        // 当前待领取佣金
-        const oldCommission =
-            Number(
-                inviterData.claimableCommission || 0
-            );
-
-        // ======================================
-        // ✅ 更新佣金
-        // ======================================
-        await inviterRef.update({
-
-            claimableCommission:
-                oldCommission + commission
-
-        });
-
-        // ======================================
-        // ✅ SSE 实时刷新
-        // ======================================
-        broadcastSSE({
-
-            type:'commission',
-
-            userId: inviterUid,
-
-            claimableCommission:
-                oldCommission + commission,
-
-            claimedCommission:
-                Number(
-                    inviterData.claimedCommission || 0
-                )
-
-        });
-
-        // ======================================
-        // ✅ 保存返佣记录
-        // ======================================
-        const logId =
-            Date.now().toString();
-
-        await db.ref(
-            `commissionLogs/${logId}`
-        ).set({
-
-            fromUid: realUid,
-
-            inviterUid,
-
-            amount: Number(amount),
-
-            commission,
-
-            createdAt: Date.now()
-
-        });
-
-        console.log(
-
-            `返佣成功 ${realUid} -> ${inviterUid} +${commission}`
-
-        );
-
-        res.json({
-            ok:true
-        });
-
-    }catch(e){
-
-        console.log(e);
-
-        res.json({
-
-            ok:false,
-
-            message:e.message
-
-        });
-
-    }
-
-});
-    /* =========================================================
-   绑定邀请人
-========================================================= */
-app.post('/api/bind-inviter', async (req,res)=>{
-
-    try{
-
-        const { uid, inviterId } = req.body;
-
-        if(!uid || !inviterId){
-
-            return res.json({
-                ok:false,
-                message:'missing params'
-            });
-
-        }
-
-        // 自己不能邀请自己
-        if(uid === inviterId){
-
-            return res.json({
-                ok:false,
-                message:'cannot invite self'
-            });
-
-        }
-
-        const userRef =
-            db.ref(`users/${uid}`);
-
-        const snap =
-            await userRef.once('value');
-
-        // 用户不存在
-        if(!snap.exists()){
-
-            return res.json({
-                ok:false,
-                message:'user not found'
-            });
-
-        }
-
-        const userData =
-            snap.val() || {};
-
-        // 已绑定过上级
-        if(userData.invitedBy){
-
-            return res.json({
-                ok:true,
-                message:'already binded'
-            });
-
-        }
-
-        // 写入邀请关系
-        await userRef.update({
-
-            invitedBy: inviterId
-
-        });
-    
-    // =====================================
-// 🌟 新增：记录下级列表
-// =====================================
-await db.ref(`referrals/${inviterId}/${uid}`).set({
-
-    uid,
-    createdAt: Date.now()
-
-});
-
-        console.log(
-            `绑定邀请成功 ${uid} -> ${inviterId}`
-        );
-
-        return res.json({
-            ok:true
-        });
-
-    }catch(e){
-
-        console.log(e);
-
-        return res.json({
-            ok:false,
-            message:e.message
-        });
-
-    }
-
-});
- // ======================================
-// 获取下级列表
-// ======================================
-
-app.get('/api/referrals/:uid', async (req,res)=>{
-
-    try{
-
-        const uid =
-            req.params.uid;
-
-        if(!uid){
-
-            return res.json({
-                ok:false,
-                list:[]
-            });
-
-        }
-
-        const snap =
-            await db.ref(
-                `referrals/${uid}`
-            ).once('value');
-
-        const val =
-            snap.val() || {};
-
-        const list =
-            Object.values(val);
-
-        return res.json({
-
-            ok:true,
-            list
-
-        });
-
-    }catch(e){
-
-        console.log(e);
-
-        return res.json({
-
-            ok:false,
-            list:[]
-
-        });
-
-    }
-
-});
-/* ---------------------------------------------------------
-   Profile API - 跨浏览器同步用户资料
---------------------------------------------------------- */
-// 获取用户资料
-app.get('/api/profiles/:uid', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const uid = req.params.uid;
-    const snap = await db.ref(`profiles/${uid}`).once('value');
-    const data = snap.exists() ? snap.val() : {};
-    return res.json({ ok: true, profile: data.profile || {}, avatar: data.avatar || '' });
-  } catch (e) {
-    console.error('get profile error', e);
-    return res.status(500).json({ ok: false, error: 'internal error' });
-  }
-});
-
-// 保存用户资料
-app.post('/api/profiles/:uid', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const uid = req.params.uid;
-    const { profile, avatar } = req.body;
-    if (!uid || (profile === undefined && avatar === undefined))
-      return res.status(400).json({ ok: false, error: 'invalid params' });
-
-    // 先读已有数据，只更新传入的字段
-    const snap = await db.ref(`profiles/${uid}`).once('value');
-    const existing = snap.exists() ? snap.val() : {};
-    const update = {};
-    if (profile !== undefined) update.profile = profile;
-    if (avatar !== undefined) update.avatar = avatar;
-
-    await db.ref(`profiles/${uid}`).update(update);
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('save profile error', e);
-    return res.status(500).json({ ok: false, error: 'internal error' });
-  }
-});
-
-/* ---------------------------------------------------------
-   Start server
---------------------------------------------------------- */
-
-app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
+</body>
+</html>
