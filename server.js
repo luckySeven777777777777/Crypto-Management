@@ -2638,7 +2638,7 @@ if (!await isValidAdminToken(token))
       }
     } catch(e) { operatorNickname = adminId; }
 
-    const { type, orderId, status, note } = req.body;
+    const { type, orderId, status, note, frontNote } = req.body;
     if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
 
     const ref = db.ref(`orders/${type}/${orderId}`);
@@ -2682,6 +2682,7 @@ if (isUnlockAction) {
 const updateData = {
   status,
   note: note || null,
+  frontNote: frontNote || null,
   updated: now(),
   operatorNickname
 };
