@@ -856,16 +856,17 @@ button {
        <thead>
 <tr>
 <th>会员ID</th>
-<th>wallet</th>
-<th>Account Balance</th>
+<th>修改地址</th>
+<th>账号余额</th>
 <th>加减操作</th>
 <th>注册时间</th>
 <th>上线时间</th>
+<th>IP</th>
 <th>最后在线时间</th>
 <th>标签</th>
 </tr>
 </thead>
-        <tbody id="m_table"><tr><td colspan="8" class="small">暂无数据</td></tr></tbody>
+        <tbody id="m_table"><tr><td colspan="9" class="small">暂无数据</td></tr></tbody>
       </table>
     </div>
 
@@ -2292,6 +2293,15 @@ function calcSummary(list, type){
 
   return result;
 }
+// ===== IP 渲染工具函数 =====
+function renderIpWithCountry(ip, country) {
+  if (!ip) return '--';
+  if (country) {
+    return `${ip}<br><span style="font-size:11px;color:#888">${country}</span>`;
+  }
+  return ip;
+}
+
 // ===== 充值行 =====
 function renderRechargeRow(o) {
   return `
@@ -2327,7 +2337,7 @@ function renderRechargeRow(o) {
   <td>${o.wallet || '--'}</td>
 
   <!-- IP -->
-  <td>${o.ip || '--'}</td>
+  <td>${renderIpWithCountry(o.ip, o.country)}</td>
 
   <!-- 状态 -->
   <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
@@ -2380,7 +2390,7 @@ function renderWithdrawRow(o) {
   <td>${o.wallet || '--'}</td>
 
   <!-- IP -->
-  <td>${o.ip || '--'}</td>
+  <td>${renderIpWithCountry(o.ip, o.country)}</td>
 
   <!-- 状态 -->
   <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
@@ -3477,7 +3487,7 @@ async function loadMembers(resetPage = true){
   if (resetPage) memberPage = 1;
   
   const tbody = $('#m_table');
-  tbody.innerHTML = `<tr><td colspan="8">${__('loading')}</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="9">${__('loading')}</td></tr>`;
 
   try{
     const all = await fetchAll();
@@ -3508,7 +3518,7 @@ async function loadMembers(resetPage = true){
     });
 
     if(!Object.keys(users).length){
-      tbody.innerHTML = `<tr><td colspan="8">暂无数据</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9">暂无数据</td></tr>`;
       return;
     }
 
@@ -3555,6 +3565,7 @@ async function loadMembers(resetPage = true){
         <td>${(isSuperAdmin() || (getAdminPerms().balance_adjust)) ? `<button class="primary" style="margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','add')">+</button> <button class="primary" style="background:#ff4444;margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','deduct')">-</button>` : '--'}</td>
         <td>${formatMyanmarTime(u.created)}</td>
         <td>${formatMyanmarTime(r.loginTime)}</td>
+        <td>${renderIpWithCountry(u.ip, u.country)}</td>
         <td>${formatMyanmarTime(r.lastOnline)}</td>
         <td>${tagCell}</td>
       </tr>
@@ -3565,7 +3576,7 @@ async function loadMembers(resetPage = true){
     if (totalPages > 1) {
       tbody.innerHTML += `
       <tr>
-        <td colspan="8" style="text-align:center;padding:12px 0">
+        <td colspan="9" style="text-align:center;padding:12px 0">
           <button ${memberPage<=1?'disabled':''} onclick="memberPage--;loadMembers(false)">上一页</button>
           <span class="small" style="margin:0 12px">第 ${memberPage} / ${totalPages} 页（共 ${total} 个会员）</span>
           <button ${memberPage>=totalPages?'disabled':''} onclick="memberPage++;loadMembers(false)">下一页</button>
@@ -3574,7 +3585,7 @@ async function loadMembers(resetPage = true){
     }
 
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="8">${__('loadFailed')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9">${__('loadFailed')}</td></tr>`;
   }
 }
 
