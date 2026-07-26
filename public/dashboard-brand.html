@@ -3044,15 +3044,16 @@ tbody.innerHTML =
       <td>${o.wallet || '--'}</td>
       <td>${o.ip || '--'}</td>
       <td>
-        <span class="badge" style="background:
-  ${ (o.status==='success' || o.status==='approved') ? '#00c851' :
-     (o.status==='failed' || o.status==='rejected' || o.status==='reject')  ? '#ff4444' :
-     o.status==='locked'  ? '#ffbb33' :
-     '#1976d2' };
-  color:#fff;"
-  ${(o.status==='failed' || o.status==='rejected') && o.note ? `title="${o.note.replace(/"/g,'&quot;')}"` : ''}>
-  ${displayStatus(o.status)}
-</span>
+        ${(() => {
+          const isBuyOrder = o._type === 'buysell' && String(o.side || '').toLowerCase() === 'buy';
+          const statusText = isBuyOrder ? __('success') : displayStatus(o.status);
+          const bgColor = isBuyOrder ? '#00c851' :
+            (o.status==='success' || o.status==='approved') ? '#00c851' :
+            (o.status==='failed' || o.status==='rejected' || o.status==='reject') ? '#ff4444' :
+            o.status==='locked' ? '#ffbb33' : '#1976d2';
+          return `<span class="badge" style="background:${bgColor};color:#fff">${statusText}</span>`;
+        })()}
+
       </td>
     </tr>`;
   }).join('') +
@@ -4663,23 +4664,33 @@ function startConfigPolling() {
 // 检查是否被踢出
 async function checkKickStatus() {
   try {
-    const token = localStorage.getItem('adminToken');
+    const token = getAdminToken();
     if (!token) return;
     const resp = await fetch('/api/admin/check-kicked', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    if (!resp.ok) {
+      // token 已失效（被踢出后从 DB 删除），强制登出
+      clearAdminState();
+      alert('您的账号已被管理员强制下线，请重新登录。');
+      location.href = 'login.html';
+      return;
+    }
     const data = await resp.json();
     if (data.kicked) {
-      // 清除本地状态
-      localStorage.removeItem('adminToken');
-      localStorage.removeItem('adminPerms');
-      localStorage.removeItem('adminName');
-      localStorage.removeItem('adminId');
-      localStorage.removeItem('isSuper');
+      clearAdminState();
       alert('您的账号已被管理员强制下线，请重新登录。');
       location.href = 'login.html';
     }
   } catch(e) {}
+}
+
+function clearAdminState() {
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
+  localStorage.removeItem(ADMIN_PERMS_KEY);
+  localStorage.removeItem(ADMIN_SUPER_KEY);
+  localStorage.removeItem(ADMIN_NAME_KEY);
+  localStorage.removeItem(ADMIN_ID_KEY);
 }
 
 let _kickPollTimer = null;
