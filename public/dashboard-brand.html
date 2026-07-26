@@ -2071,7 +2071,8 @@ async function submitRemark(){
     orderId: _remarkOrderId,
     type: normalizeType(_remarkType),
     status: _remarkStatus,
-    note: remark
+    note: remark,
+    frontNote: frontNote || null
   };
 
   try{
