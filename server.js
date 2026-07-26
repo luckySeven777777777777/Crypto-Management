@@ -1961,9 +1961,6 @@ async function sendPlanOrderToTelegram(order) {
 /* ---------------------------------------------------------
    Get transactions for admin UI
 --------------------------------------------------------- */
-// ===== 短时内存缓存：避免短时间内重复读 Firebase =====
-const txnCache = { data: null, ts: 0, ttl: 3000 }; // 3 秒 TTL
-
 app.get('/api/transactions', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
@@ -1973,12 +1970,6 @@ app.get('/api/transactions', async (req, res) => {
     const token = auth.slice(7);
     if (!await isValidAdminToken(token))
       return res.status(403).json({ ok:false });
-
-    // 命中缓存直接返回
-    const now = Date.now();
-    if (txnCache.data && (now - txnCache.ts) < txnCache.ttl) {
-      return res.json(txnCache.data);
-    }
 
     if (!db) {
       return res.json({
@@ -1999,17 +1990,13 @@ app.get('/api/transactions', async (req, res) => {
         db.ref('users').once('value')
       ]);
 
-    // 写缓存
-    txnCache.data = {
+    return res.json({
       ok: true,
       recharge: sortByTimeDesc(Object.values(rechargeSnap.val() || {})),
       withdraw: sortByTimeDesc(Object.values(withdrawSnap.val() || {})),
       buysell:  sortByTimeDesc(Object.values(buysellSnap.val() || {})),
       users: usersSnap.val() || {}
-    };
-    txnCache.ts = now;
-
-    return res.json(txnCache.data);
+    });
 
   } catch (e) {
     console.error('transactions error', e);
