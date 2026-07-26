@@ -1906,7 +1906,7 @@ function renderActionButtons(orderId, type, processed, status, lockedBy){
     </button>
 
     <button class="small-btn cancel-btn"
-      onclick="txAction(this,'${orderId}','${type}','reject')">
+      onclick="addRemark('${orderId}','${type}','failed')">
       ${__('rejectBtn')}❌
     </button>
     ` : ''}
@@ -1953,13 +1953,6 @@ const finalStatus =
 
 // 备注逻辑
 let note = action;
-if(action === 'reject'){
-  note = prompt(__('enterRejectReason'));
-  if(!note){
-    if(btn) btn.disabled = false;
-    return;
-  }
-}
 
 // ✅ 真正发送的内容（重点）
 const body = {
@@ -2008,6 +2001,10 @@ async function addRemark(orderId, type, currentStatus){
   _remarkOrderId = orderId;
   _remarkType = type;
   _remarkStatus = currentStatus || 'processing';
+
+  // Update modal title for reject vs normal remark
+  document.querySelector('#remarkModal .remark-header h2').innerText =
+    (currentStatus === 'failed') ? '强制拒绝' : '备注';
 
   // Reset textareas
   document.getElementById('rmFrontNote').value = '';
