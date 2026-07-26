@@ -2065,7 +2065,6 @@ async function submitRemark(){
   const frontNote = document.getElementById('rmFrontNote').value.trim();
   const backNote = document.getElementById('rmBackNote').value.trim();
   const remark = [frontNote, backNote].filter(Boolean).join('\n');
-  if(!remark) return;
 
   const body = {
     orderId: _remarkOrderId,
