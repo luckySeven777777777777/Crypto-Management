@@ -411,6 +411,26 @@ tr.row-tag-red td:first-child{border-left:3px solid #e60000}
   min-width:320px;
 }
 
+/* ===== Center Notification Toast ===== */
+.center-toast-container {
+  position:fixed; top:0; left:0; right:0; bottom:0;
+  display:flex; align-items:center; justify-content:center;
+  z-index:9999; pointer-events:none;
+}
+.center-toast {
+  background:#1a1a2e; color:#fff; padding:14px 28px;
+  border-radius:8px; font-size:15px; font-weight:500;
+  box-shadow:0 8px 32px rgba(0,0,0,.35);
+  max-width:480px; text-align:center;
+  opacity:0; transform:scale(.92);
+  transition:opacity .25s, transform .25s;
+  pointer-events:auto; word-break:break-word;
+}
+.center-toast.show { opacity:1; transform:scale(1); }
+.center-toast.success { border-left:4px solid #00c853; }
+.center-toast.error   { border-left:4px solid #ff4444; }
+.center-toast.info    { border-left:4px solid #448aff; }
+
 /* ===== Extra styles: order modal, admin login, alerts ===== */
 .order-detail-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0;
   background: rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1300; }
@@ -1442,11 +1462,28 @@ button {
     }
   }
 
+  // ===== 居中通知（替换 alert） =====
+  function showCenterNotify(msg, type, duration) {
+    type = type || 'info'; duration = duration || 2800;
+    var c = document.getElementById('centerToastContainer');
+    if (!c) { c = document.createElement('div'); c.id = 'centerToastContainer'; c.className = 'center-toast-container'; document.body.appendChild(c); }
+    var t = document.createElement('div');
+    t.className = 'center-toast ' + type;
+    t.textContent = msg;
+    c.appendChild(t);
+    void t.offsetWidth;
+    t.classList.add('show');
+    setTimeout(function() {
+      t.classList.remove('show');
+      setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 300);
+    }, duration);
+  }
+
   // 获取 2FA 密钥和二维码
     async function generateGoogle2FA() {
       const adminId = document.getElementById('gaAdminId').value.trim();
       if (!adminId) {
-        alert('请输入管理员账号');
+        showCenterNotify('请输入管理员账号');
         return;
       }
 
@@ -1461,7 +1498,7 @@ button {
         document.getElementById('gaQr').src = data.qr_code;  // 显示二维码
         document.getElementById('gaBox').style.display = 'block';  // 显示输入框
       } else {
-        alert('生成2FA绑定失败');
+        showCenterNotify('生成2FA绑定失败');
       }
     }
 
@@ -1470,7 +1507,7 @@ button {
   const code = document.getElementById('gaCode').value.trim();
   const adminId = document.getElementById('gaAdminId').value.trim();
   if (!code) {
-    alert('请输入验证码');
+    showCenterNotify('请输入验证码');
     return;
   }
 
@@ -1482,12 +1519,12 @@ button {
 
   const data = await response.json();
   if (data.ok) {
-    alert('2FA验证成功');
+    showCenterNotify('2FA验证成功');
     setAdminToken(data.token); // 保存token
     closeAdminLogin();
     loadDashboard(); // 登录后跳转到后台主页
   } else {
-    alert('验证码错误');
+    showCenterNotify('验证码错误');
   }
 }
 
@@ -1817,7 +1854,7 @@ function closeAdminLogin(){
 async function submitAdminLogin(){
   const id = document.getElementById('adminName').value.trim();
   const pw = document.getElementById('adminPassword').value;
-  if (!id || !pw) return alert('请输入管理员ID与密码');
+  if (!id || !pw) return showCenterNotify('请输入管理员ID与密码');
   
   try {
     const r = await fetch('/api/admin/login', { 
@@ -1863,10 +1900,10 @@ async function submitAdminLogin(){
       applyTranslations();
       loadDashboard();
     } else {
-      alert('登录失败: ' + (j.error || '未知'));
+      showCenterNotify('登录失败: ' + (j.error || '未知'));
     }
   } catch(e){
-    alert('请求失败'); 
+    showCenterNotify('请求失败'); 
   }
 }
 
@@ -1940,7 +1977,7 @@ ${lockUnlockHtml}
    Core: txAction (use authHeaders)
 ------------------------------ */
 async function txAction(btn, orderId, type, action){
-  if(!orderId) return alert(__('missingOrderId'));
+  if(!orderId) return showCenterNotify(__('missingOrderId'));
 
   // ✅ 立即锁按钮（防连点）
   if(btn){
@@ -1997,11 +2034,11 @@ const body = {
       else if(active==='buysell') bs_search();
       else o_search();
     }else{
-      alert(__('operationFailed'));
+      showCenterNotify(__('operationFailed'));
       if(btn) btn.disabled = false;
     }
   }catch(e){
-    alert(__('serverError'));
+    showCenterNotify(__('serverError'));
     if(btn) btn.disabled = false;
   }
 }
@@ -2099,7 +2136,7 @@ async function submitRemark(){
     const j = await r.json();
 
     if(j.ok){
-      alert(__('remarkSaved'));
+      showCenterNotify(__('remarkSaved'));
       closeRemarkModal();
 
       const active = document.querySelector('.header-nav .icon.active')?.dataset.page;
@@ -2109,12 +2146,12 @@ async function submitRemark(){
       else o_search();
 
     }else{
-      alert(__('remarkFailed') + (j.error || __('unknownError')));
+      showCenterNotify(__('remarkFailed') + (j.error || __('unknownError')));
     }
 
   }catch(e){
     console.error(e);
-    alert(__('remarkException'));
+    showCenterNotify(__('remarkException'));
   }
 }
 function openRemarkFromRow(el){
@@ -2129,7 +2166,7 @@ function openRemarkFromRow(el){
     openRemarkDrawer(data);
   }catch(e){
     console.error('remark parse error', e);
-    alert('备注数据解析失败');
+    showCenterNotify('备注数据解析失败');
   }
 }
 let currentRemarkData = null;
@@ -3214,10 +3251,10 @@ async function saveMemberTag() {
       closeTagEditor();
       loadMembers(false);
     } else {
-      alert('保存失败：' + ((data && data.error) || '未知错误'));
+      showCenterNotify('保存失败：' + ((data && data.error) || '未知错误'));
     }
   } catch(e) {
-    alert('网络错误：' + e.message);
+    showCenterNotify('网络错误：' + e.message);
   }
 }
 
@@ -3235,10 +3272,10 @@ async function clearMemberTag() {
       closeTagEditor();
       loadMembers(false);
     } else {
-      alert('清除失败：' + ((data && data.error) || '未知错误'));
+      showCenterNotify('清除失败：' + ((data && data.error) || '未知错误'));
     }
   } catch(e) {
-    alert('网络错误：' + e.message);
+    showCenterNotify('网络错误：' + e.message);
   }
 }
 
@@ -3435,7 +3472,7 @@ async function saveProfile() {
   const changedFields = Object.keys(changes);
   
   if (changedFields.length === 0) {
-    alert('没有需要保存的修改。');
+    showCenterNotify('没有需要保存的修改。');
     return;
   }
   
@@ -3446,13 +3483,13 @@ async function saveProfile() {
   const merged = Object.assign({}, _currentProfile, changes);
   const ok = await saveProfileToAPI(currentProfileUid, merged);
   if (!ok) {
-    alert('保存失败，请检查网络后重试。');
+    showCenterNotify('保存失败，请检查网络后重试。');
     return;
   }
   
   profilePendingChanges = {};
   await openProfile(currentProfileUid);
-  alert('已保存。所有下级账号实时同步（数据存储于服务器）。');
+  showCenterNotify('已保存。所有下级账号实时同步（数据存储于服务器）。');
 }
 
 function viewProfilePhone() {
@@ -3465,7 +3502,7 @@ function viewProfilePhone() {
   
   let action = prompt('手机号操作：\n输入 1 查看完整号码\n输入 2 修改号码', '1');
   if (action === '1') {
-    alert('完整手机号：' + (pendingPhone || '未设置'));
+    showCenterNotify('完整手机号：' + (pendingPhone || '未设置'));
     return;
   }
   if (action === '2') {
@@ -3481,7 +3518,7 @@ function uploadAvatar(event) {
   if (!currentProfileUid || !(isSuperAdmin() && perms.admin !== false)) return;
   const file = event.target.files[0];
   if (!file) return;
-  if (!file.type.startsWith('image/')) { alert('请选择图片文件'); return; }
+  if (!file.type.startsWith('image/')) { showCenterNotify('请选择图片文件'); return; }
   
   const reader = new FileReader();
   reader.onload = async function(e) {
@@ -3492,7 +3529,7 @@ function uploadAvatar(event) {
       localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(_cachedAvatars));
       document.getElementById('profileAvatar').src = base64;
     } else {
-      alert('头像上传失败，请检查网络后重试。');
+      showCenterNotify('头像上传失败，请检查网络后重试。');
     }
   };
   reader.readAsDataURL(file);
@@ -3612,7 +3649,7 @@ async function adjustBalance(uid, direction) {
   const label = direction === 'add' ? '增加' : '扣除';
   const amount = parseFloat(prompt(`请输入要${label}的金额：`, ''));
   if (isNaN(amount) || amount <= 0) {
-    if (amount !== null && amount !== '') alert('请输入有效的正数金额');
+    if (amount !== null && amount !== '') showCenterNotify('请输入有效的正数金额');
     return;
   }
   const payload = {
@@ -3627,13 +3664,13 @@ async function adjustBalance(uid, direction) {
     });
     const data = await res.json();
     if (data && data.ok) {
-      alert(`${label}成功！新余额：${Number(data.newBalance).toFixed(2)}`);
+      showCenterNotify(`${label}成功！新余额：${Number(data.newBalance).toFixed(2)}`);
       loadMembers(false);
     } else {
-      alert('操作失败：' + ((data && data.error) || '未知错误'));
+      showCenterNotify('操作失败：' + ((data && data.error) || '未知错误'));
     }
   } catch(e) {
-    alert('网络错误：' + e.message);
+    showCenterNotify('网络错误：' + e.message);
   }
 }
 
@@ -3797,14 +3834,14 @@ async function confirmRecharge(orderId) {
 
     const data = await res.json();
     if (!data.ok) {
-      alert('更新失败');
+      showCenterNotify('更新失败');
       return;
     }
 
     // 🔄 刷新充值列表
     r_search();
   } catch (e) {
-    alert('网络错误');
+    showCenterNotify('网络错误');
   }
 }
 // ===== 状态显示中文化（只影响显示）=====
@@ -3833,7 +3870,7 @@ function displayStatus(status){
       const records = getTableRecords();  // 获取当前显示的表格记录
       
       if (!records || records.length === 0) {
-          alert("没有数据可供下载");
+          showCenterNotify("没有数据可供下载");
           return;
       }
 
@@ -3901,7 +3938,7 @@ async function batchAction(select, key, searchFn) {
   
   const checked = document.querySelectorAll('.batch-check[data-key="' + key + '"]:checked');
   if (checked.length === 0) {
-    alert('请至少选择一条记录');
+    showCenterNotify('请至少选择一条记录');
     select.value = '';
     return;
   }
@@ -3949,7 +3986,7 @@ async function batchAction(select, key, searchFn) {
   }
   
   select.value = '';
-  alert('批量操作完成：' + count + ' / ' + checked.length + ' 条记录');
+  showCenterNotify('批量操作完成：' + count + ' / ' + checked.length + ' 条记录');
   window[searchFn]();
 }
 
@@ -4057,7 +4094,7 @@ async function resetWithdrawPwd() {
   const newPwd = document.getElementById('newWithdrawPwd').value;
 
   if (!userId || !verifyValue || !newPwd) {
-    alert('请填写完整信息');
+    showCenterNotify('请填写完整信息');
     return;
   }
 
@@ -4084,9 +4121,9 @@ async function resetWithdrawPwd() {
   const data = await res.json();
 
   if (data.success) {
-    alert('提款密码已成功重置');
+    showCenterNotify('提款密码已成功重置');
   } else {
-    alert(data.error || '请求失败，请稍后再试');
+    showCenterNotify(data.error || '请求失败，请稍后再试');
   }
 }
 function initAutoRefresh(selectId, refreshFn) {
@@ -4333,13 +4370,13 @@ async function resetWithdrawPassword() {
   const newPwd = document.getElementById('newWithdrawPassword').value.trim();
 
   if (!newPwd) {
-    alert('新提款密码不能为空');
+    showCenterNotify('新提款密码不能为空');
     return;
   }
 
   // 至少填一个校验字段
   if (!wallet && !orderId && !userId) {
-    alert('请至少填写一个校验信息（钱包地址 / 订单号 / 用户ID）');
+    showCenterNotify('请至少填写一个校验信息（钱包地址 / 订单号 / 用户ID）');
     return;
   }
 
@@ -4367,9 +4404,9 @@ async function resetWithdrawPassword() {
       'withdraw_password',
       data.newWithdrawPassword
     );
-    alert('提款密码已成功重置');
+    showCenterNotify('提款密码已成功重置');
   } else {
-    alert(data.error || '校验失败，无法重置');
+    showCenterNotify(data.error || '校验失败，无法重置');
   }
 }
 
@@ -4383,10 +4420,10 @@ async function loadAdmins(){
   try {
     const r = await fetch('/api/admin/list', { headers: authHeaders() });
     const j = await r.json();
-    if (!j.ok) { alert('加载管理员列表失败: ' + (j.error || '未知')); if (btn) { btn.disabled = false; btn.textContent = origText; } return; }
+    if (!j.ok) { showCenterNotify('加载管理员列表失败: ' + (j.error || '未知')); if (btn) { btn.disabled = false; btn.textContent = origText; } return; }
     renderAdminTable(j.admins || []);
   } catch(e) {
-    alert('加载管理员列表失败: ' + e.message);
+    showCenterNotify('加载管理员列表失败: ' + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
@@ -4454,7 +4491,7 @@ async function createAdmin(){
   const id = idEl.value.trim();
   const nickname = nickEl.value.trim();
   const password = pwEl.value;
-  if (!id || !password) return alert('请输入管理员账号和密码');
+  if (!id || !password) return showCenterNotify('请输入管理员账号和密码');
 
   const cb = name => {
     const el = document.querySelector('#page-settings input[type="checkbox"][value="' + name + '"]');
@@ -4475,15 +4512,15 @@ async function createAdmin(){
       })
     });
     const j = await r.json();
-    if (!j.ok) { alert('创建失败: ' + (j.error || '未知')); return; }
+    if (!j.ok) { showCenterNotify('创建失败: ' + (j.error || '未知')); return; }
     idEl.value = '';
     nickEl.value = '';
     pwEl.value = '';
     const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(id);
-    alert('创建成功！\n账号：' + id + '\n昵称：' + (nickname || id) + '\n初始密码：' + password + '\n专属登录链接：\n' + uniqueUrl);
+    showCenterNotify('创建成功！\n账号：' + id + '\n昵称：' + (nickname || id) + '\n初始密码：' + password + '\n专属登录链接：\n' + uniqueUrl);
     loadAdmins();
   } catch(e) {
-    alert('创建失败: ' + e.message);
+    showCenterNotify('创建失败: ' + e.message);
   }
 }
 
@@ -4495,30 +4532,30 @@ async function toggleAdminStatus(id, isActive){
       body: JSON.stringify({ id, isActive })
     });
     const j = await r.json();
-    if (!j.ok) { alert('操作失败: ' + (j.error || '未知')); return; }
+    if (!j.ok) { showCenterNotify('操作失败: ' + (j.error || '未知')); return; }
     loadAdmins();
   } catch(e) {
-    alert('操作失败: ' + e.message);
+    showCenterNotify('操作失败: ' + e.message);
   }
 }
 
 async function deleteAdmin(id){
-  if (!id) { alert('缺少管理员ID'); return; }
+  if (!id) { showCenterNotify('缺少管理员ID'); return; }
   try {
     const r = await fetch('/api/admin/delete?id=' + encodeURIComponent(id), {
       method: 'DELETE',
       headers: authHeaders()
     });
     const j = await r.json();
-    if (!j.ok) { alert('删除失败: ' + (j.error || '未知')); return; }
+    if (!j.ok) { showCenterNotify('删除失败: ' + (j.error || '未知')); return; }
     loadAdmins();
   } catch(e) {
-    alert('删除失败: ' + e.message);
+    showCenterNotify('删除失败: ' + e.message);
   }
 }
 
 async function kickAdmin(id){
-  if (!id) { alert('缺少管理员ID'); return; }
+  if (!id) { showCenterNotify('缺少管理员ID'); return; }
   try {
     const r = await fetch('/api/admin/kick', {
       method: 'POST',
@@ -4526,11 +4563,11 @@ async function kickAdmin(id){
       body: JSON.stringify({ id })
     });
     const j = await r.json();
-    if (!j.ok) { alert('踢出失败: ' + (j.error || '未知')); return; }
-    alert('已踢出管理员 ' + id);
+    if (!j.ok) { showCenterNotify('踢出失败: ' + (j.error || '未知')); return; }
+    showCenterNotify('已踢出管理员 ' + id);
     loadAdmins();
   } catch(e) {
-    alert('踢出失败: ' + e.message);
+    showCenterNotify('踢出失败: ' + e.message);
   }
 }
 
@@ -4549,9 +4586,9 @@ async function updateAdminPermissions(id, ev){
       body: JSON.stringify({ id, permissions: perms })
     });
     const j = await r.json();
-    if (!j.ok) { alert('更新失败: ' + (j.error || '未知')); loadAdmins(); }
+    if (!j.ok) { showCenterNotify('更新失败: ' + (j.error || '未知')); loadAdmins(); }
   } catch(e) {
-    alert('更新失败: ' + e.message);
+    showCenterNotify('更新失败: ' + e.message);
     loadAdmins();
   }
 }
@@ -4559,7 +4596,7 @@ async function updateAdminPermissions(id, ev){
 async function resetAdminLoginPassword(){
   const id = document.getElementById('resetAdminId').value.trim();
   const newPassword = document.getElementById('resetAdminPassword').value;
-  if (!id || !newPassword) return alert('请输入管理员账号和新密码');
+  if (!id || !newPassword) return showCenterNotify('请输入管理员账号和新密码');
 
   try {
     const r = await fetch('/api/admin/reset-password', {
@@ -4568,18 +4605,18 @@ async function resetAdminLoginPassword(){
       body: JSON.stringify({ id, newPassword })
     });
     const j = await r.json();
-    if (!j.ok) { alert('重置失败: ' + (j.error || '未知')); return; }
-    alert('密码已重置');
+    if (!j.ok) { showCenterNotify('重置失败: ' + (j.error || '未知')); return; }
+    showCenterNotify('密码已重置');
     document.getElementById('resetAdminId').value = '';
     document.getElementById('resetAdminPassword').value = '';
   } catch(e) {
-    alert('重置失败: ' + e.message);
+    showCenterNotify('重置失败: ' + e.message);
   }
 }
 
 function copyLoginLink(url) {
   navigator.clipboard.writeText(url).then(() => {
-    alert('专属登录链接已复制！\n\n下级打开链接后输入密码即可登录。');
+    showCenterNotify('专属登录链接已复制！\n\n下级打开链接后输入密码即可登录。');
   }).catch(() => {
     prompt('请手动复制登录链接：', url);
   });
@@ -4613,12 +4650,12 @@ async function pushAdminUpdate(id, btn) {
     });
     const j = await r.json();
     if (j.ok) {
-      alert('已推送更新给 ' + id + '，下级管理后台将自动刷新。');
+      showCenterNotify('已推送更新给 ' + id + '，下级管理后台将自动刷新。');
     } else {
-      alert('推送失败: ' + (j.error || '未知'));
+      showCenterNotify('推送失败: ' + (j.error || '未知'));
     }
   } catch(e) {
-    alert('推送失败: ' + e.message);
+    showCenterNotify('推送失败: ' + e.message);
   }
 }
 
@@ -4650,8 +4687,8 @@ async function checkConfigUpdate() {
           }
         }
       } catch(e) { /* 静默忽略 */ }
-      alert('配置已更新，页面将自动刷新以生效。');
-      location.reload();
+      showCenterNotify('配置已更新，页面将自动刷新以生效。');
+      setTimeout(function(){ location.reload(); }, 1200);
     }
   } catch(e) { /* 静默忽略 */ }
 }
@@ -4673,16 +4710,16 @@ async function checkKickStatus() {
       // token 已失效（被踢出后从 DB 删除），强制登出
       const kickedId = getAdminId();
       clearAdminState();
-      alert('您的账号已被管理员强制下线，请重新登录。');
-      location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId);
+      showCenterNotify('您的账号已被管理员强制下线，请重新登录。');
+      setTimeout(function(){ location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId); }, 1500);
       return;
     }
     const data = await resp.json();
     if (data.kicked) {
       const kickedId = getAdminId();
       clearAdminState();
-      alert('您的账号已被管理员强制下线，请重新登录。');
-      location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId);
+      showCenterNotify('您的账号已被管理员强制下线，请重新登录。');
+      setTimeout(function(){ location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId); }, 1500);
     }
   } catch(e) {}
 }
