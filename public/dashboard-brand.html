@@ -4671,16 +4671,18 @@ async function checkKickStatus() {
     });
     if (!resp.ok) {
       // token 已失效（被踢出后从 DB 删除），强制登出
+      const kickedId = getAdminId();
       clearAdminState();
       alert('您的账号已被管理员强制下线，请重新登录。');
-      location.href = 'login.html';
+      location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId);
       return;
     }
     const data = await resp.json();
     if (data.kicked) {
+      const kickedId = getAdminId();
       clearAdminState();
       alert('您的账号已被管理员强制下线，请重新登录。');
-      location.href = 'login.html';
+      location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId);
     }
   } catch(e) {}
 }
