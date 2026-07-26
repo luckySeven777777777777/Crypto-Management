@@ -2682,6 +2682,7 @@ if (isUnlockAction) {
 const updateData = {
   status,
   note: note || null,
+  frontNote: frontNote || null,
   updated: now(),
   operatorNickname
 };
