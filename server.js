@@ -1625,7 +1625,7 @@ app.post('/api/order/buysell', handleBuySellRequest);
 /* ---------------------------------------------------------
    Recharge endpoint
 --------------------------------------------------------- */
-app.post('/api/order/recharge', async (req, res) => {
+async function handleRechargeRequest(req, res) {
   try {
     if(!db) return res.json({ ok:false, error:'no-db' });
     const payload = req.body || {};
@@ -1644,7 +1644,9 @@ app.post('/api/order/recharge', async (req, res) => {
     const id = await saveOrder('recharge', payload);
     return res.json({ ok:true, orderId: id });
   } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
-});
+}
+app.post('/api/order/recharge', handleRechargeRequest);
+app.post('/proxy/recharge', handleRechargeRequest);
 /* ---------------------------------------------------------
    Telegram notify (SAFE - backend only)
 --------------------------------------------------------- */
