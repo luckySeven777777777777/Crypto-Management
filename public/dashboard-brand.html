@@ -1739,14 +1739,22 @@ if (end && t && new Date(t) > new Date(end + 'T23:59:59')) return false;
   if (coin !== currency.toUpperCase()) return false;
 }
 
-    // 4️⃣ 状态过滤（兼容 'failed' / 'rejected' 服务端映射）
+    // 4️⃣ 状态过滤（兼容服务端状态覆写映射）
     if (status) {
       const os = String(o.status || '').toLowerCase();
       const fs = status.toLowerCase();
-      // 'failed' 和 'rejected' 视为等价（服务端拒绝后统一写为 rejected）
-      const isFail = (fs === 'failed' || fs === 'rejected');
-      const osIsFail = (os === 'failed' || os === 'rejected');
-      if (isFail ? !osIsFail : os !== fs) return false;
+      // 'failed' / 'rejected' 视为等价
+      if (fs === 'failed' || fs === 'rejected') {
+        if (os !== 'failed' && os !== 'rejected') return false;
+      }
+      // 'success' / 'approved' 视为等价（服务端审批后覆写为 approved）
+      else if (fs === 'success' || fs === 'approved') {
+        if (os !== 'success' && os !== 'approved') return false;
+      }
+      // 其他状态精确匹配
+      else if (os !== fs) {
+        return false;
+      }
     }
 
     // 5️⃣ 买卖方向（BuySell 专用）
