@@ -3928,12 +3928,12 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
     const withdrawList = Object.values(withdrawAll).filter(o =>
       (o.userId === uid || o.user === uid) && (o.status === 'approved' || o.status === 'success')
     );
-    const withdrawTotal = withdrawList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const withdrawTotal = withdrawList.reduce((s, r) => s + (Number(r.estimate) || 0), 0);
     const withdrawCount = withdrawList.length;
     const withdrawToday = withdrawList
       .filter(r => r.timestamp && new Date(r.timestamp).getTime() >= todayStart.getTime())
-      .reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const withdrawMax = withdrawList.reduce((m, r) => Math.max(m, Number(r.amount) || 0), 0);
+      .reduce((s, r) => s + (Number(r.estimate) || 0), 0);
+    const withdrawMax = withdrawList.reduce((m, r) => Math.max(m, Number(r.estimate) || 0), 0);
 
     // 注册天数
     let registerDays = 0;
