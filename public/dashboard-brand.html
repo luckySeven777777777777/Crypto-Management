@@ -1218,6 +1218,7 @@ button {
               <span class="toggle-label" id="m-rechargeSwitch-label">开</span>
               <div class="knob"></div>
             </div>
+            <span class="toggle-prohibit" id="m-rechargeSwitch-prohibit" style="display:none;color:#f44336;font-weight:bold;font-size:13px;margin-left:8px">禁止充值</span>
           </div>
           
           <div class="member-row"><span class="label">是否允许提款</span>
@@ -1225,6 +1226,7 @@ button {
               <span class="toggle-label" id="m-withdrawSwitch-label">开</span>
               <div class="knob"></div>
             </div>
+            <span class="toggle-prohibit" id="m-withdrawSwitch-prohibit" style="display:none;color:#f44336;font-weight:bold;font-size:13px;margin-left:8px">禁止提款</span>
           </div>
           
           <div class="member-row"><span class="label">可用余额</span><span class="value" id="m-availableBalance">--</span>
@@ -3489,10 +3491,14 @@ function populateMemberOverview(data, uid) {
   const statusSelect = document.getElementById('m-status-select');
   if (statusSelect) { statusSelect.value = data.memberStatus || 'normal'; }
   
-  // 充值开关 — iOS toggle
-  setToggleSwitch('m-rechargeSwitch', data.rechargeSwitch !== false);
-  // 提款开关
-  setToggleSwitch('m-withdrawSwitch', data.withdrawSwitch !== false);
+  // 充值开关 — 翻转：ON=禁止充值(红字), OFF=允许
+  const rechargeProhibited = data.rechargeSwitch === false;
+  setToggleSwitch('m-rechargeSwitch', rechargeProhibited);
+  document.getElementById('m-rechargeSwitch-prohibit').style.display = rechargeProhibited ? '' : 'none';
+  // 提款开关 — 翻转：ON=禁止提款(红字), OFF=允许
+  const withdrawProhibited = data.withdrawSwitch === false;
+  setToggleSwitch('m-withdrawSwitch', withdrawProhibited);
+  document.getElementById('m-withdrawSwitch-prohibit').style.display = withdrawProhibited ? '' : 'none';
   
   // 可用余额 + 冻结
   document.getElementById('m-availableBalance').textContent = '$' + formatMoney(data.availableBalance);
@@ -3574,10 +3580,13 @@ async function toggleMemberSwitch(field) {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
   const el = document.getElementById('m-' + field);
-  const currentOn = el.classList.contains('on');
+  const currentOn = el.classList.contains('on'); // ON=当前禁止中
   const newVal = !currentOn;
-  setToggleSwitch('m-' + field, newVal);
-  await saveMemberField(field, newVal);
+  setToggleSwitch('m-' + field, newVal); // newVal=true→ON(禁止), false→OFF(允许)
+  const prohibitEl = document.getElementById('m-' + field + '-prohibit');
+  if (prohibitEl) prohibitEl.style.display = newVal ? '' : 'none';
+  // 翻转存入：ON(禁止)→存false, OFF(允许)→存true
+  await saveMemberField(field, !newVal);
 }
 
 async function editMemberStatus() {
@@ -3610,6 +3619,11 @@ function editMemberStatusClose() {
   select.style.display = 'none';
   statusEl.style.display = '';
   btn.textContent = '修改';
+  // 下拉直接 onchange 时同步更新 UI
+  const statusMap = { normal:'正常', abnormal:'异常', withdrawDisabled:'禁止提款', rechargeDisabled:'禁止充值' };
+  const statusClassMap = { normal:'status-normal', abnormal:'status-abnormal', withdrawDisabled:'status-withdrawDisabled', rechargeDisabled:'status-rechargeDisabled' };
+  statusEl.textContent = statusMap[select.value] || '--';
+  statusEl.className = 'value ' + (statusClassMap[select.value] || '');
 }
 
 async function showMemberRecords(type) {
