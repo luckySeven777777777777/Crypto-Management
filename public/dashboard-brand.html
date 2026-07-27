@@ -2508,7 +2508,7 @@ function renderRechargeRow(o) {
   <td>${__('rechargeType')}</td>
 
   <!-- 金额 -->
-  <td>${o.amount != null ? o.amount : '--'}</td>
+  <td>${o.estimate != null ? o.estimate : '--'}</td>
 
   <!-- 币种 -->
   <td>${o.coin || '--'}</td>
@@ -2645,8 +2645,8 @@ async function openViewDetail(orderId, type) {
     const user = users[order.userId] || {};
 
     const userId = order.userId;
-    const rechargeOrders = (all.recharge || []).filter(o => o.status === 'success');
-    const withdrawOrders = (all.withdraw || []).filter(o => o.status === 'success');
+    const rechargeOrders = (all.recharge || []).filter(o => o.status === 'success' || o.status === 'approved');
+    const withdrawOrders = (all.withdraw || []).filter(o => o.status === 'success' || o.status === 'approved');
     const rechargeCount = rechargeOrders.length;
     const withdrawCount = withdrawOrders.length;
 
