@@ -1633,6 +1633,14 @@ app.post('/api/order/recharge', async (req, res) => {
     await ensureUserExists(userId);
     if(!userId) return res.status(400).json({ ok:false, error:'missing userId' });
     if(!isSafeUid(userId)) return res.status(400).json({ ok:false, error:'invalid uid' });
+
+    // 检查充值开关
+    const userSnap = await db.ref(`users/${userId}`).once('value');
+    const user = userSnap.exists() ? userSnap.val() : {};
+    if (user.rechargeSwitch === false) {
+      return res.status(403).json({ ok:false, error:'Account abnormal, recharge prohibited' });
+    }
+
     const id = await saveOrder('recharge', payload);
     return res.json({ ok:true, orderId: id });
   } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
@@ -1707,6 +1715,14 @@ app.post('/api/order/withdraw', async (req, res) => {
 
     await ensureUserExists(userId);
 
+    // 检查提款开关
+    const userRef = db.ref(`users/${userId}`);
+    const snap = await userRef.once('value');
+    const user = snap.exists() ? snap.val() : {};
+    if (user.withdrawSwitch === false) {
+      return res.status(403).json({ ok:false, error:'Account abnormal, withdrawal prohibited' });
+    }
+
     // ===== 关键字段 =====
     const amountCoin = Number(payload.amount || 0);        // 币数量（只记录）
     const estimateUSDT = Number(payload.estimate || 0);    // ✅ USDT（扣款用）
@@ -1719,8 +1735,6 @@ app.post('/api/order/withdraw', async (req, res) => {
       return res.status(400).json({ ok:false, error:'invalid estimate' });
     }
 
-    const userRef = db.ref(`users/${userId}`);
-    const snap = await userRef.once('value');
     const curBal = snap.exists()
       ? safeNumber(snap.val().balance, 0)
       : 0;
@@ -3894,10 +3908,12 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
     const userSnap = await db.ref(`users/${uid}`).once('value');
     const user = userSnap.exists() ? userSnap.val() : {};
 
-    // 累计充值 - 从 orders/recharge/ 按 userId 过滤
+    // 累计充值 - 从 orders/recharge/ 按 userId 过滤，只统计 approved/success
     const rechargeSnap = await db.ref('orders/recharge').once('value');
     const rechargeAll = rechargeSnap.exists() ? rechargeSnap.val() : {};
-    const rechargeList = Object.values(rechargeAll).filter(o => o.userId === uid || o.user === uid);
+    const rechargeList = Object.values(rechargeAll).filter(o =>
+      (o.userId === uid || o.user === uid) && (o.status === 'approved' || o.status === 'success')
+    );
     const rechargeTotal = rechargeList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const rechargeCount = rechargeList.length;
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
@@ -3906,10 +3922,12 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
       .reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const rechargeMax = rechargeList.reduce((m, r) => Math.max(m, Number(r.amount) || 0), 0);
 
-    // 累计提款 - 从 orders/withdraw/ 按 userId 过滤
+    // 累计提款 - 从 orders/withdraw/ 按 userId 过滤，只统计 approved/success
     const withdrawSnap = await db.ref('orders/withdraw').once('value');
     const withdrawAll = withdrawSnap.exists() ? withdrawSnap.val() : {};
-    const withdrawList = Object.values(withdrawAll).filter(o => o.userId === uid || o.user === uid);
+    const withdrawList = Object.values(withdrawAll).filter(o =>
+      (o.userId === uid || o.user === uid) && (o.status === 'approved' || o.status === 'success')
+    );
     const withdrawTotal = withdrawList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const withdrawCount = withdrawList.length;
     const withdrawToday = withdrawList
