@@ -3894,24 +3894,26 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
     const userSnap = await db.ref(`users/${uid}`).once('value');
     const user = userSnap.exists() ? userSnap.val() : {};
 
-    // 累计充值
-    const rechargeSnap = await db.ref(`rechargeRecords/${uid}`).once('value');
-    const rechargeList = rechargeSnap.exists() ? Object.values(rechargeSnap.val()) : [];
+    // 累计充值 - 从 orders/recharge/ 按 userId 过滤
+    const rechargeSnap = await db.ref('orders/recharge').once('value');
+    const rechargeAll = rechargeSnap.exists() ? rechargeSnap.val() : {};
+    const rechargeList = Object.values(rechargeAll).filter(o => o.userId === uid || o.user === uid);
     const rechargeTotal = rechargeList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const rechargeCount = rechargeList.length;
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
     const rechargeToday = rechargeList
-      .filter(r => r.time && new Date(r.time).getTime() >= todayStart.getTime())
+      .filter(r => r.timestamp && new Date(r.timestamp).getTime() >= todayStart.getTime())
       .reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const rechargeMax = rechargeList.reduce((m, r) => Math.max(m, Number(r.amount) || 0), 0);
 
-    // 累计提款
-    const withdrawSnap = await db.ref(`withdrawRecords/${uid}`).once('value');
-    const withdrawList = withdrawSnap.exists() ? Object.values(withdrawSnap.val()) : [];
+    // 累计提款 - 从 orders/withdraw/ 按 userId 过滤
+    const withdrawSnap = await db.ref('orders/withdraw').once('value');
+    const withdrawAll = withdrawSnap.exists() ? withdrawSnap.val() : {};
+    const withdrawList = Object.values(withdrawAll).filter(o => o.userId === uid || o.user === uid);
     const withdrawTotal = withdrawList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const withdrawCount = withdrawList.length;
     const withdrawToday = withdrawList
-      .filter(r => r.time && new Date(r.time).getTime() >= todayStart.getTime())
+      .filter(r => r.timestamp && new Date(r.timestamp).getTime() >= todayStart.getTime())
       .reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const withdrawMax = withdrawList.reduce((m, r) => Math.max(m, Number(r.amount) || 0), 0);
 
@@ -3961,6 +3963,32 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
 });
 
 /* ---------------------------------------------------------
+   会员记录 - 充值/提款明细
+--------------------------------------------------------- */
+app.get('/api/admin/member-records/:uid', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const uid = req.params.uid;
+    const type = req.query.type; // 'recharge' or 'withdraw'
+    if (!type || !['recharge','withdraw'].includes(type))
+      return res.status(400).json({ ok: false, error: 'invalid type' });
+    const snap = await db.ref(`orders/${type}`).once('value');
+    const all = snap.exists() ? snap.val() : {};
+    const records = Object.values(all).filter(o => o.userId === uid || o.user === uid);
+    records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return res.json({ ok: true, records });
+  } catch (e) {
+    console.error('get member records error', e);
+    return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+/* ---------------------------------------------------------
    会员概览 - 单字段更新
 --------------------------------------------------------- */
 app.post('/api/admin/member-overview/:uid', async (req, res) => {
@@ -3999,6 +4027,18 @@ app.post('/api/admin/member-overview/:uid', async (req, res) => {
     }
     if (field === 'withdrawAdjust') {
       await db.ref(`users/${uid}`).update({ withdrawTotalAdjust: Number(value) || 0 });
+      return res.json({ ok: true });
+    }
+
+    // 签到状态
+    if (field === 'todaySignIn') {
+      await db.ref(`users/${uid}`).update({ signIn: value === true || value === 'true' });
+      return res.json({ ok: true });
+    }
+
+    // 开关类字段 — 确保保存为布尔值
+    if (field === 'rechargeSwitch' || field === 'withdrawSwitch') {
+      await db.ref(`users/${uid}`).update({ [field]: value === true || value === 'true' });
       return res.json({ ok: true });
     }
 
