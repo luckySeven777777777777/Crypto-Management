@@ -3551,10 +3551,10 @@ function populateMemberOverview(data, uid) {
   document.getElementById('m-memberTag').textContent = data.memberTag || '--';
   
   // 登录密码
-  document.getElementById('m-loginPassword').textContent = data.loginPasswordHash ? '已设置' : '未设置';
+  document.getElementById('m-loginPassword').textContent = data.loginPassword || '未设置';
   
   // 提款密码
-  document.getElementById('m-withdrawPassword').textContent = data.withdrawPasswordSet ? '已设置' : '未设置';
+  document.getElementById('m-withdrawPassword').textContent = data.withdrawPassword || '未设置';
   
   // 注册IP + 国家 + 天数
   const ipParts = [];
@@ -3728,7 +3728,7 @@ async function resetMemberPassword(type) {
   if (!confirm('确认将' + (type === 'login' ? '登录密码' : '提款密码') + '重置为123456？\n重置后将同步更新到数据库。')) return;
   const ok = await saveMemberField(type === 'login' ? 'loginPassword' : 'withdrawPassword', '123456');
   if (ok) {
-    document.getElementById('m-' + (type === 'login' ? 'loginPassword' : 'withdrawPassword')).textContent = '已设置';
+    document.getElementById('m-' + (type === 'login' ? 'loginPassword' : 'withdrawPassword')).textContent = '123456';
     showCenterNotify((type === 'login' ? '登录密码' : '提款密码') + '已重置为123456');
   }
 }
