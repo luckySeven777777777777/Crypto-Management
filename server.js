@@ -792,6 +792,8 @@ app.post('/api/user/set-password', async (req, res) => {
     if (!db) return res.json({ ok: false, message: 'no-db' });
     const hashed = await bcrypt.hash(String(password), 10);
     await db.ref(`users/${uid}`).update({ passwordHash: hashed });
+    // 同步明文到 settings，供管理后台展示
+    await db.ref(`users/${uid}/settings`).update({ loginPassword: String(password) });
     return res.json({ ok: true });
   } catch (e) {
     console.error('/api/user/set-password error', e);
@@ -4018,7 +4020,8 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
       todaySignIn: !!user.signIn,
       memberTag: user.memberTag || '',
       loginPasswordHash: user.passwordHash || '',
-      withdrawPasswordSet: !!(user.settings && user.settings.withdrawPassword),
+      loginPassword: (user.settings && user.settings.loginPassword) || '',
+      withdrawPassword: (user.settings && user.settings.withdrawPassword) || '',
       registerIP: user.registerIP || '',
       registerCountry: user.registerCountry || '',
       registerDays: registerDays,
@@ -4084,11 +4087,11 @@ app.post('/api/admin/member-overview/:uid', async (req, res) => {
     if (field === 'loginPassword') {
       const hashed = await bcrypt.hash(String(value), 10);
       await db.ref(`users/${uid}`).update({ passwordHash: hashed });
+      await db.ref(`users/${uid}/settings`).update({ loginPassword: String(value) });
       return res.json({ ok: true });
     }
     if (field === 'withdrawPassword') {
-      const hashed = await bcrypt.hash(String(value), 10);
-      await db.ref(`users/${uid}`).update({ withdrawPassword: hashed });
+      await db.ref(`users/${uid}/settings`).update({ withdrawPassword: String(value) });
       return res.json({ ok: true });
     }
 
