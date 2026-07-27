@@ -87,14 +87,14 @@ app.post('/api/admin/generate-2fa', async (req, res) => {
   const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
 
   // 使用二维码生成库生成二维码 URL
-  qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
+  qrcode.toDataURL(secret.otpauth_url, async function (err, qr_code) {
     if (err) {
       return res.status(500).json({ ok: false, message: '二维码生成失败' });
     }
 
     // 将密钥存储到数据库，方便后续验证
-    db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
-    db.ref(`admins/${adminId}/2fa_verified`).set(true);
+    await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
+    await db.ref(`admins/${adminId}/2fa_verified`).set(true);
 
     // 返回生成的二维码和密钥
     res.json({
