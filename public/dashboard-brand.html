@@ -1246,7 +1246,7 @@ button {
           <div class="member-row"><span class="label">充/提差额</span><span class="value" id="m-withdrawDiff">--</span></div>
           
           <div class="member-row"><span class="label">今日签到</span><span class="value" id="m-todaySignIn">--</span>
-            <button class="edit-btn" id="eb-m-todaySignIn" onclick="editMemberSignIn()" style="display:none">修改签到</button></div>
+            <button class="edit-btn" id="eb-m-todaySignIn" onclick="showCheckinRecords()" style="display:none">签到记录</button></div>
           
           <div class="member-row"><span class="label">会员标签</span><span class="value" id="m-memberTag">--</span>
             <button class="edit-btn" id="eb-m-memberTag" onclick="editMemberField('memberTag')" style="display:none">修改</button></div>
@@ -1319,6 +1319,26 @@ button {
       </thead>
       <tbody id="recordsModalBody">
         <tr><td colspan="4" style="text-align:center;color:#999">无记录</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 签到记录弹窗 -->
+<div id="checkinModal" class="records-modal" onclick="closeCheckinModal()">
+  <div class="box" onclick="event.stopPropagation()">
+    <h3>签到记录</h3>
+    <button class="close-btn" onclick="closeCheckinModal()">✕</button>
+    <table>
+      <thead>
+        <tr>
+          <th>天数</th>
+          <th>金额</th>
+          <th>签到时间 (US)</th>
+        </tr>
+      </thead>
+      <tbody id="checkinModalBody">
+        <tr><td colspan="3" style="text-align:center;color:#999">无记录</td></tr>
       </tbody>
     </table>
   </div>
@@ -3525,6 +3545,7 @@ function populateMemberOverview(data, uid) {
   
   // 今日签到
   document.getElementById('m-todaySignIn').textContent = data.todaySignIn ? '已签到' : '未签到';
+  _currentCheckinRecords = data.checkinRecords || [];
   
   // 会员标签
   document.getElementById('m-memberTag').textContent = data.memberTag || '--';
@@ -3656,17 +3677,31 @@ function closeRecordsModal() {
   document.getElementById('recordsModal').style.display = 'none';
 }
 
-async function editMemberSignIn() {
+function showCheckinRecords() {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
-  const el = document.getElementById('m-todaySignIn');
-  const currentVal = el.textContent === '已签到' ? true : false;
-  const newValStr = prompt('签到状态 (true/false)：\n当前: ' + (currentVal ? '已签到' : '未签到'), String(!currentVal));
-  if (newValStr === null) return;
-  const newVal = newValStr.toLowerCase() === 'true' || newValStr === '1';
-  el.textContent = newVal ? '已签到' : '未签到';
-  await saveMemberField('todaySignIn', newVal);
+
+  // 使用 populateMemberOverview 时缓存的 checkin records
+  const tbody = document.getElementById('checkinModalBody');
+  const records = _currentCheckinRecords || [];
+  if (records.length > 0) {
+    tbody.innerHTML = records.map(rec => {
+      const day = 'Day ' + (rec.day || '?');
+      const amt = '$' + formatMoney(rec.amount || 0);
+      const time = rec.time_us || (rec.timestamp ? new Date(rec.timestamp).toLocaleString('en-US', { timeZone: 'America/New_York' }) : '--');
+      return '<tr><td>' + day + '</td><td>' + amt + '</td><td>' + time + '</td></tr>';
+    }).join('');
+  } else {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999">无签到记录</td></tr>';
+  }
+  document.getElementById('checkinModal').style.display = 'flex';
 }
+
+function closeCheckinModal() {
+  document.getElementById('checkinModal').style.display = 'none';
+}
+
+let _currentCheckinRecords = [];
 
 async function editMemberField(field) {
   const perms = getAdminPerms();
@@ -3788,6 +3823,7 @@ async function openProfile(uid) {
 
 function closeProfile() {
   closeRecordsModal();
+  closeCheckinModal();
   document.getElementById('profileModal').style.display = 'none';
   currentProfileUid = null;
   profilePendingChanges = {};
