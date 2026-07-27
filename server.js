@@ -779,6 +779,51 @@ app.post('/api/user/settings', async (req, res) => {
   }
 });
 
+/* ---------------------------------------------------------
+   Set login password (from header page)
+--------------------------------------------------------- */
+app.post('/api/user/set-password', async (req, res) => {
+  try {
+    const { password, uid: bodyUid } = req.body;
+    const uid = bodyUid || req.body.userid || req.body.userId;
+    if (!uid) return res.status(400).json({ ok: false, message: 'missing uid' });
+    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, message: 'invalid uid' });
+    if (!password || String(password).length < 6) return res.status(400).json({ ok: false, message: 'password too short' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+    const hashed = await bcrypt.hash(String(password), 10);
+    await db.ref(`users/${uid}`).update({ passwordHash: hashed });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('/api/user/set-password error', e);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
+/* ---------------------------------------------------------
+   Check-in record (from daily check-in)
+--------------------------------------------------------- */
+app.post('/api/checkin/record', async (req, res) => {
+  try {
+    const { uid: bodyUid, day, amount, timestamp, time_us } = req.body;
+    const uid = bodyUid || req.body.userid || req.body.userId;
+    if (!uid) return res.status(400).json({ ok: false });
+    if (!isSafeUid(uid)) return res.status(400).json({ ok: false });
+    if (!db) return res.json({ ok: false });
+    const recId = String(timestamp || Date.now());
+    await db.ref(`users/${uid}/checkinRecords/${recId}`).set({
+      day: Number(day) || 1,
+      amount: Number(amount) || 0,
+      timestamp: Number(timestamp) || Date.now(),
+      time_us: time_us || ''
+    });
+    await db.ref(`users/${uid}`).update({ signIn: true });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('/api/checkin/record error', e);
+    return res.status(500).json({ ok: false });
+  }
+});
+
 // 同步订单记录接口
 app.post('/api/orders/sync', async (req, res) => {
   try {
@@ -3944,6 +3989,12 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
       if (!isNaN(rt)) registerDays = Math.max(0, Math.floor((Date.now() - rt) / 86400000));
     }
 
+    // 签到记录
+    const checkinRecordsSnap = user.checkinRecords || {};
+    const checkinRecords = Object.entries(checkinRecordsSnap)
+      .map(([id, rec]) => ({ id, ...rec }))
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
     const data = {
       memberStatus: user.memberStatus || 'normal',
       rechargeSwitch: user.rechargeSwitch !== false,
@@ -3967,12 +4018,13 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
       todaySignIn: !!user.signIn,
       memberTag: user.memberTag || '',
       loginPasswordHash: user.passwordHash || '',
-      withdrawPasswordSet: !!user.withdrawPassword,
+      withdrawPasswordSet: !!(user.settings && user.settings.withdrawPassword),
       registerIP: user.registerIP || '',
       registerCountry: user.registerCountry || '',
       registerDays: registerDays,
       loginBrowser: user.loginBrowser || '',
-      memberNote: user.memberNote || ''
+      memberNote: user.memberNote || '',
+      checkinRecords: checkinRecords
     };
 
     return res.json({ ok: true, data });
