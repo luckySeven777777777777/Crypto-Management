@@ -579,7 +579,7 @@ button {
 
 /* ===== 个人资料弹窗 ===== */
 .profile-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,.55); z-index:2000; align-items:center; justify-content:center; }
-.profile-modal .box { background:#fff; border-radius:12px; width:980px; max-height:85vh; overflow-y:auto; padding:0; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+.profile-modal .box { background:#fff; border-radius:12px; width:1200px; max-height:85vh; overflow-y:auto; padding:0; box-shadow:0 12px 40px rgba(0,0,0,.25); }
 .profile-header { display:flex; align-items:center; padding:16px 20px; border-bottom:1px solid #eee; position:sticky; top:0; background:#fff; z-index:1; border-radius:12px 12px 0 0; }
 .avatar-wrap { position:relative; width:56px; height:56px; border-radius:50%; overflow:hidden; cursor:pointer; flex-shrink:0; margin-right:14px; border:2px solid #1976d2; }
 .avatar-wrap .avatar { width:100%; height:100%; object-fit:cover; }
@@ -610,17 +610,37 @@ button {
 .profile-bottom .primary:hover { background:#1565c0; }
 /* 会员概览样式 */
 .member-row { display:flex; align-items:center; padding:5px 0; border-bottom:1px solid #f0f0f0; }
-.member-row .label { width:90px; font-size:12px; color:#666; flex-shrink:0; }
+.member-row .label { width:100px; font-size:12px; color:#666; flex-shrink:0; }
 .member-row .value { flex:1; font-size:12px; color:#111; word-break:break-all; }
 .member-row .edit-btn { margin-left:6px; padding:2px 8px; font-size:11px; border:1px solid #1976d2; background:#fff; color:#1976d2; border-radius:4px; cursor:pointer; white-space:nowrap; }
 .member-row .edit-btn:hover { background:#1976d2; color:#fff; }
 .member-row .edit-btn.disabled { border-color:#ccc; color:#ccc; cursor:not-allowed; pointer-events:none; background:#f5f5f5; }
 .member-row .primary-btn { margin-left:6px; padding:2px 8px; font-size:11px; border:1px solid #f44336; background:#fff; color:#f44336; border-radius:4px; cursor:pointer; white-space:nowrap; }
 .member-row .primary-btn:hover { background:#f44336; color:#fff; }
-.member-row .toggle-on { margin-left:6px; padding:2px 8px; font-size:11px; border:1px solid #4caf50; background:#4caf50; color:#fff; border-radius:4px; cursor:pointer; white-space:nowrap; }
-.member-row .toggle-off { margin-left:6px; padding:2px 8px; font-size:11px; border:1px solid #ccc; background:#fff; color:#999; border-radius:4px; cursor:pointer; white-space:nowrap; }
-.member-row .select-field { margin-left:6px; padding:2px 4px; font-size:11px; border:1px solid #1976d2; border-radius:4px; }
 .member-note-area { width:100%; margin-top:4px; padding:4px 6px; font-size:12px; border:1px solid #ddd; border-radius:4px; resize:vertical; min-height:36px; box-sizing:border-box; }
+
+/* 开关按钮 - iOS风格toggle */
+.member-toggle { position:relative; display:inline-flex; align-items:center; width:44px; height:24px; min-width:44px; border-radius:12px; cursor:pointer; transition:all .25s; margin-left:6px; }
+.member-toggle.on { background:#4caf50; justify-content:flex-end; }
+.member-toggle.off { background:#ccc; justify-content:flex-start; }
+.member-toggle .knob { width:20px; height:20px; border-radius:50%; background:#fff; margin:2px; box-shadow:0 1px 3px rgba(0,0,0,.2); display:flex; align-items:center; justify-content:center; font-size:8px; font-weight:bold; color:#4caf50; }
+.member-toggle.off .knob { color:#ccc; }
+.member-toggle .toggle-label { font-size:8px; color:#fff; font-weight:bold; padding:0 2px; user-select:none; }
+
+/* 绿色/红色状态文字 */
+.status-normal { color:#4caf50; font-weight:bold; }
+.status-abnormal { color:#f44336; font-weight:bold; }
+.status-withdrawDisabled { color:#f44336; font-weight:bold; }
+.status-rechargeDisabled { color:#f44336; font-weight:bold; }
+
+/* 记录弹窗 */
+.records-modal { display:none; position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,.55); z-index:2100; align-items:center; justify-content:center; }
+.records-modal .box { background:#fff; border-radius:12px; width:700px; max-height:80vh; overflow-y:auto; padding:20px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+.records-modal h3 { font-size:14px; color:#0f2655; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid #1976d2; }
+.records-modal .close-btn { float:right; background:none; border:none; font-size:18px; cursor:pointer; color:#999; }
+.records-modal table { width:100%; border-collapse:collapse; font-size:12px; }
+.records-modal th { background:#f5f5f5; text-align:left; padding:6px 8px; border-bottom:2px solid #ddd; }
+.records-modal td { padding:5px 8px; border-bottom:1px solid #eee; }
 </style>
 </head>
 
@@ -1177,8 +1197,74 @@ button {
       <button class="close-btn" onclick="closeProfile()">✕</button>
     </div>
 
-    <div class="profile-columns">
-      <div class="profile-col">
+        <div class="profile-columns">
+      <!-- 左列：会员概览 -->
+      <div class="profile-col" style="border-right:1px solid #eee;min-width:320px">
+        <div class="profile-section" id="memberSection">
+          <h3>会员概览</h3>
+          
+          <div class="member-row"><span class="label">账号状态</span><span class="value" id="m-status">--</span>
+            <select class="select-field" id="m-status-select" style="display:none" onchange="saveMemberField('memberStatus',this.value);editMemberStatusClose()">
+              <option value="normal">正常</option>
+              <option value="abnormal">异常</option>
+              <option value="withdrawDisabled">禁止提款</option>
+              <option value="rechargeDisabled">禁止充值</option>
+            </select>
+            <button class="edit-btn" id="eb-m-status" onclick="editMemberStatus()">修改</button>
+          </div>
+          
+          <div class="member-row"><span class="label">是否允许充值</span>
+            <div class="member-toggle on" id="m-rechargeSwitch" onclick="toggleMemberSwitch('rechargeSwitch')">
+              <span class="toggle-label" id="m-rechargeSwitch-label">开</span>
+              <div class="knob"></div>
+            </div>
+          </div>
+          
+          <div class="member-row"><span class="label">是否允许提款</span>
+            <div class="member-toggle on" id="m-withdrawSwitch" onclick="toggleMemberSwitch('withdrawSwitch')">
+              <span class="toggle-label" id="m-withdrawSwitch-label">开</span>
+              <div class="knob"></div>
+            </div>
+          </div>
+          
+          <div class="member-row"><span class="label">可用余额</span><span class="value" id="m-availableBalance">--</span>
+            <span style="font-size:11px;color:#999;margin-left:4px" id="m-frozenBalance"></span></div>
+          
+          <div class="member-row"><span class="label">信用借款</span><span class="value" id="m-creditLoan">状态未借款，借款额度 0.00$，已借款 0.00$</span>
+            <button class="edit-btn" id="eb-m-creditLoan" onclick="editMemberField('creditLoan')" style="display:none">修改</button></div>
+          
+          <div class="member-row"><span class="label">累计充值</span><span class="value" id="m-rechargeTotal">--</span>
+            <button class="primary-btn" id="eb-m-rechargeRecords" onclick="showMemberRecords('recharge')" style="display:none">充值记录</button></div>
+          <div class="member-row" style="padding-left:100px;font-size:11px;color:#999" id="m-rechargeDetail">--</div>
+          
+          <div class="member-row"><span class="label">累计提款</span><span class="value" id="m-withdrawTotal">--</span>
+            <button class="primary-btn" id="eb-m-withdrawRecords" onclick="showMemberRecords('withdraw')" style="display:none">提款记录</button></div>
+          <div class="member-row" style="padding-left:100px;font-size:11px;color:#999" id="m-withdrawDetail">--</div>
+          
+          <div class="member-row"><span class="label">充/提差额</span><span class="value" id="m-withdrawDiff">--</span></div>
+          
+          <div class="member-row"><span class="label">今日签到</span><span class="value" id="m-todaySignIn">--</span>
+            <button class="edit-btn" id="eb-m-todaySignIn" onclick="editMemberSignIn()" style="display:none">修改签到</button></div>
+          
+          <div class="member-row"><span class="label">会员标签</span><span class="value" id="m-memberTag">--</span>
+            <button class="edit-btn" id="eb-m-memberTag" onclick="editMemberField('memberTag')" style="display:none">修改</button></div>
+          
+          <div class="member-row"><span class="label">登录密码</span><span class="value" id="m-loginPassword">--</span>
+            <button class="edit-btn" id="eb-m-loginPassword" onclick="resetMemberPassword('login')" style="display:none">重置为123456</button></div>
+          
+          <div class="member-row"><span class="label">提款密码</span><span class="value" id="m-withdrawPassword">--</span>
+            <button class="edit-btn" id="eb-m-withdrawPassword" onclick="resetMemberPassword('withdraw')" style="display:none">重置为123456</button></div>
+          
+          <div class="member-row"><span class="label">注册IP</span><span class="value" id="m-registerIP">--</span></div>
+          
+          <div class="member-row"><span class="label">登录浏览器</span><span class="value" id="m-loginBrowser">--</span></div>
+          
+          <div class="member-row"><span class="label">会员备注</span><span class="value" id="m-memberNote">--</span></div>
+          <textarea class="member-note-area" id="m-memberNote-input" placeholder="输入会员备注..." style="display:none" onchange="saveMemberField('memberNote',this.value)"></textarea>
+        </div>
+      </div>
+      <!-- 中列：个人资料 -->
+      <div class="profile-col" style="border-right:1px solid #eee">
         <div class="profile-section">
           <h3>个人资料</h3>
           <div class="profile-row"><span class="label">姓名</span><span class="value" id="p-name">--</span><button class="edit-btn" id="eb-name" onclick="editProfileField('name')">修改</button></div>
@@ -1189,48 +1275,8 @@ button {
           <div class="profile-row"><span class="label">当前居住地</span><span class="value" id="p-residence">--</span><button class="edit-btn" id="eb-residence" onclick="editProfileField('residence')">修改</button></div>
           <div class="profile-row"><span class="label">收入来源</span><span class="value" id="p-income">--</span><button class="edit-btn" id="eb-income" onclick="editProfileField('income')">修改</button></div>
         </div>
-        <div class="profile-section" id="memberSection">
-          <h3>会员概览</h3>
-          <div class="member-row"><span class="label">账号状态</span><span class="value" id="m-status">--</span>
-            <select class="select-field" id="m-status-select" style="display:none" onchange="saveMemberField('memberStatus',this.value)">
-              <option value="normal">正常</option>
-              <option value="abnormal">异常</option>
-              <option value="withdrawDisabled">禁止提款</option>
-              <option value="rechargeDisabled">禁止充值</option>
-            </select>
-            <button class="edit-btn" id="eb-m-status" onclick="editMemberStatus()">修改</button>
-          </div>
-          <div class="member-row"><span class="label">充值开关</span><span class="value" id="m-rechargeSwitch">--</span>
-            <button class="toggle-on" id="eb-m-rechargeSwitch" style="display:none" onclick="toggleMemberSwitch('rechargeSwitch')">开</button>
-          </div>
-          <div class="member-row"><span class="label">提款开关</span><span class="value" id="m-withdrawSwitch">--</span>
-            <button class="toggle-on" id="eb-m-withdrawSwitch" style="display:none" onclick="toggleMemberSwitch('withdrawSwitch')">开</button>
-          </div>
-          <div class="member-row"><span class="label">可用余额</span><span class="value" id="m-availableBalance">--</span>
-            <span style="font-size:11px;color:#999;margin-left:4px" id="m-frozenBalance"></span></div>
-          <div class="member-row"><span class="label">信用借款</span><span class="value" id="m-creditLoan">--</span>
-            <button class="edit-btn" id="eb-m-creditLoan" onclick="editMemberField('creditLoan')" style="display:none">修改</button></div>
-          <div class="member-row"><span class="label">累计充值</span><span class="value" id="m-rechargeTotal">--</span>
-            <button class="primary-btn" id="eb-m-rechargeAdjust" onclick="adjustMemberBalance('recharge')" style="display:none">充正</button></div>
-          <div class="member-row" style="padding-left:90px;font-size:11px;color:#999" id="m-rechargeDetail">--</div>
-          <div class="member-row"><span class="label">累计提款</span><span class="value" id="m-withdrawTotal">--</span>
-            <button class="primary-btn" id="eb-m-withdrawAdjust" onclick="adjustMemberBalance('withdraw')" style="display:none">提正</button></div>
-          <div class="member-row" style="padding-left:90px;font-size:11px;color:#999" id="m-withdrawDetail">--</div>
-          <div class="member-row"><span class="label">充/提差额</span><span class="value" id="m-withdrawDiff">--</span></div>
-          <div class="member-row"><span class="label">今日签到</span><span class="value" id="m-todaySignIn">--</span>
-            <button class="edit-btn" id="eb-m-todaySignIn" onclick="toggleMemberSignIn()" style="display:none">反选</button></div>
-          <div class="member-row"><span class="label">会员标签</span><span class="value" id="m-memberTag">--</span>
-            <button class="edit-btn" id="eb-m-memberTag" onclick="editMemberField('memberTag')" style="display:none">修改</button></div>
-          <div class="member-row"><span class="label">登录密码</span><span class="value" id="m-loginPassword">--</span>
-            <button class="edit-btn" id="eb-m-loginPassword" onclick="resetMemberPassword('login')" style="display:none">重置为123456</button></div>
-          <div class="member-row"><span class="label">提款密码</span><span class="value" id="m-withdrawPassword">--</span>
-            <button class="edit-btn" id="eb-m-withdrawPassword" onclick="resetMemberPassword('withdraw')" style="display:none">重置为123456</button></div>
-          <div class="member-row"><span class="label">注册IP</span><span class="value" id="m-registerIP">--</span></div>
-          <div class="member-row"><span class="label">登录浏览器</span><span class="value" id="m-loginBrowser">--</span></div>
-          <div class="member-row"><span class="label">会员备注</span><span class="value" id="m-memberNote">--</span></div>
-          <textarea class="member-note-area" id="m-memberNote-input" placeholder="输入会员备注..." style="display:none" onchange="saveMemberField('memberNote',this.value)"></textarea>
-        </div>
       </div>
+      <!-- 右列：账号信息 -->
       <div class="profile-col">
         <div class="profile-section">
           <h3>账号信息</h3>
@@ -1252,6 +1298,27 @@ button {
       <button class="primary" onclick="saveProfile()" id="profileSaveBtn" style="padding:6px 18px;margin-right:8px">保存</button>
       <button onclick="closeProfile()" style="padding:6px 18px">关闭</button>
     </div>
+  </div>
+</div>
+
+<!-- 充值/提款记录弹窗 -->
+<div id="recordsModal" class="records-modal" onclick="closeRecordsModal()">
+  <div class="box" onclick="event.stopPropagation()">
+    <h3 id="recordsModalTitle">充值记录</h3>
+    <button class="close-btn" onclick="closeRecordsModal()">✕</button>
+    <table>
+      <thead>
+        <tr>
+          <th>订单号</th>
+          <th>金额</th>
+          <th>时间</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody id="recordsModalBody">
+        <tr><td colspan="4" style="text-align:center;color:#999">无记录</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 
@@ -3411,67 +3478,106 @@ function populateMemberOverview(data, uid) {
   const perms = getAdminPerms();
   const isAdmin = isSuperAdmin() && perms.admin !== false;
   
+  // 账号状态 — 绿色/红色
   const statusMap = { normal:'正常', abnormal:'异常', withdrawDisabled:'禁止提款', rechargeDisabled:'禁止充值' };
+  const statusClassMap = { normal:'status-normal', abnormal:'status-abnormal', withdrawDisabled:'status-withdrawDisabled', rechargeDisabled:'status-rechargeDisabled' };
   const statusEl = document.getElementById('m-status');
-  if (statusEl) statusEl.textContent = statusMap[data.memberStatus] || '--';
+  if (statusEl) {
+    statusEl.textContent = statusMap[data.memberStatus] || '--';
+    statusEl.className = 'value ' + (statusClassMap[data.memberStatus] || '');
+  }
   const statusSelect = document.getElementById('m-status-select');
   if (statusSelect) { statusSelect.value = data.memberStatus || 'normal'; }
   
-  setToggleDisplay('m-rechargeSwitch', data.rechargeSwitch !== false);
-  setToggleDisplay('m-withdrawSwitch', data.withdrawSwitch !== false);
+  // 充值开关 — iOS toggle
+  setToggleSwitch('m-rechargeSwitch', data.rechargeSwitch !== false);
+  // 提款开关
+  setToggleSwitch('m-withdrawSwitch', data.withdrawSwitch !== false);
   
-  document.getElementById('m-availableBalance').textContent = formatMoney(data.availableBalance);
-  document.getElementById('m-frozenBalance').textContent = '冻结: ' + formatMoney(data.frozenBalance);
+  // 可用余额 + 冻结
+  document.getElementById('m-availableBalance').textContent = '$' + formatMoney(data.availableBalance);
+  document.getElementById('m-frozenBalance').textContent = '冻结: $' + formatMoney(data.frozenBalance);
   
-  document.getElementById('m-creditLoan').textContent = formatMoney(data.creditLoan);
+  // 信用借款
+  const credit = Number(data.creditLoan) || 0;
+  document.getElementById('m-creditLoan').textContent = credit > 0 
+    ? '状态已借款，借款额度 $' + formatMoney(credit) + '，已借款 $' + formatMoney(credit) 
+    : '状态未借款，借款额度 $0.00，已借款 $0.00';
   
+  // 累计充值
   const rc = data.rechargeStats || {};
-  document.getElementById('m-rechargeTotal').textContent = formatMoney(rc.totalAmount);
-  document.getElementById('m-rechargeDetail').textContent = `次数:${rc.count}|今日:${formatMoney(rc.todayAmount)}|最大单笔:${formatMoney(rc.maxSingle)}`;
+  document.getElementById('m-rechargeTotal').textContent = '$' + formatMoney(rc.totalAmount);
+  document.getElementById('m-rechargeDetail').textContent = '共' + rc.count + '笔 | 今日$' + formatMoney(rc.todayAmount) + ' | 最大$' + formatMoney(rc.maxSingle);
   
+  // 累计提款
   const wd = data.withdrawStats || {};
-  document.getElementById('m-withdrawTotal').textContent = formatMoney(wd.totalAmount);
-  document.getElementById('m-withdrawDetail').textContent = `次数:${wd.count}|今日:${formatMoney(wd.todayAmount)}|最大单笔:${formatMoney(wd.maxSingle)}`;
+  document.getElementById('m-withdrawTotal').textContent = '$' + formatMoney(wd.totalAmount);
+  document.getElementById('m-withdrawDetail').textContent = '共' + wd.count + '笔 | 今日$' + formatMoney(wd.todayAmount) + ' | 最大$' + formatMoney(wd.maxSingle);
   
-  document.getElementById('m-withdrawDiff').textContent = formatMoney(data.withdrawDifference);
+  // 充提差额
+  document.getElementById('m-withdrawDiff').textContent = '$' + formatMoney(data.withdrawDifference || 0);
   
+  // 今日签到
   document.getElementById('m-todaySignIn').textContent = data.todaySignIn ? '已签到' : '未签到';
   
+  // 会员标签
   document.getElementById('m-memberTag').textContent = data.memberTag || '--';
   
+  // 登录密码
   document.getElementById('m-loginPassword').textContent = data.loginPasswordHash ? '已设置' : '未设置';
   
+  // 提款密码
   document.getElementById('m-withdrawPassword').textContent = data.withdrawPasswordSet ? '已设置' : '未设置';
   
-  document.getElementById('m-registerIP').textContent = (data.registerIP || '') + (data.registerCountry ? ' / ' + data.registerCountry : '') + (data.registerDays > 0 ? ' / ' + data.registerDays + '天' : '');
+  // 注册IP + 国家 + 天数
+  const ipParts = [];
+  if (data.registerIP) ipParts.push(data.registerIP);
+  if (data.registerCountry) ipParts.push(data.registerCountry);
+  if (data.registerDays > 0) ipParts.push(data.registerDays + '天');
+  document.getElementById('m-registerIP').textContent = ipParts.length > 0 ? ipParts.join(' / ') : '--';
   
+  // 登录浏览器
   document.getElementById('m-loginBrowser').textContent = data.loginBrowser || '--';
   
+  // 会员备注
   document.getElementById('m-memberNote').textContent = data.memberNote || '--';
-  document.getElementById('m-memberNote-input').value = data.memberNote || '';
-  
-  const memberEditBtns = document.querySelectorAll('#memberSection .edit-btn, #memberSection .primary-btn, #memberSection .toggle-on, #memberSection .toggle-off, #memberSection .select-field');
-  memberEditBtns.forEach(btn => {
-    btn.style.display = isAdmin ? '' : 'none';
-  });
-  document.getElementById('eb-m-creditLoan').style.display = isAdmin ? '' : 'none';
-  document.getElementById('eb-m-todaySignIn').style.display = isAdmin ? '' : 'none';
-  document.getElementById('eb-m-memberTag').style.display = isAdmin ? '' : 'none';
-  document.getElementById('eb-m-loginPassword').style.display = isAdmin ? '' : 'none';
-  document.getElementById('eb-m-withdrawPassword').style.display = isAdmin ? '' : 'none';
-  document.getElementById('eb-m-rechargeAdjust').style.display = isAdmin ? '' : 'none';
-  document.getElementById('eb-m-withdrawAdjust').style.display = isAdmin ? '' : 'none';
-  document.getElementById('eb-m-status').style.display = isAdmin ? '' : 'none';
-  
   const noteInput = document.getElementById('m-memberNote-input');
+  if (noteInput) { noteInput.value = data.memberNote || ''; }
+  
+  // 权限控制 — 仅 admin 可见操作按钮
+  const memberEditBtns = document.querySelectorAll('#memberSection .edit-btn, #memberSection .primary-btn');
+  memberEditBtns.forEach(btn => {
+    if (btn.id === 'eb-m-status' || btn.id === 'eb-m-creditLoan' || btn.id === 'eb-m-todaySignIn' || 
+        btn.id === 'eb-m-memberTag' || btn.id === 'eb-m-loginPassword' || btn.id === 'eb-m-withdrawPassword' ||
+        btn.id === 'eb-m-rechargeRecords' || btn.id === 'eb-m-withdrawRecords') {
+      btn.style.display = isAdmin ? '' : 'none';
+    }
+  });
+  
+  // 备注输入框权限
   if (noteInput) { noteInput.style.display = isAdmin ? 'block' : 'none'; }
+  
+  // 开关点击权限
+  const toggles = document.querySelectorAll('#memberSection .member-toggle');
+  toggles.forEach(t => { t.style.cursor = isAdmin ? 'pointer' : 'default'; });
 }
 
-function setToggleDisplay(elId, isOn) {
+function setToggleSwitch(elId, isOn) {
   const el = document.getElementById(elId);
   if (!el) return;
-  el.textContent = isOn ? '开启' : '关闭';
-  el.className = isOn ? 'toggle-on' : 'toggle-off';
+  el.className = 'member-toggle ' + (isOn ? 'on' : 'off');
+  const label = document.getElementById(elId + '-label');
+  if (label) label.textContent = isOn ? '开' : '关';
+}
+
+async function toggleMemberSwitch(field) {
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
+  const el = document.getElementById('m-' + field);
+  const currentOn = el.classList.contains('on');
+  const newVal = !currentOn;
+  setToggleSwitch('m-' + field, newVal);
+  await saveMemberField(field, newVal);
 }
 
 async function editMemberStatus() {
@@ -3479,70 +3585,98 @@ async function editMemberStatus() {
   if (!(isSuperAdmin() && perms.admin !== false)) return;
   const select = document.getElementById('m-status-select');
   const statusEl = document.getElementById('m-status');
+  const btn = document.getElementById('eb-m-status');
   if (select.style.display === 'none') {
     select.style.display = '';
     statusEl.style.display = 'none';
-    document.getElementById('eb-m-status').textContent = '确认';
+    btn.textContent = '确认';
   } else {
     select.style.display = 'none';
     statusEl.style.display = '';
-    document.getElementById('eb-m-status').textContent = '修改';
+    btn.textContent = '修改';
     await saveMemberField('memberStatus', select.value);
   }
 }
 
-async function toggleMemberSwitch(field) {
+function editMemberStatusClose() {
+  const select = document.getElementById('m-status-select');
+  const statusEl = document.getElementById('m-status');
+  const btn = document.getElementById('eb-m-status');
+  select.style.display = 'none';
+  statusEl.style.display = '';
+  btn.textContent = '修改';
+}
+
+async function showMemberRecords(type) {
+  if (!currentProfileUid) return;
+  const uid = currentProfileUid;
+  document.getElementById('recordsModalTitle').textContent = type === 'recharge' ? '充值记录' : '提款记录';
+  
+  try {
+    const r = await fetch(`/api/admin/member-records/${encodeURIComponent(uid)}?type=${type}`, { headers: authHeaders() });
+    const j = await r.json();
+    const tbody = document.getElementById('recordsModalBody');
+    if (j.ok && j.records && j.records.length > 0) {
+      tbody.innerHTML = j.records.map(rec => {
+        const amt = '$' + formatMoney(rec.amount);
+        const time = rec.time_us || rec.timestamp ? new Date(rec.timestamp).toLocaleString() : '--';
+        const status = rec.status || '--';
+        return '<tr><td>' + (rec.orderId || '--') + '</td><td>' + amt + '</td><td>' + time + '</td><td>' + status + '</td></tr>';
+      }).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999">无记录</td></tr>';
+    }
+  } catch(e) {
+    document.getElementById('recordsModalBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f44336">加载失败</td></tr>';
+  }
+  
+  document.getElementById('recordsModal').style.display = 'flex';
+}
+
+function closeRecordsModal() {
+  document.getElementById('recordsModal').style.display = 'none';
+}
+
+async function editMemberSignIn() {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
-  const el = document.getElementById('m-' + field);
-  const currentOn = el.textContent === '开启';
-  const newVal = !currentOn;
-  setToggleDisplay('m-' + field, newVal);
-  await saveMemberField(field, newVal);
+  const el = document.getElementById('m-todaySignIn');
+  const currentVal = el.textContent === '已签到' ? true : false;
+  const newValStr = prompt('签到状态 (true/false)：\n当前: ' + (currentVal ? '已签到' : '未签到'), String(!currentVal));
+  if (newValStr === null) return;
+  const newVal = newValStr.toLowerCase() === 'true' || newValStr === '1';
+  el.textContent = newVal ? '已签到' : '未签到';
+  await saveMemberField('todaySignIn', newVal);
 }
 
 async function editMemberField(field) {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
   const el = document.getElementById('m-' + field);
-  const currentVal = el.textContent === '--' ? '' : el.textContent;
-  const labelMap = { creditLoan:'信用借款', memberTag:'会员标签' };
+  const currentVal = el.textContent === '--' || el.textContent.startsWith('状态') ? '' : el.textContent.replace(/^\$/, '');
+  const labelMap = { creditLoan:'信用借款额度', memberTag:'会员标签' };
   const newVal = prompt('请输入' + (labelMap[field] || field) + '：', currentVal);
   if (newVal === null) return;
-  el.textContent = newVal.trim() || '--';
-  await saveMemberField(field, newVal.trim());
+  if (field === 'creditLoan') {
+    const num = parseFloat(newVal.trim());
+    if (isNaN(num)) { showCenterNotify('请输入有效金额'); return; }
+    el.textContent = num > 0 ? '状态已借款，借款额度 $' + formatMoney(num) + '，已借款 $' + formatMoney(num) : '状态未借款，借款额度 $0.00，已借款 $0.00';
+    await saveMemberField(field, num);
+  } else {
+    el.textContent = newVal.trim() || '--';
+    await saveMemberField(field, newVal.trim());
+  }
 }
 
 async function resetMemberPassword(type) {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
-  if (!confirm('确认将' + (type === 'login' ? '登录密码' : '提款密码') + '重置为123456？')) return;
+  if (!confirm('确认将' + (type === 'login' ? '登录密码' : '提款密码') + '重置为123456？\n重置后将同步更新到数据库。')) return;
   const ok = await saveMemberField(type === 'login' ? 'loginPassword' : 'withdrawPassword', '123456');
   if (ok) {
     document.getElementById('m-' + (type === 'login' ? 'loginPassword' : 'withdrawPassword')).textContent = '已设置';
     showCenterNotify((type === 'login' ? '登录密码' : '提款密码') + '已重置为123456');
   }
-}
-
-async function toggleMemberSignIn() {
-  const perms = getAdminPerms();
-  if (!(isSuperAdmin() && perms.admin !== false)) return;
-  const el = document.getElementById('m-todaySignIn');
-  const newVal = el.textContent === '已签到' ? false : true;
-  el.textContent = newVal ? '已签到' : '未签到';
-  await saveMemberField('todaySignIn', newVal);
-}
-
-async function adjustMemberBalance(type) {
-  const perms = getAdminPerms();
-  if (!(isSuperAdmin() && perms.admin !== false)) return;
-  const label = type === 'recharge' ? '累计充值' : '累计提款';
-  const newTotal = prompt('请输入新的' + label + '总额：', '');
-  if (newTotal === null || newTotal.trim() === '') return;
-  const num = parseFloat(newTotal.trim());
-  if (isNaN(num) || num < 0) { showCenterNotify('请输入有效金额'); return; }
-  await saveMemberField(type + 'Adjust', num);
-  showCenterNotify(label + '已充正为 ' + formatMoney(num));
 }
 
 async function saveMemberField(field, value) {
@@ -3634,6 +3768,7 @@ async function openProfile(uid) {
 }
 
 function closeProfile() {
+  closeRecordsModal();
   document.getElementById('profileModal').style.display = 'none';
   currentProfileUid = null;
   profilePendingChanges = {};
