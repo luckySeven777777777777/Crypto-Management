@@ -3875,6 +3875,143 @@ app.post('/api/profiles/:uid', async (req, res) => {
 });
 
 /* ---------------------------------------------------------
+   会员概览 - 读取聚合数据
+--------------------------------------------------------- */
+app.get('/api/admin/member-overview/:uid', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const uid = req.params.uid;
+    if (!uid || !isSafeUid(uid))
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+
+    const userSnap = await db.ref(`users/${uid}`).once('value');
+    const user = userSnap.exists() ? userSnap.val() : {};
+
+    // 累计充值
+    const rechargeSnap = await db.ref(`rechargeRecords/${uid}`).once('value');
+    const rechargeList = rechargeSnap.exists() ? Object.values(rechargeSnap.val()) : [];
+    const rechargeTotal = rechargeList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const rechargeCount = rechargeList.length;
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const rechargeToday = rechargeList
+      .filter(r => r.time && new Date(r.time).getTime() >= todayStart.getTime())
+      .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const rechargeMax = rechargeList.reduce((m, r) => Math.max(m, Number(r.amount) || 0), 0);
+
+    // 累计提款
+    const withdrawSnap = await db.ref(`withdrawRecords/${uid}`).once('value');
+    const withdrawList = withdrawSnap.exists() ? Object.values(withdrawSnap.val()) : [];
+    const withdrawTotal = withdrawList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const withdrawCount = withdrawList.length;
+    const withdrawToday = withdrawList
+      .filter(r => r.time && new Date(r.time).getTime() >= todayStart.getTime())
+      .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const withdrawMax = withdrawList.reduce((m, r) => Math.max(m, Number(r.amount) || 0), 0);
+
+    // 注册天数
+    let registerDays = 0;
+    if (user.registerTime) {
+      const rt = new Date(user.registerTime).getTime();
+      if (!isNaN(rt)) registerDays = Math.max(0, Math.floor((Date.now() - rt) / 86400000));
+    }
+
+    const data = {
+      memberStatus: user.memberStatus || 'normal',
+      rechargeSwitch: user.rechargeSwitch !== false,
+      withdrawSwitch: user.withdrawSwitch !== false,
+      availableBalance: Number(user.balance) || 0,
+      frozenBalance: Number(user.frozenBalance) || 0,
+      creditLoan: Number(user.creditLoan) || 0,
+      rechargeStats: {
+        totalAmount: rechargeTotal,
+        count: rechargeCount,
+        todayAmount: rechargeToday,
+        maxSingle: rechargeMax
+      },
+      withdrawStats: {
+        totalAmount: withdrawTotal,
+        count: withdrawCount,
+        todayAmount: withdrawToday,
+        maxSingle: withdrawMax
+      },
+      withdrawDifference: rechargeTotal - withdrawTotal,
+      todaySignIn: !!user.signIn,
+      memberTag: user.memberTag || '',
+      loginPasswordHash: user.passwordHash || '',
+      withdrawPasswordSet: !!user.withdrawPassword,
+      registerIP: user.registerIP || '',
+      registerCountry: user.registerCountry || '',
+      registerDays: registerDays,
+      loginBrowser: user.loginBrowser || '',
+      memberNote: user.memberNote || ''
+    };
+
+    return res.json({ ok: true, data });
+  } catch (e) {
+    console.error('get member overview error', e);
+    return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+/* ---------------------------------------------------------
+   会员概览 - 单字段更新
+--------------------------------------------------------- */
+app.post('/api/admin/member-overview/:uid', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const uid = req.params.uid;
+    if (!uid || !isSafeUid(uid))
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+
+    const { field, value } = req.body;
+    if (!field) return res.status(400).json({ ok: false, error: 'missing field' });
+
+    // 密码重置特殊处理
+    if (field === 'loginPassword') {
+      const hashed = await bcrypt.hash(String(value), 10);
+      await db.ref(`users/${uid}`).update({ passwordHash: hashed });
+      return res.json({ ok: true });
+    }
+    if (field === 'withdrawPassword') {
+      const hashed = await bcrypt.hash(String(value), 10);
+      await db.ref(`users/${uid}`).update({ withdrawPassword: hashed });
+      return res.json({ ok: true });
+    }
+
+    // 充正/提正：更新累计统计节点
+    if (field === 'rechargeAdjust') {
+      await db.ref(`users/${uid}`).update({ rechargeTotalAdjust: Number(value) || 0 });
+      return res.json({ ok: true });
+    }
+    if (field === 'withdrawAdjust') {
+      await db.ref(`users/${uid}`).update({ withdrawTotalAdjust: Number(value) || 0 });
+      return res.json({ ok: true });
+    }
+
+    // 普通字段直接持久化到 users/{uid}/{field}
+    await db.ref(`users/${uid}`).update({ [field]: value });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('save member field error', e);
+    return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+/* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
 
