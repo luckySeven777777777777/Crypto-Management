@@ -1929,8 +1929,8 @@ function renderActionButtons(orderId, type, processed, status, lockedBy){
   const isProcessed = processed;
   const isFinal = status === 'success' || status === 'failed' || status === 'approved' || status === 'rejected';
 
-  // 通过 / 拒绝：已处理、已锁定或终态 → 隐藏
-  const showApproveReject = !isProcessed && !isLocked && !isFinal;
+  // 通过 / 拒绝：已处理或终态 → 隐藏（锁定状态不隐藏，方便操作）
+  const showApproveReject = !isProcessed && !isFinal;
 
   // 锁定 / 解锁：处理完成（成功/失败）后隐藏
   let lockUnlockHtml = '';
@@ -2836,7 +2836,10 @@ async function bs_search(){
     if (document.getElementById('bsLockedOnly')?.checked) {
       const myName = getAdminName();
       const myId = getAdminId();
-      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
+      list = list.filter(o => (o.lockedBy && (o.lockedBy === myName || o.lockedBy === myId)) || (o.operatorNickname && (o.operatorNickname === myName || o.operatorNickname === myId)));
+    } else {
+      // 自动隐藏已锁定的订单
+      list = list.filter(o => o.status !== 'locked');
     }
 
     if(!list.length){
@@ -2909,7 +2912,10 @@ async function r_search(){
     if (document.getElementById('rLockedOnly')?.checked) {
       const myName = getAdminName();
       const myId = getAdminId();
-      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
+      list = list.filter(o => (o.lockedBy && (o.lockedBy === myName || o.lockedBy === myId)) || (o.operatorNickname && (o.operatorNickname === myName || o.operatorNickname === myId)));
+    } else {
+      // 自动隐藏已锁定的订单
+      list = list.filter(o => o.status !== 'locked');
     }
 
     if(!list.length){
@@ -2971,14 +2977,17 @@ async function w_search(){
     });
 
     // 自己锁定
+    const quickStatus = document.getElementById('w_quickStatus')?.value;
     if (document.getElementById('wLockedOnly')?.checked) {
       const myName = getAdminName();
       const myId = getAdminId();
-      list = list.filter(o => o.lockedBy === myName || o.lockedBy === myId);
+      list = list.filter(o => (o.lockedBy && (o.lockedBy === myName || o.lockedBy === myId)) || (o.operatorNickname && (o.operatorNickname === myName || o.operatorNickname === myId)));
+    } else if (quickStatus !== 'locked') {
+      // 自动隐藏已锁定的订单（除非快速筛选明确选"已锁定"）
+      list = list.filter(o => o.status !== 'locked');
     }
 
     // 快速状态筛选
-    const quickStatus = document.getElementById('w_quickStatus')?.value;
     if (quickStatus) {
       switch(quickStatus) {
         case 'pending':  list = list.filter(o => o.status === 'processing'); break;
