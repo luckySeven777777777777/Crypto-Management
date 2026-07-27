@@ -2238,6 +2238,8 @@ app.post('/api/admin/member-tag', async (req, res) => {
       updatedBy: 'admin',
       updatedAt: now()
     });
+    // 同步到 memberTag 字段供 member-overview 读取
+    await db.ref(`users/${uid}`).update({ memberTag: remark || '' });
 
     return res.json({ ok: true });
   } catch (e) {
@@ -4114,6 +4116,13 @@ app.post('/api/admin/member-overview/:uid', async (req, res) => {
     // 开关类字段 — 确保保存为布尔值
     if (field === 'rechargeSwitch' || field === 'withdrawSwitch') {
       await db.ref(`users/${uid}`).update({ [field]: value === true || value === 'true' });
+      return res.json({ ok: true });
+    }
+
+    // 会员标签 — 同步到 tag 节点供会员管理列表读取
+    if (field === 'memberTag') {
+      await db.ref(`users/${uid}`).update({ memberTag: String(value) });
+      await db.ref(`users/${uid}/tag`).update({ remark: String(value) });
       return res.json({ ok: true });
     }
 
