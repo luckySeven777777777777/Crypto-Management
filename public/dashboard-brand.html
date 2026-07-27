@@ -3594,7 +3594,12 @@ async function editMemberStatus() {
     select.style.display = 'none';
     statusEl.style.display = '';
     btn.textContent = '修改';
-    await saveMemberField('memberStatus', select.value);
+    const newVal = select.value;
+    // 立即更新 UI
+    const optionText = select.options[select.selectedIndex].text;
+    statusEl.textContent = optionText;
+    statusEl.className = 'member-status-badge ' + newVal;
+    await saveMemberField('memberStatus', newVal);
   }
 }
 
