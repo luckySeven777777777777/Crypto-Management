@@ -3908,7 +3908,7 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
     const userSnap = await db.ref(`users/${uid}`).once('value');
     const user = userSnap.exists() ? userSnap.val() : {};
 
-    // 累计充值 - 从 orders/recharge/ 按 userId 过滤，只统计 approved/success
+    // 累计充值 - 从 orders/recharge/ 按 userId 过滤，只统计成功的
     const rechargeSnap = await db.ref('orders/recharge').once('value');
     const rechargeAll = rechargeSnap.exists() ? rechargeSnap.val() : {};
     const rechargeList = Object.values(rechargeAll).filter(o =>
@@ -3922,7 +3922,7 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
       .reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const rechargeMax = rechargeList.reduce((m, r) => Math.max(m, Number(r.amount) || 0), 0);
 
-    // 累计提款 - 从 orders/withdraw/ 按 userId 过滤，只统计 approved/success
+    // 累计提款 - 从 orders/withdraw/ 按 userId 过滤，只统计成功的
     const withdrawSnap = await db.ref('orders/withdraw').once('value');
     const withdrawAll = withdrawSnap.exists() ? withdrawSnap.val() : {};
     const withdrawList = Object.values(withdrawAll).filter(o =>
