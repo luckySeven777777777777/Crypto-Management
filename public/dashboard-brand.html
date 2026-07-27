@@ -3637,7 +3637,7 @@ async function showMemberRecords(type) {
     const tbody = document.getElementById('recordsModalBody');
     if (j.ok && j.records && j.records.length > 0) {
       tbody.innerHTML = j.records.map(rec => {
-        const amt = '$' + formatMoney(rec.amount);
+        const amt = '$' + formatMoney(rec.estimate);
         const time = rec.time_us || rec.timestamp ? new Date(rec.timestamp).toLocaleString() : '--';
         const status = rec.status || '--';
         return '<tr><td>' + (rec.orderId || '--') + '</td><td>' + amt + '</td><td>' + time + '</td><td>' + status + '</td></tr>';
