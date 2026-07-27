@@ -2862,7 +2862,7 @@ else if (
 // ===== ✅【最终正确】统一写回最终状态 + processed =====
 let finalStatus = null;
 
-if (isApproved) finalStatus = "approved";
+if (isApproved) finalStatus = "success";
 if (isRejected) finalStatus = "rejected";
 
 if (finalStatus) {
