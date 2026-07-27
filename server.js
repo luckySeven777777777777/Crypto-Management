@@ -3914,13 +3914,13 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
     const rechargeList = Object.values(rechargeAll).filter(o =>
       (o.userId === uid || o.user === uid) && (o.status === 'approved' || o.status === 'success')
     );
-    const rechargeTotal = rechargeList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const rechargeTotal = rechargeList.reduce((s, r) => s + (Number(r.estimate) || 0), 0);
     const rechargeCount = rechargeList.length;
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
     const rechargeToday = rechargeList
       .filter(r => r.timestamp && new Date(r.timestamp).getTime() >= todayStart.getTime())
-      .reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const rechargeMax = rechargeList.reduce((m, r) => Math.max(m, Number(r.amount) || 0), 0);
+      .reduce((s, r) => s + (Number(r.estimate) || 0), 0);
+    const rechargeMax = rechargeList.reduce((m, r) => Math.max(m, Number(r.estimate) || 0), 0);
 
     // 累计提款 - 从 orders/withdraw/ 按 userId 过滤，只统计成功的
     const withdrawSnap = await db.ref('orders/withdraw').once('value');
