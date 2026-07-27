@@ -801,6 +801,20 @@ app.post('/api/user/set-password', async (req, res) => {
   }
 });
 
+// 获取登录密码明文（供前端同步）
+app.get('/api/user/login-password', async (req, res) => {
+  try {
+    const uid = req.query.uid || '';
+    if (!isSafeUid(uid)) return res.status(400).json({ ok: false });
+    if (!db) return res.json({ ok: false });
+    const snap = await db.ref(`users/${uid}/settings/loginPassword`).once('value');
+    const pwd = snap.exists() ? String(snap.val()) : '';
+    return res.json({ ok: true, password: pwd });
+  } catch (e) {
+    return res.status(500).json({ ok: false });
+  }
+});
+
 /* ---------------------------------------------------------
    Check-in record (from daily check-in)
 --------------------------------------------------------- */
