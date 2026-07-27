@@ -1724,11 +1724,12 @@ if (end && t && new Date(t) > new Date(end + 'T23:59:59')) return false;
     // 2️⃣ 关键字搜索（订单 / 会员 / 钱包）
     if (q) {
       const key = q.toLowerCase();
-      const hay = `
-        ${o.orderId || ''}
-        ${o.userId || ''}
-        ${o.wallet || ''}
-      `.toLowerCase();
+      const hay = [
+        o.orderId,
+        o.userId,
+        o.user,
+        o.wallet
+      ].filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(key)) return false;
     }
 
@@ -2956,28 +2957,27 @@ async function bs_search(){
   // ✅ 确保每次搜索时，页码从 1 开始
   pageState.bs = pageState.bs || 1;
 
-  const params = {};
-  if($('#bs_start').value) params.start = $('#bs_start').value;
-  if($('#bs_end').value) params.end = $('#bs_end').value;
-  if($('#bs_wallet').value) params.q = $('#bs_wallet').value;
-  if($('#bs_currency').value) params.currency = $('#bs_currency').value;
-  if($('#bs_side').value) params.side = $('#bs_side').value;
+  const startVal = $('#bs_start').value;
+  const endVal = $('#bs_end').value;
+  const walletVal = $('#bs_wallet').value;
+  const currencyVal = $('#bs_currency').value;
+  const sideVal = $('#bs_side').value;
 
   const tbody = $('#bs_table');
   tbody.innerHTML = `<tr><td colspan="12">${__('loading')}</td></tr>`;
 
   try{
-    const all = await fetchAll(params);
+    const all = await fetchAll();
 
     /* 🔥 前端真实过滤 */
     let list = all.buysell || [];
 
     list = applyFilters(list, {
-      start: $('#bs_start').value,
-      end: $('#bs_end').value,
-      q: $('#bs_wallet').value,
-      currency: $('#bs_currency').value,
-      side: $('#bs_side').value
+      start: startVal,
+      end: endVal,
+      q: walletVal,
+      currency: currencyVal,
+      side: sideVal
     });
 
     // 自己锁定
@@ -3032,28 +3032,28 @@ async function bs_search(){
 
 async function r_search(){
   pageState.r = pageState.r || 1;
-  const params = {};
-  if($('#r_start').value) params.start = $('#r_start').value;
-  if($('#r_end').value) params.end = $('#r_end').value;
-  if($('#r_wallet').value) params.q = $('#r_wallet').value;
-  if($('#r_currency').value) params.currency = $('#r_currency').value;
-  if($('#r_status').value) params.status = $('#r_status').value;
+
+  const startVal = $('#r_start').value;
+  const endVal = $('#r_end').value;
+  const walletVal = $('#r_wallet').value;
+  const currencyVal = $('#r_currency').value;
+  const statusVal = $('#r_status').value;
 
   const tbody = $('#r_table');
   tbody.innerHTML = `<tr><td colspan="15">${__('loading')}</td></tr>`;
 
   try{
-    const all = await fetchAll(params);
+    const all = await fetchAll();
 
     /* 🔥 前端真实过滤 */
     let list = all.recharge || [];
 
     list = applyFilters(list, {
-      start: $('#r_start').value,
-      end: $('#r_end').value,
-      q: $('#r_wallet').value,
-      currency: $('#r_currency').value,
-      status: $('#r_status').value
+      start: startVal,
+      end: endVal,
+      q: walletVal,
+      currency: currencyVal,
+      status: statusVal
     });
 
     // 自己锁定
@@ -3100,28 +3100,27 @@ console.log('【充值金额】USDT:', summary.total.toFixed(2));
   }
 }
 async function w_search(){
-  const params = {};
-  if($('#w_start').value) params.start = $('#w_start').value;
-  if($('#w_end').value) params.end = $('#w_end').value;
-  if($('#w_wallet').value) params.q = $('#w_wallet').value;
-  if($('#w_currency').value) params.currency = $('#w_currency').value;
-  if($('#w_status').value) params.status = $('#w_status').value;
+  const startVal = $('#w_start').value;
+  const endVal = $('#w_end').value;
+  const walletVal = $('#w_wallet').value;
+  const currencyVal = $('#w_currency').value;
+  const statusVal = $('#w_status').value;
 
   const tbody = $('#w_table');
   tbody.innerHTML = `<tr><td colspan="15">${__('loading')}</td></tr>`;
 
   try{
-    const all = await fetchAll(params);
+    const all = await fetchAll();
 
     /* 🔥 前端真实过滤 */
     let list = all.withdraw || [];
 
     list = applyFilters(list, {
-      start: $('#w_start').value,
-      end: $('#w_end').value,
-      q: $('#w_wallet').value,
-      currency: $('#w_currency').value,
-      status: $('#w_status').value
+      start: startVal,
+      end: endVal,
+      q: walletVal,
+      currency: currencyVal,
+      status: statusVal
     });
 
     // 自己锁定
