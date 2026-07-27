@@ -2665,8 +2665,8 @@ async function openViewDetail(orderId, type) {
     const user = users[order.userId] || {};
 
     const userId = order.userId;
-    const rechargeOrders = (all.recharge || []).filter(o => o.status === 'success' || o.status === 'approved');
-    const withdrawOrders = (all.withdraw || []).filter(o => o.status === 'success' || o.status === 'approved');
+    const rechargeOrders = (all.recharge || []).filter(o => (o.userId === userId || o.user === userId) && (o.status === 'success' || o.status === 'approved'));
+    const withdrawOrders = (all.withdraw || []).filter(o => (o.userId === userId || o.user === userId) && (o.status === 'success' || o.status === 'approved'));
     const rechargeCount = rechargeOrders.length;
     const withdrawCount = withdrawOrders.length;
 
