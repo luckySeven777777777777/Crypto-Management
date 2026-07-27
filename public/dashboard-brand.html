@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -2561,7 +2561,7 @@ function renderWithdrawRow(o) {
   <td>${__('withdrawType')}</td>
 
   <!-- 金额 -->
-  <td>${o.amount != null ? o.amount : '--'}</td>
+  <td>${o.estimate != null ? o.estimate : '--'}</td>
 
   <!-- 币种 -->
   <td>${o.coin || '--'}</td>
@@ -3213,7 +3213,7 @@ tbody.innerHTML =
       <td><div class="order-id">${o.orderId}</div><div class="small">${o.userId}</div></td>
       <td>${o.time_us || '--'}</td>
       <td>${typeText}</td>
-      <td>${o.amount}</td>
+      <td>${o.estimate}</td>
       <td>${o.currency || o.coin || '--'}</td>
       <td>${o.wallet || '--'}</td>
       <td>${o.ip || '--'}</td>
