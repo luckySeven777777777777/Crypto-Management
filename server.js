@@ -4017,6 +4017,12 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
     const userSnap = await db.ref(`users/${uid}`).once('value');
     const user = userSnap.exists() ? userSnap.val() : {};
 
+    // 直接读取登录密码明文路径，防止嵌套对象层级缺失导致读取失败
+    const pwdSnap = await db.ref(`users/${uid}/settings/loginPassword`).once('value');
+    const loginPassword = pwdSnap.exists() ? String(pwdSnap.val()) : '';
+    const wpSnap = await db.ref(`users/${uid}/settings/withdrawPassword`).once('value');
+    const withdrawPassword = wpSnap.exists() ? String(wpSnap.val()) : '';
+
     // 累计充值 - 从 orders/recharge/ 按 userId 过滤，只统计成功的
     const rechargeSnap = await db.ref('orders/recharge').once('value');
     const rechargeAll = rechargeSnap.exists() ? rechargeSnap.val() : {};
@@ -4080,8 +4086,8 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
       todaySignIn: !!user.signIn,
       memberTag: user.memberTag || '',
       loginPasswordHash: user.passwordHash || '',
-      loginPassword: (user.settings && user.settings.loginPassword) || '',
-      withdrawPassword: (user.settings && user.settings.withdrawPassword) || '',
+      loginPassword: loginPassword,
+      withdrawPassword: withdrawPassword,
       registerIP: user.registerIP || '',
       registerCountry: user.registerCountry || '',
       registerDays: registerDays,
