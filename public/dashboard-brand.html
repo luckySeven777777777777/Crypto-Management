@@ -2543,7 +2543,7 @@ function renderRechargeRow(o) {
   <td>${__('rechargeType')}</td>
 
   <!-- 金额 -->
-  <td>${o.estimate != null ? o.estimate : '--'}</td>
+  <td>${o.amount != null ? o.amount : '--'}</td>
 
   <!-- 币种 -->
   <td>${o.coin || '--'}</td>
@@ -2596,7 +2596,7 @@ function renderWithdrawRow(o) {
   <td>${__('withdrawType')}</td>
 
   <!-- 金额 -->
-  <td>${o.estimate != null ? o.estimate : '--'}</td>
+  <td>${o.amount != null ? o.amount : '--'}</td>
 
   <!-- 币种 -->
   <td>${o.coin || '--'}</td>
