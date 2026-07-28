@@ -1658,6 +1658,10 @@ async function handleBuySellRequest(req, res){
     const userRef = db.ref(`users/${uid}`);
     const snap = await userRef.once('value');
     const balance = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
+    const frozenBalance = snap.exists() ? safeNumber(snap.val().frozenBalance, 0) : 0;
+    if (frozenBalance > 0) {
+      return res.status(403).json({ ok:false, error:'账户余额已被冻结' });
+    }
 
     const sideLower = String(realSide).toLowerCase();
 
@@ -1730,6 +1734,10 @@ async function handleRechargeRequest(req, res) {
     // 检查充值开关
     const userSnap = await db.ref(`users/${userId}`).once('value');
     const user = userSnap.exists() ? userSnap.val() : {};
+    // 检查冻结余额
+    if (safeNumber(user.frozenBalance, 0) > 0) {
+      return res.status(403).json({ ok:false, error:'账户余额已被冻结' });
+    }
     if (user.rechargeSwitch === false) {
       return res.status(403).json({ ok:false, error:'Account abnormal, recharge prohibited' });
     }
@@ -1814,6 +1822,10 @@ app.post('/api/order/withdraw', async (req, res) => {
     const userRef = db.ref(`users/${userId}`);
     const snap = await userRef.once('value');
     const user = snap.exists() ? snap.val() : {};
+    // 检查冻结余额
+    if (safeNumber(user.frozenBalance, 0) > 0) {
+      return res.status(403).json({ ok:false, error:'账户余额已被冻结' });
+    }
     if (user.withdrawSwitch === false) {
       return res.status(403).json({ ok:false, error:'Account abnormal, withdrawal prohibited' });
     }
@@ -4176,6 +4188,52 @@ app.post('/api/admin/member-overview/:uid', async (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     console.error('save member field error', e);
+    return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+/* ---------------------------------------------------------
+   冻结/解冻余额
+--------------------------------------------------------- */
+app.post('/api/admin/freeze-balance', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const { uid, amount } = req.body;
+    if (!uid || !isSafeUid(uid))
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+    const freezeAmount = Number(amount);
+    if (!freezeAmount || freezeAmount <= 0)
+      return res.status(400).json({ ok: false, error: 'invalid amount' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+    await db.ref(`users/${uid}`).update({ frozenBalance: freezeAmount });
+    return res.json({ ok: true, frozenBalance: freezeAmount });
+  } catch (e) {
+    console.error('freeze-balance error', e);
+    return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+app.post('/api/admin/unfreeze-balance', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const { uid } = req.body;
+    if (!uid || !isSafeUid(uid))
+      return res.status(400).json({ ok: false, error: 'invalid uid' });
+    if (!db) return res.json({ ok: false, message: 'no-db' });
+    await db.ref(`users/${uid}`).update({ frozenBalance: 0 });
+    return res.json({ ok: true, frozenBalance: 0 });
+  } catch (e) {
+    console.error('unfreeze-balance error', e);
     return res.status(500).json({ ok: false, error: 'internal error' });
   }
 });
