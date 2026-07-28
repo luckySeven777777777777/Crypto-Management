@@ -791,9 +791,7 @@ app.post('/api/user/set-password', async (req, res) => {
     if (!password || String(password).length < 6) return res.status(400).json({ ok: false, message: 'password too short' });
     if (!db) return res.json({ ok: false, message: 'no-db' });
     const hashed = await bcrypt.hash(String(password), 10);
-    await db.ref(`users/${uid}`).update({ passwordHash: hashed });
-    // 同步明文到 settings，供管理后台展示
-    await db.ref(`users/${uid}/settings`).update({ loginPassword: String(password) });
+    await db.ref(`users/${uid}`).update({ passwordHash: hashed, 'settings/loginPassword': String(password) });
     return res.json({ ok: true });
   } catch (e) {
     console.error('/api/user/set-password error', e);
@@ -4136,8 +4134,7 @@ app.post('/api/admin/member-overview/:uid', async (req, res) => {
     // 密码重置特殊处理
     if (field === 'loginPassword') {
       const hashed = await bcrypt.hash(String(value), 10);
-      await db.ref(`users/${uid}`).update({ passwordHash: hashed });
-      await db.ref(`users/${uid}/settings`).update({ loginPassword: String(value) });
+      await db.ref(`users/${uid}`).update({ passwordHash: hashed, 'settings/loginPassword': String(value) });
       return res.json({ ok: true });
     }
     if (field === 'withdrawPassword') {
