@@ -1229,8 +1229,14 @@ button {
             <span class="toggle-prohibit" id="m-withdrawSwitch-prohibit" style="display:none;color:#f44336;font-weight:bold;font-size:13px;margin-left:8px">禁止提款</span>
           </div>
           
-          <div class="member-row"><span class="label">可用余额</span><span class="value" id="m-availableBalance">--</span>
-            <span style="font-size:11px;color:#999;margin-left:4px" id="m-frozenBalance"></span></div>
+          <div class="member-row">
+            <span class="label">可用余额</span>
+            <span class="value" id="m-availableBalance">--</span>
+            <button class="primary-btn" id="eb-m-freezeBalance" onclick="freezeMemberBalance()" style="display:none;margin-left:8px;background:#f59e0b;border:none;border-radius:4px;padding:4px 10px;color:#fff;font-size:12px;cursor:pointer">冻结</button>
+            <button class="primary-btn" id="eb-m-unfreezeBalance" onclick="unfreezeMemberBalance()" style="display:none;margin-left:4px;background:#10b981;border:none;border-radius:4px;padding:4px 10px;color:#fff;font-size:12px;cursor:pointer">解冻</button>
+          </div>
+          <div class="member-row" style="padding-left:100px;font-size:12px;color:#f59e0b" id="m-frozenBalanceRow">
+            <span id="m-frozenBalance">冻结: $0.00</span></div>
           
           <div class="member-row"><span class="label">信用借款</span><span class="value" id="m-creditLoan">状态未借款，借款额度 0.00$，已借款 0.00$</span>
             <button class="edit-btn" id="eb-m-creditLoan" onclick="editMemberField('creditLoan')" style="display:none">修改</button></div>
@@ -3506,6 +3512,7 @@ function maskValue(val) {
 function populateMemberOverview(data, uid) {
   const perms = getAdminPerms();
   const isAdmin = isSuperAdmin() && perms.admin !== false;
+  _currentMemberUid = uid; // 缓存当前 uid 供冻结/解冻使用
   
   // 账号状态 — 绿色/红色
   const statusMap = { normal:'正常', abnormal:'异常', withdrawDisabled:'禁止提款', rechargeDisabled:'禁止充值' };
@@ -3529,7 +3536,18 @@ function populateMemberOverview(data, uid) {
   
   // 可用余额 + 冻结
   document.getElementById('m-availableBalance').textContent = '$' + formatMoney(data.availableBalance);
-  document.getElementById('m-frozenBalance').textContent = '冻结: $' + formatMoney(data.frozenBalance);
+  const frozenAmt = Number(data.frozenBalance) || 0;
+  const frozenRow = document.getElementById('m-frozenBalanceRow');
+  const frozenEl = document.getElementById('m-frozenBalance');
+  if (frozenAmt > 0) {
+    frozenEl.textContent = '冻结: $' + formatMoney(frozenAmt);
+    frozenEl.style.color = '#f59e0b';
+    frozenRow.style.display = '';
+  } else {
+    frozenEl.textContent = '冻结: $0.00';
+    frozenEl.style.color = '#999';
+    frozenRow.style.display = '';
+  }
   
   // 信用借款
   const credit = Number(data.creditLoan) || 0;
@@ -3583,7 +3601,8 @@ function populateMemberOverview(data, uid) {
   memberEditBtns.forEach(btn => {
     if (btn.id === 'eb-m-status' || btn.id === 'eb-m-creditLoan' || btn.id === 'eb-m-todaySignIn' || 
         btn.id === 'eb-m-memberTag' || btn.id === 'eb-m-loginPassword' || btn.id === 'eb-m-withdrawPassword' ||
-        btn.id === 'eb-m-rechargeRecords' || btn.id === 'eb-m-withdrawRecords') {
+        btn.id === 'eb-m-rechargeRecords' || btn.id === 'eb-m-withdrawRecords' ||
+        btn.id === 'eb-m-freezeBalance' || btn.id === 'eb-m-unfreezeBalance') {
       btn.style.display = isAdmin ? '' : 'none';
     }
   });
@@ -3738,6 +3757,63 @@ async function resetMemberPassword(type) {
     document.getElementById('m-' + (type === 'login' ? 'loginPassword' : 'withdrawPassword')).textContent = '123456';
     showCenterNotify((type === 'login' ? '登录密码' : '提款密码') + '已重置为123456');
   }
+}
+
+let _currentMemberUid = null; // 会员概览当前 uid
+
+async function freezeMemberBalance() {
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
+  if (!_currentMemberUid) return;
+  const amount = prompt('请输入冻结金额（USDT）：');
+  if (!amount) return;
+  const num = Number(amount);
+  if (!num || num <= 0) { alert('请输入有效的冻结金额'); return; }
+  try {
+    const r = await fetch('/api/admin/freeze-balance', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ uid: _currentMemberUid, amount: num })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      showCenterNotify('冻结成功：$' + formatMoney(num));
+      // 刷新 member overview
+      try {
+        const memberResp = await fetch(`/api/admin/member-overview/${encodeURIComponent(_currentMemberUid)}`, { headers: authHeaders() });
+        const memberJson = await memberResp.json();
+        if (memberJson.ok) { populateMemberOverview(memberJson.data, _currentMemberUid); }
+      } catch(e) {}
+    } else {
+      alert('冻结失败：' + (j.error || j.message || '未知错误'));
+    }
+  } catch(e) { alert('冻结请求失败'); }
+}
+
+async function unfreezeMemberBalance() {
+  const perms = getAdminPerms();
+  if (!(isSuperAdmin() && perms.admin !== false)) return;
+  if (!_currentMemberUid) return;
+  if (!confirm('确认解冻该会员的所有冻结余额？')) return;
+  try {
+    const r = await fetch('/api/admin/unfreeze-balance', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ uid: _currentMemberUid })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      showCenterNotify('解冻成功');
+      // 刷新 member overview
+      try {
+        const memberResp = await fetch(`/api/admin/member-overview/${encodeURIComponent(_currentMemberUid)}`, { headers: authHeaders() });
+        const memberJson = await memberResp.json();
+        if (memberJson.ok) { populateMemberOverview(memberJson.data, _currentMemberUid); }
+      } catch(e) {}
+    } else {
+      alert('解冻失败：' + (j.error || j.message || '未知错误'));
+    }
+  } catch(e) { alert('解冻请求失败'); }
 }
 
 async function saveMemberField(field, value) {
