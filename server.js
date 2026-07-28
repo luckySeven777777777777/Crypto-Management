@@ -815,6 +815,26 @@ app.get('/api/user/login-password', async (req, res) => {
   }
 });
 
+// 同步浏览器信息和IP（供页眉上报）
+app.post('/api/user/sync-info', async (req, res) => {
+  try {
+    const { uid: bodyUid, browser, ip } = req.body;
+    const uid = bodyUid || req.body.userid || req.body.userId;
+    if (!uid) return res.status(400).json({ ok: false, message: 'missing uid' });
+    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, message: 'invalid uid' });
+    if (!db) return res.json({ ok: false });
+    const updates = {};
+    if (browser) updates.loginBrowser = String(browser);
+    if (ip) updates.registerIP = String(ip);
+    if (Object.keys(updates).length === 0) return res.json({ ok: false, message: 'no data' });
+    await db.ref(`users/${uid}`).update(updates);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('/api/user/sync-info error', e);
+    return res.status(500).json({ ok: false });
+  }
+});
+
 /* ---------------------------------------------------------
    Check-in record (from daily check-in)
 --------------------------------------------------------- */
@@ -1074,6 +1094,20 @@ app.post('/wallet/:uid/credit', async (req, res) => {
         source: reason
       });
     } catch(e){}
+
+    // ✅ 签到记录同步：creditBalanceAPI 携带签到字段时，原子写入 checkinRecords
+    const day = Number(req.body.day);
+    if (day >= 1 && day <= 7) {
+      const recId = Date.now();
+      const timeUs = String(req.body.time_us || '');
+      await userRef.child('checkinRecords').child(String(recId)).set({
+        day: day,
+        amount: amount,
+        timestamp: now(),
+        time_us: timeUs
+      });
+      await userRef.child('signIn').set(true);
+    }
 
     return res.json({ ok:true, balance: newBal });
 
