@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -5167,6 +5167,61 @@ function startKickPolling() {
 document.addEventListener('DOMContentLoaded', () => {
   const myId = getAdminId();
   if (myId) { startConfigPolling(); startKickPolling(); }
+});
+
+// ESC 键关闭当前打开的弹窗/模态框
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  // 按优先级从高到低检查：tag编辑器 → admin登录 → 查看详情 → 订单详情 → 备注 → 签到 → 记录 → 会员资料
+  var tagOverlay = document.getElementById('tagEditorOverlay');
+  if (tagOverlay && (tagOverlay.style.display === 'flex' || tagOverlay.style.display === 'block')) {
+    tagOverlay.style.display = 'none';
+    var tagPanel = document.getElementById('tagEditorPanel');
+    if (tagPanel) tagPanel.style.display = 'none';
+    return;
+  }
+  var adminModal = document.getElementById('adminLoginModal');
+  if (adminModal && (adminModal.style.display === 'flex' || adminModal.style.display === 'block')) {
+    if (typeof closeAdminLogin === 'function') closeAdminLogin();
+    else adminModal.style.display = 'none';
+    return;
+  }
+  var viewDetail = document.getElementById('viewDetailModal');
+  if (viewDetail && (viewDetail.style.display === 'flex' || viewDetail.style.display === 'block')) {
+    if (typeof closeViewDetail === 'function') closeViewDetail();
+    else viewDetail.style.display = 'none';
+    return;
+  }
+  var orderDetail = document.getElementById('orderDetailModal');
+  if (orderDetail && (orderDetail.style.display === 'flex' || orderDetail.style.display === 'block')) {
+    if (typeof closeOrderDetail === 'function') closeOrderDetail();
+    else orderDetail.style.display = 'none';
+    return;
+  }
+  var remarkModal = document.getElementById('remarkModal');
+  if (remarkModal && (remarkModal.style.display === 'flex' || remarkModal.style.display === 'block')) {
+    if (typeof closeRemarkModal === 'function') closeRemarkModal();
+    else remarkModal.style.display = 'none';
+    return;
+  }
+  var checkinModal = document.getElementById('checkinModal');
+  if (checkinModal && (checkinModal.style.display === 'flex' || checkinModal.style.display === 'block')) {
+    if (typeof closeCheckinModal === 'function') closeCheckinModal();
+    else checkinModal.style.display = 'none';
+    return;
+  }
+  var recordsModal = document.getElementById('recordsModal');
+  if (recordsModal && (recordsModal.style.display === 'flex' || recordsModal.style.display === 'block')) {
+    if (typeof closeRecordsModal === 'function') closeRecordsModal();
+    else recordsModal.style.display = 'none';
+    return;
+  }
+  var profileModal = document.getElementById('profileModal');
+  if (profileModal && (profileModal.style.display === 'flex' || profileModal.style.display === 'block')) {
+    if (typeof closeProfile === 'function') closeProfile();
+    else profileModal.style.display = 'none';
+    return;
+  }
 });
 </script>
 
