@@ -336,6 +336,14 @@ tr.row-tag-red td:first-child{border-left:3px solid #e60000}
   filter: grayscale(100%);
   cursor: not-allowed;
 }
+/* 币种 Logo */
+.coin-logo {
+  width: 18px;
+  height: 18px;
+  vertical-align: -3px;
+  margin-right: 3px;
+  border-radius: 50%;
+}
 /* ----------- 审核按钮样式 ----------- */
 .small-btn{
   padding:6px 8px;
@@ -1947,7 +1955,7 @@ function connectBinance(){
   }catch(e){}
 }
 connectBinance();
-function updateTickSummary(){ $('#tickersSummary').innerText = watchedSymbols.map(s=> `${s}: ${priceMap[s]?priceMap[s].toFixed(6):'--'}`).join(' | '); }
+function updateTickSummary(){ $('#tickersSummary').innerHTML = watchedSymbols.map(s=> `${getCoinLogoHTML(s.replace('USDT',''))} ${s.replace('USDT','')}: ${priceMap[s]?priceMap[s].toFixed(6):'--'}`).join(' | '); }
 
 /* -----------------------------
    Page control
@@ -2539,7 +2547,7 @@ function renderBuySellRow(o) {
     <div class="small" style="color:#888;">${coin}</div>
   </td>
 
-  <td>${coin}</td>
+  <td>${getCoinLogoHTML(coin)} ${coin}</td>
 
   <!-- USDT（金钱 = 下单 USDT） -->
   <td>${usdtAmt ? usdtAmt.toFixed(2) : '--'}</td>
@@ -2607,6 +2615,13 @@ function renderIpWithCountry(ip, country) {
     return `${ip}<br><span style="font-size:11px;color:#888">${country}</span>`;
   }
   return ip;
+}
+
+// ===== 币种 Logo =====
+function getCoinLogoHTML(coin) {
+  if (!coin) return '';
+  const c = String(coin).toUpperCase();
+  return `<img class="coin-logo" src="https://cryptologos.cc/logos/${c.toLowerCase()}-${c.toLowerCase()}-logo.svg?v=040" alt="${c}" onerror="this.style.display='none'">`;
 }
 
 // ===== 充值行 =====
@@ -2688,7 +2703,7 @@ function renderWithdrawRow(o) {
   <td>${o.amount != null ? o.amount : '--'}</td>
 
   <!-- 币种 -->
-  <td>${o.coin || '--'}</td>
+  <td>${getCoinLogoHTML(o.coin || '')} ${o.coin || '--'}</td>
 
   <!-- 预估 -->
   <td>${o.estimate ?? '--'}</td>
@@ -3351,6 +3366,7 @@ tbody.innerHTML =
         })()}
 
       </td>
+      <td>${o.operatorNickname || '--'}</td>
     </tr>`;
   }).join('') +
   renderPager(rows.length, pageState.o, 'o', 'o_search');  // 渲染分页
