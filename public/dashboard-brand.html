@@ -2346,7 +2346,7 @@ async function addRemark(orderId, type, currentStatus){
     document.getElementById('rm-userId').innerText = (order && order.userId) || '--';
     document.getElementById('rm-level').innerText = tagRemark;
     document.getElementById('rm-amount').innerText = amount + ' ' + coin;
-    document.getElementById('rm-actual').innerText = '$' + estimate;
+    document.getElementById('rm-actual').innerText = estimate + ' ' + coin;
     document.getElementById('rm-fee').innerText = '0.00$';
   } catch(e) {
     console.error('load remark info error', e);
