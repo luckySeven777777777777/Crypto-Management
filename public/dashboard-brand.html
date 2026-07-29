@@ -641,6 +641,23 @@ button {
 .records-modal table { width:100%; border-collapse:collapse; font-size:12px; }
 .records-modal th { background:#f5f5f5; text-align:left; padding:6px 8px; border-bottom:2px solid #ddd; }
 .records-modal td { padding:5px 8px; border-bottom:1px solid #eee; }
+
+/* ===== 冻结/解冻居中模态框 ===== */
+.freeze-modal-overlay{display:none;position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:99999;justify-content:center;align-items:center;}
+.freeze-modal-overlay.active{display:flex;}
+.freeze-modal-box{background:#fff;border-radius:16px;padding:28px 32px 24px;max-width:420px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.2);}
+.freeze-modal-box h3{margin:0 0 14px;font-size:17px;color:#333;font-weight:600;}
+.freeze-modal-input-row{display:flex;gap:8px;margin:12px 0 20px;align-items:center;}
+.freeze-modal-input-row input{flex:1;border:2px solid #9b59b6;border-radius:8px;padding:10px 14px;font-size:15px;outline:none;}
+.freeze-modal-input-row input:focus{border-color:#8e44ad;}
+.freeze-modal-btn-all{background:#9b59b6;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .2s;}
+.freeze-modal-btn-all:hover{background:#8e44ad;}
+.freeze-modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;}
+.freeze-modal-actions .btn-confirm{background:#9b59b6;color:#fff;border:none;border-radius:24px;padding:10px 32px;font-size:14px;font-weight:500;cursor:pointer;}
+.freeze-modal-actions .btn-confirm:hover{background:#8e44ad;}
+.freeze-modal-actions .btn-cancel{background:#ff6b81;color:#fff;border:none;border-radius:24px;padding:10px 32px;font-size:14px;font-weight:500;cursor:pointer;}
+.freeze-modal-actions .btn-cancel:hover{background:#ee5a6e;}
+.freeze-modal-confirm-text{font-size:15px;color:#444;text-align:center;margin:10px 0 20px;line-height:1.6;}
 </style>
 </head>
 
@@ -868,7 +885,7 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
+        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>货币数量</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
         <tbody id="r_table"><tr><td colspan="15" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
@@ -911,7 +928,7 @@ button {
       </div>
 
       <table class="table">
-        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>金额</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
+        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>货币数量</th><th>币种</th><th>估算 USDT</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
         <tbody id="w_table"><tr><td colspan="15" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
@@ -1181,6 +1198,18 @@ button {
   </div>
 </div>
 
+<!-- 冻结/解冻模态框 -->
+<div id="freezeModal" class="freeze-modal-overlay">
+  <div class="freeze-modal-box" onclick="event.stopPropagation()">
+    <h3 id="freezeModalTitle">冻结金额</h3>
+    <div id="freezeModalBody"></div>
+    <div class="freeze-modal-actions">
+      <button class="btn-confirm" id="freezeModalConfirm">确定</button>
+      <button class="btn-cancel" onclick="closeFreezeModal()">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- 个人资料弹窗 -->
 <div id="profileModal" class="profile-modal" onclick="closeProfile()">
   <div class="box" onclick="event.stopPropagation()">
@@ -1256,9 +1285,6 @@ button {
           
           <div class="member-row"><span class="label">会员标签</span><span class="value" id="m-memberTag">--</span>
             <button class="edit-btn" id="eb-m-memberTag" onclick="editMemberField('memberTag')" style="display:none">修改</button></div>
-          
-          <div class="member-row"><span class="label">登录密码</span><span class="value" id="m-loginPassword">--</span>
-            <button class="edit-btn" id="eb-m-loginPassword" onclick="resetMemberPassword('login')" style="display:none">重置为123456</button></div>
           
           <div class="member-row"><span class="label">提款密码</span><span class="value" id="m-withdrawPassword">--</span>
             <button class="edit-btn" id="eb-m-withdrawPassword" onclick="resetMemberPassword('withdraw')" style="display:none">重置为123456</button></div>
@@ -2716,8 +2742,8 @@ async function openViewDetail(orderId, type) {
 
     left.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '金额信息</div>');
     left.push(`<div class="detail-row"><span class="label">${typeLabel}金额：</span><span class="value">${amount} ${coin}</span></div>`);
-    left.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">${estimate} ${coin}</span></div>`);
-    left.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">${estimate} ${coin}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">$${estimate}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">$${estimate}</span></div>`);
     left.push('</div>');
 
     // 右列：账户信息 + 其他信息
@@ -3760,15 +3786,57 @@ async function resetMemberPassword(type) {
 }
 
 let _currentMemberUid = null; // 会员概览当前 uid
+let _freezeResolve = null; // 冻结弹窗 Promise resolve
+
+function closeFreezeModal() {
+  document.getElementById('freezeModal').classList.remove('active');
+  if (_freezeResolve) { _freezeResolve(null); _freezeResolve = null; }
+}
 
 async function freezeMemberBalance() {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
   if (!_currentMemberUid) return;
-  const amount = prompt('请输入冻结金额（USDT）：');
-  if (!amount) return;
-  const num = Number(amount);
-  if (!num || num <= 0) { alert('请输入有效的冻结金额'); return; }
+
+  // 获取当前可用余额
+  let availableBalance = 0;
+  try {
+    const memberResp = await fetch(`/api/admin/member-overview/${encodeURIComponent(_currentMemberUid)}`, { headers: authHeaders() });
+    const memberJson = await memberResp.json();
+    if (memberJson.ok) { availableBalance = Number(memberJson.data.availableBalance) || 0; }
+  } catch(e) {}
+
+  // 构建冻结模态框内容
+  document.getElementById('freezeModalTitle').textContent = '冻结金额';
+  document.getElementById('freezeModalBody').innerHTML = `
+    <div style="font-size:13px;color:#666;margin-bottom:8px">当前可用余额：$${formatMoney(availableBalance)}</div>
+    <div class="freeze-modal-input-row">
+      <input id="freezeAmountInput" type="number" step="0.01" min="0" placeholder="请输入冻结金额（USDT）" />
+      <button class="freeze-modal-btn-all" onclick="document.getElementById('freezeAmountInput').value='${availableBalance}'">全部</button>
+    </div>
+  `;
+
+  // 显示模态框
+  document.getElementById('freezeModal').classList.add('active');
+  document.getElementById('freezeAmountInput').focus();
+
+  // 等待用户确认
+  const result = await new Promise(resolve => {
+    _freezeResolve = resolve;
+    document.getElementById('freezeModalConfirm').onclick = () => {
+      const input = document.getElementById('freezeAmountInput');
+      const val = input ? input.value.trim() : '';
+      if (!val) { showCenterNotify('请输入冻结金额'); return; }
+      const num = Number(val);
+      if (!num || num <= 0) { showCenterNotify('请输入有效的冻结金额'); return; }
+      closeFreezeModal();
+      resolve(num);
+    };
+  });
+
+  if (!result) return;
+  const num = result;
+
   try {
     const r = await fetch('/api/admin/freeze-balance', {
       method: 'POST',
@@ -3778,7 +3846,6 @@ async function freezeMemberBalance() {
     const j = await r.json();
     if (j.ok) {
       showCenterNotify('冻结成功：$' + formatMoney(num));
-      // 刷新 member overview
       try {
         const memberResp = await fetch(`/api/admin/member-overview/${encodeURIComponent(_currentMemberUid)}`, { headers: authHeaders() });
         const memberJson = await memberResp.json();
@@ -3794,7 +3861,27 @@ async function unfreezeMemberBalance() {
   const perms = getAdminPerms();
   if (!(isSuperAdmin() && perms.admin !== false)) return;
   if (!_currentMemberUid) return;
-  if (!confirm('确认解冻该会员的所有冻结余额？')) return;
+
+  // 构建解冻确认模态框
+  document.getElementById('freezeModalTitle').textContent = '解冻确认';
+  document.getElementById('freezeModalBody').innerHTML = `
+    <div class="freeze-modal-confirm-text">确定要解冻该账户的余额吗？</div>
+  `;
+
+  // 显示模态框
+  document.getElementById('freezeModal').classList.add('active');
+
+  // 等待用户确认
+  const confirmed = await new Promise(resolve => {
+    _freezeResolve = resolve;
+    document.getElementById('freezeModalConfirm').onclick = () => {
+      closeFreezeModal();
+      resolve(true);
+    };
+  });
+
+  if (!confirmed) return;
+
   try {
     const r = await fetch('/api/admin/unfreeze-balance', {
       method: 'POST',
@@ -3804,7 +3891,6 @@ async function unfreezeMemberBalance() {
     const j = await r.json();
     if (j.ok) {
       showCenterNotify('解冻成功');
-      // 刷新 member overview
       try {
         const memberResp = await fetch(`/api/admin/member-overview/${encodeURIComponent(_currentMemberUid)}`, { headers: authHeaders() });
         const memberJson = await memberResp.json();
@@ -4122,7 +4208,7 @@ async function loadMembers(resetPage = true){
         <td>${(isSuperAdmin() || (getAdminPerms().balance_adjust)) ? `<button class="primary" style="margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','add')">+</button> <button class="primary" style="background:#ff4444;margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','deduct')">-</button>` : '--'}</td>
         <td>${formatMyanmarTime(u.created)}</td>
         <td>${formatMyanmarTime(r.loginTime)}</td>
-        <td>${renderIpWithCountry(u.ip, u.country)}</td>
+        <td>${renderIpWithCountry(u.registerIP, u.country)}</td>
         <td>${formatMyanmarTime(r.lastOnline)}</td>
         <td>${tagCell}</td>
       </tr>
