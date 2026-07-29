@@ -2668,7 +2668,7 @@ function renderRechargeRow(o) {
   <td>${o.amount != null ? o.amount : '--'}</td>
 
   <!-- 币种 -->
-  <td>${o.coin || '--'}</td>
+  <td>${getCoinLogoHTML(o.coin || '')} ${o.coin || '--'}</td>
 
   <!-- 预估 -->
   <td>${o.estimate ?? '--'}</td>
