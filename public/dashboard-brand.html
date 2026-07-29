@@ -2346,7 +2346,7 @@ async function addRemark(orderId, type, currentStatus){
     document.getElementById('rm-userId').innerText = (order && order.userId) || '--';
     document.getElementById('rm-level').innerText = tagRemark;
     document.getElementById('rm-amount').innerText = amount + ' ' + coin;
-    document.getElementById('rm-actual').innerText = '$' + estimate;
+    document.getElementById('rm-actual').innerText = estimate + ' ' + coin;
     document.getElementById('rm-fee').innerText = '0.00$';
   } catch(e) {
     console.error('load remark info error', e);
@@ -2805,14 +2805,14 @@ async function openViewDetail(orderId, type) {
 
     left.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '金额信息</div>');
     left.push(`<div class="detail-row"><span class="label">${typeLabel}金额：</span><span class="value">${amount} ${coin}</span></div>`);
-    left.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">$${estimate}</span></div>`);
-    left.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">$${estimate}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">${isRecharge ? estimate + " " + coin : "$" + estimate}</span></div>`);
+    left.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">${isRecharge ? estimate + " " + coin : "$" + estimate}</span></div>`);
     left.push('</div>');
 
     // 右列：账户信息 + 其他信息
     right.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '账户信息</div>');
     right.push(`<div class="detail-row"><span class="label">${typeLabel}方式：</span><span class="value">${walletAddr}</span></div>`);
-    right.push(`<div class="detail-row"><span class="label">钱包昵称：</span><span class="value">虚拟货币</span></div>`);
+    right.push(`<div class="detail-row"><span class="label">钱包昵称：</span><span class="value">${isRecharge ? walletNickname : "虚拟货币"}</span></div>`);
     right.push(`<div class="detail-row"><span class="label">手续费：</span><span class="value">0.00$</span></div>`);
     right.push('</div>');
 
@@ -3659,7 +3659,7 @@ function populateMemberOverview(data, uid) {
   
   // 今日签到
   document.getElementById('m-todaySignIn').textContent = data.todaySignIn ? '已签到' : '未签到';
-  _currentCheckinRecords = data.checkinHistory || [];
+  _currentCheckinRecords = data.checkinRecords || [];
   
   // 会员标签
   document.getElementById('m-memberTag').textContent = data.memberTag || '--';
