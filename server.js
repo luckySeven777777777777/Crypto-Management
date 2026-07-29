@@ -93,7 +93,7 @@ app.post('/api/admin/generate-2fa', async (req, res) => {
     }
 
     // 将密钥存储到数据库，方便后续验证
-    // 示例：await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
+    await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
 
     // 返回生成的二维码和密钥
     res.json({
@@ -104,17 +104,20 @@ app.post('/api/admin/generate-2fa', async (req, res) => {
   });
 });
 
-// 验证 2FA 验证码
+// 验证 2FA 验证码（绑定 或 登录时二次验证）
 app.post('/api/admin/verify-2fa', async (req, res) => {
-  const { adminId, code } = req.body;
+  const { adminId, code, tempToken } = req.body;
 
   if (!adminId || !code) {
-    return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
+    return res.status(400).json({ ok: false, error: '管理员账号和验证码不能为空' });
   }
 
-  // 从数据库获取管理员的 2FA 密钥（此处为假设，实际使用时需从数据库读取）
-  // 例如：const secret = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
-  const secret = '你的2FA密钥';  // 这里需要替换为从数据库中获取的密钥
+  // 从数据库获取管理员的 2FA 密钥
+  const secretSnap = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
+  if (!secretSnap.exists()) {
+    return res.status(400).json({ ok: false, error: '未找到2FA密钥，请先绑定' });
+  }
+  const secret = secretSnap.val();
 
   // 使用 speakeasy 库验证验证码
   const verified = speakeasy.totp.verify({
@@ -123,11 +126,43 @@ app.post('/api/admin/verify-2fa', async (req, res) => {
     token: code
   });
 
-  if (verified) {
-    return res.json({ ok: true, message: '2FA 验证成功' });
-  } else {
-    return res.status(400).json({ ok: false, message: '验证码错误' });
+  if (!verified) {
+    return res.status(400).json({ ok: false, error: '验证码错误' });
   }
+
+  // 登录流程：tempToken 存在则走登录验证
+  if (tempToken) {
+    const tempSnap = await db.ref(`admins_temp_token/${tempToken}`).once('value');
+    if (!tempSnap.exists()) {
+      return res.status(401).json({ ok: false, error: '临时token已过期，请重新登录' });
+    }
+    const tempData = tempSnap.val();
+    if (tempData.id !== adminId) {
+      return res.status(401).json({ ok: false, error: '临时token与账号不匹配' });
+    }
+    // 清理临时 token
+    await db.ref(`admins_temp_token/${tempToken}`).remove();
+
+    // 生成正式 token
+    const token = uuidv4();
+    await db.ref(`admins_by_token/${token}`).set({ id: adminId, created: now() });
+    await db.ref(`admins/${adminId}`).update({ status: '在线', lastLogin: now() });
+
+    // 获取昵称与权限
+    const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+    const admin = adminSnap.val() || {};
+    return res.json({
+      ok: true,
+      token,
+      nickname: admin.nickname || adminId,
+      permissions: admin.permissions || {},
+      isSuper: !!admin.isSuper
+    });
+  }
+
+  // 绑定流程：标记 2FA 已绑定
+  await db.ref(`admins/${adminId}`).update({ has2FA: true });
+  return res.json({ ok: true, message: '2FA 绑定成功' });
 });
 /* ---------------------------------------------------------
    Middleware
@@ -2330,6 +2365,7 @@ app.get('/api/admin/list', async (req, res) => {
           isActive: a.isActive !== false,
           status: a.status || '离线',
           permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
+          has2FA: !!a.has2FA,
           createdBy: a.createdBy || 'system',
           created: a.created || 0,
           lastLogin: a.lastLogin || 0
@@ -2717,6 +2753,13 @@ app.post('/api/admin/login', async (req, res) => {
     // 检查是否被禁用
     if (admin.isActive === false)
       return res.status(403).json({ ok: false, error: '账号已被禁用，请联系超级管理员' });
+
+    // 检查是否绑定了2FA
+    if (admin.has2FA) {
+      const tempToken = uuidv4();
+      await db.ref(`admins_temp_token/${tempToken}`).set({ id, created: now() });
+      return res.json({ ok: true, need2FA: true, tempToken, nickname: admin.nickname || admin.id });
+    }
 
     const token = uuidv4();  // 生成新 token
     await db.ref(`admins_by_token/${token}`).set({
