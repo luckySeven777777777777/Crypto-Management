@@ -971,19 +971,15 @@ app.get('/wallet/init', async (req, res) => {
     const fp = String(req.query.fp || '').trim();
     if (!fp) return res.json({ ok: false, uid: '', error: 'missing fp' });
     if (!db) return res.json({ ok: false, uid: '' });
-    // 指纹查表：同浏览器返回旧 UID，恢复余额和历史数据
-    const fpSnap = await db.ref(`fingerprints/${fp}`).once('value');
+    const fpRef = db.ref(`fingerprints/${fp}`);
+    const fpSnap = await fpRef.once('value');
+    let uid;
     if (fpSnap.exists()) {
-      const existing = fpSnap.val();
-      await ensureUserExists(existing.uid);
-      return res.json({ ok: true, uid: existing.uid });
-    }
-    // 新指纹：生成全新 UID 并记录
-    const uid = 'U' + Date.now() + '_' + Math.floor(Math.random() * 999999);
-    try {
-      const fpRef = db.ref(`fingerprints/${fp}`);
+      uid = fpSnap.val().uid;
+    } else {
+      uid = 'U' + Date.now() + '_' + Math.floor(Math.random() * 999999);
       await fpRef.set({ uid, created: now() });
-    } catch (_) {}
+    }
     await ensureUserExists(uid);
     return res.json({ ok: true, uid });
   } catch (e) {
