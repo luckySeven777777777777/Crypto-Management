@@ -1930,7 +1930,7 @@ function renderPager(total, page, key, onChange){
 
   return `
     <tr><td colspan="${colspan}">
-      <div style="margin-top:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <div style="margin-top:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center">
         <button ${page<=1?'disabled':''}
           onclick="pageState.${key}--; ${onChange}()">
           上一页
