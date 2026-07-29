@@ -2365,7 +2365,6 @@ app.get('/api/admin/list', async (req, res) => {
           isActive: a.isActive !== false,
           status: a.status || '离线',
           permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
-          has2FA: !!a.has2FA,
           createdBy: a.createdBy || 'system',
           created: a.created || 0,
           lastLogin: a.lastLogin || 0
