@@ -3998,32 +3998,6 @@ app.post('/api/profiles/:uid', async (req, res) => {
 });
 
 /* ---------------------------------------------------------
-   签到记录上报 — 客户端签到成功后同步到服务端
---------------------------------------------------------- */
-app.post('/api/user/checkin-record', async (req, res) => {
-  try {
-    const { uid, date, time, amount, day } = req.body;
-    if (!uid || !date || amount === undefined) {
-      return res.status(400).json({ ok: false, error: 'missing fields' });
-    }
-    if (!db) return res.json({ ok: false, message: 'no-db' });
-
-    const recordKey = Date.now().toString();
-    await db.ref(`users/${uid}/checkinHistory/${recordKey}`).set({
-      date: String(date),
-      time: String(time || ''),
-      amount: Number(amount),
-      day: Number(day || 0),
-      timestamp: recordKey
-    });
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('checkin-record error', e);
-    return res.status(500).json({ ok: false, error: 'internal error' });
-  }
-});
-
-/* ---------------------------------------------------------
    会员概览 - 读取聚合数据
 --------------------------------------------------------- */
 app.get('/api/admin/member-overview/:uid', async (req, res) => {
@@ -4119,7 +4093,7 @@ app.get('/api/admin/member-overview/:uid', async (req, res) => {
       registerDays: registerDays,
       loginBrowser: user.loginBrowser || '',
       memberNote: user.memberNote || '',
-      checkinHistory: checkinRecords
+      checkinRecords: checkinRecords
     };
 
     return res.json({ ok: true, data });
