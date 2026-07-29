@@ -971,10 +971,15 @@ app.get('/wallet/init', async (req, res) => {
     const fp = String(req.query.fp || '').trim();
     if (!fp) return res.json({ ok: false, uid: '', error: 'missing fp' });
     if (!db) return res.json({ ok: false, uid: '' });
-    // 每次请求都生成全新 UID，不查 fingerprints 表复用。
-    // 不同浏览器有独立的 localStorage 保存各自的 UID，服务端不复用指纹避免跨浏览器串号。
+    // 指纹查表：同浏览器返回旧 UID，恢复余额和历史数据
+    const fpSnap = await db.ref(`fingerprints/${fp}`).once('value');
+    if (fpSnap.exists()) {
+      const existing = fpSnap.val();
+      await ensureUserExists(existing.uid);
+      return res.json({ ok: true, uid: existing.uid });
+    }
+    // 新指纹：生成全新 UID 并记录
     const uid = 'U' + Date.now() + '_' + Math.floor(Math.random() * 999999);
-    // 仅记录指纹（不回读），供后续审计/统计用途
     try {
       const fpRef = db.ref(`fingerprints/${fp}`);
       await fpRef.set({ uid, created: now() });
