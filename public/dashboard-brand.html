@@ -1048,7 +1048,7 @@ button {
         <button class="primary" onclick="o_search()">搜索</button>
       </div>
       <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作</th></tr></thead>
+        <thead><tr><th>订单/会员/钱包</th><th>时间</th><th>类型</th><th>金额</th><th>币种</th><th>wallet</th><th>IP</th><th>状态</th><th>操作人</th></tr></thead>
         <tbody id="o_table"><tr><td colspan="11" class="small">暂无数据</td></tr></tbody>
       </table>
     </div>
@@ -2346,7 +2346,7 @@ async function addRemark(orderId, type, currentStatus){
     document.getElementById('rm-userId').innerText = (order && order.userId) || '--';
     document.getElementById('rm-level').innerText = tagRemark;
     document.getElementById('rm-amount').innerText = amount + ' ' + coin;
-    document.getElementById('rm-actual').innerText = estimate + ' ' + coin;
+    document.getElementById('rm-actual').innerText = '$' + estimate;
     document.getElementById('rm-fee').innerText = '0.00$';
   } catch(e) {
     console.error('load remark info error', e);
@@ -3338,7 +3338,7 @@ tbody.innerHTML =
       <td>${o.estimate}</td>
       <td>${o.currency || o.coin || '--'}</td>
       <td>${o.wallet || '--'}</td>
-      <td>${o.ip || '--'}</td>
+      <td>${renderIpWithCountry(o.ip, o.country)}</td>
       <td>
         ${(() => {
           const isBuyOrder = o._type === 'buysell' && String(o.side || '').toLowerCase() === 'buy';
