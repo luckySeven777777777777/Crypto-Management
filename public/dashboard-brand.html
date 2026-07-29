@@ -2192,7 +2192,7 @@ async function submitAdminLogin(){
     }
     
     if (j.ok && j.token) {
-      completeLogin(j, id);
+      await completeLogin(j, id);
     } else {
       showCenterNotify('登录失败: ' + (j.error || '未知'));
     }
@@ -2221,7 +2221,7 @@ async function submit2FALogin() {
       document.getElementById('btnAdminBack').style.display = 'none';
       document.getElementById('btnAdminLogin').onclick = submitAdminLogin;
       document.getElementById('btnAdminLogin').innerText = '登录';
-      completeLogin(j, id);
+      await completeLogin(j, id);
     } else {
       showCenterNotify('2FA验证失败: ' + (j.error || '验证码错误'));
     }
@@ -2230,10 +2230,26 @@ async function submit2FALogin() {
   }
 }
 
-function completeLogin(j, id) {
+async function completeLogin(j, id) {
   setAdminToken(j.token);
   let perms = j.permissions || {};
   let isSuper = !!j.isSuper;
+  // 如果服务端 login 未返回权限，从 admin list 补拉
+  if (!isSuper && Object.keys(perms).length === 0) {
+    try {
+      const lr = await fetch('/api/admin/list', { headers: authHeaders() });
+      const lj = await lr.json();
+      if (lj.ok && lj.admins) {
+        const me = lj.admins.find(a => a.id === id);
+        if (me) {
+          perms = me.permissions || {};
+          isSuper = !!me.isSuper;
+          console.log('[completeLogin] 从 /api/admin/list 补拉权限', perms, isSuper);
+        }
+      }
+    } catch(e) { console.error('[completeLogin] 补拉权限失败', e); }
+  }
+  setAdminPerms(perms, isSuper);
   const displayName = j.nickname || id;
   document.getElementById('adminUser').innerText = displayName;
   setAdminName(displayName);
