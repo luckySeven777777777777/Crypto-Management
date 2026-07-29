@@ -971,15 +971,13 @@ app.get('/wallet/init', async (req, res) => {
     const fp = String(req.query.fp || '').trim();
     if (!fp) return res.json({ ok: false, uid: '', error: 'missing fp' });
     if (!db) return res.json({ ok: false, uid: '' });
-    const fpRef = db.ref(`fingerprints/${fp}`);
-    const fpSnap = await fpRef.once('value');
-    let uid;
-    if (fpSnap.exists()) {
-      uid = fpSnap.val().uid;
-    } else {
-      uid = 'U' + Date.now() + '_' + Math.floor(Math.random() * 999999);
-      await fpRef.set({ uid, created: now() });
-    }
+    // Always generate a new UID per browser — never reuse via fingerprint.
+    // This guarantees each browser = independent UID = independent balance.
+    let uid = 'U' + Date.now() + '_' + Math.floor(Math.random() * 999999);
+    try {
+      const fpRef = db.ref(`fingerprints/${fp}`);
+      await fpRef.set({ uid, created: now(), browser: req.query.browser || 'unknown' });
+    } catch (e) { /* non-critical */ }
     await ensureUserExists(uid);
     return res.json({ ok: true, uid });
   } catch (e) {
