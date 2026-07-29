@@ -1905,18 +1905,42 @@ function renderPager(total, page, key, onChange){
     return `<tr><td colspan="${colspan}">${batchBar}</td></tr>`;
   }
 
+  // 生成数字页码按钮（带省略号）
+  let pageNums = [];
+  if (pages <= 10) {
+    for (let i = 1; i <= pages; i++) pageNums.push(i);
+  } else {
+    pageNums.push(1);
+    if (page > 4) pageNums.push('...');
+    let start = Math.max(2, page - 2);
+    let end = Math.min(pages - 1, page + 2);
+    for (let i = start; i <= end; i++) pageNums.push(i);
+    if (page < pages - 3) pageNums.push('...');
+    pageNums.push(pages);
+  }
+
+  const pageBtns = pageNums.map(p => {
+    if (p === '...') return '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;font-size:13px;color:#999">...</span>';
+    const isActive = p === page;
+    return `<button style="min-width:30px;height:30px;padding:0 6px;border:1px solid ${isActive?'#1976d2':'#ddd'};background:${isActive?'#1976d2':'#fff'};color:${isActive?'#fff':'#333'};border-radius:4px;cursor:pointer;font-size:12px;font-weight:${isActive?'700':'400'};transition:all 0.15s" 
+      onclick="pageState.${key}=${p};${onChange}()"
+      onmouseover="if(!${isActive}){this.style.background='#e8ecf0';this.style.borderColor='#bbb'}"
+      onmouseout="if(!${isActive}){this.style.background='#fff';this.style.borderColor='#ddd'}">${p}</button>`;
+  }).join('');
+
   return `
     <tr><td colspan="${colspan}">
-      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <div style="margin-top:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <button ${page<=1?'disabled':''}
           onclick="pageState.${key}--; ${onChange}()">
           上一页
         </button>
-        <span class="small">第 ${page} / ${pages} 页</span>
+        ${pageBtns}
         <button ${page>=pages?'disabled':''}
           onclick="pageState.${key}++; ${onChange}()">
           下一页
         </button>
+        <span class="small" style="margin-left:8px">第 ${page} / ${pages} 页</span>
       </div>
       ${batchBar}
     </td></tr>
@@ -3369,7 +3393,7 @@ tbody.innerHTML =
       <td>${o.time_us || '--'}</td>
       <td>${typeText}</td>
       <td>${o.estimate}</td>
-      <td>${o.currency || o.coin || '--'}</td>
+      <td>${getCoinLogoHTML(o.currency || o.coin || '')} ${o.currency || o.coin || '--'}</td>
       <td>${o.wallet || '--'}</td>
       <td>${renderIpWithCountry(o.ip, o.country)}</td>
       <td>
@@ -4323,12 +4347,34 @@ async function loadMembers(resetPage = true){
 
     // 分页控件
     if (totalPages > 1) {
+      // 生成数字页码按钮（带省略号，会员管理独立实现）
+      let memberPageNums = [];
+      if (totalPages <= 10) {
+        for (let i = 1; i <= totalPages; i++) memberPageNums.push(i);
+      } else {
+        memberPageNums.push(1);
+        if (memberPage > 4) memberPageNums.push('...');
+        let start = Math.max(2, memberPage - 2);
+        let end = Math.min(totalPages - 1, memberPage + 2);
+        for (let i = start; i <= end; i++) memberPageNums.push(i);
+        if (memberPage < totalPages - 3) memberPageNums.push('...');
+        memberPageNums.push(totalPages);
+      }
+      const memberPageBtns = memberPageNums.map(p => {
+        if (p === '...') return '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;font-size:13px;color:#999">...</span>';
+        const isActive = p === memberPage;
+        return '<button style="min-width:30px;height:30px;padding:0 6px;border:1px solid '+(isActive?'#1976d2':'#ddd')+';background:'+(isActive?'#1976d2':'#fff')+';color:'+(isActive?'#fff':'#333')+';border-radius:4px;cursor:pointer;font-size:12px;font-weight:'+(isActive?'700':'400')+';transition:all 0.15s" onclick="memberPage='+p+';loadMembers(false)" onmouseover="if(!'+isActive+'){this.style.background=\'#e8ecf0\';this.style.borderColor=\'#bbb\'}" onmouseout="if(!'+isActive+'){this.style.background=\'#fff\';this.style.borderColor=\'#ddd\'}">'+p+'</button>';
+      }).join('');
+
       tbody.innerHTML += `
       <tr>
         <td colspan="9" style="text-align:center;padding:12px 0">
+          <div style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
           <button ${memberPage<=1?'disabled':''} onclick="memberPage--;loadMembers(false)">上一页</button>
-          <span class="small" style="margin:0 12px">第 ${memberPage} / ${totalPages} 页（共 ${total} 个会员）</span>
+          ${memberPageBtns}
           <button ${memberPage>=totalPages?'disabled':''} onclick="memberPage++;loadMembers(false)">下一页</button>
+          <span class="small" style="margin-left:8px">第 ${memberPage} / ${totalPages} 页（共 ${total} 个会员）</span>
+          </div>
         </td>
       </tr>`;
     }
