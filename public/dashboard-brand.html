@@ -1093,12 +1093,11 @@ button {
           <th data-i18n="text" data-key="permissions">权限</th>
           <th data-i18n="text" data-key="loginLink">登录链接</th>
           <th data-i18n="text" data-key="status">状态</th>
-          <th>2FA</th>
           <th data-i18n="text" data-key="operation">操作</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="6"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+        <tr><td colspan="5"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -5263,7 +5262,7 @@ function renderAdminTable(admins){
   // 过滤掉空白ID的异常账号
   admins = admins.filter(a => a.id && a.id.trim());
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5">暂无管理员</td></tr>';
     return;
   }
   let html = '';
@@ -5295,7 +5294,6 @@ function renderAdminTable(admins){
         '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
       '</td>' +
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
-      '<td>' + (a.has2FA ? '<span style="color:#10b981;font-weight:bold">已绑定</span>' : '<span style="color:#999">未绑定</span>') + '</td>' +
       '<td>' +
         '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
         '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
