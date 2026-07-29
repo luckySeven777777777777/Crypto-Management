@@ -3659,7 +3659,7 @@ function populateMemberOverview(data, uid) {
   
   // 今日签到
   document.getElementById('m-todaySignIn').textContent = data.todaySignIn ? '已签到' : '未签到';
-  _currentCheckinRecords = data.checkinRecords || [];
+  _currentCheckinRecords = data.checkinHistory || [];
   
   // 会员标签
   document.getElementById('m-memberTag').textContent = data.memberTag || '--';
