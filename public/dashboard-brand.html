@@ -342,7 +342,7 @@ tr.row-tag-red td:first-child{border-left:3px solid #e60000}
   height: 18px;
   vertical-align: -3px;
   margin-right: 3px;
-  border-radius: 50%;
+  flex-shrink: 0;
 }
 /* ----------- 审核按钮样式 ----------- */
 .small-btn{
@@ -2617,11 +2617,28 @@ function renderIpWithCountry(ip, country) {
   return ip;
 }
 
-// ===== 币种 Logo =====
+// ===== 币种 Logo（纯本地 SVG，不依赖外部 CDN）=====
+const COIN_COLORS = {
+  BTC:'#F7931A', ETH:'#627EEA', USDT:'#26A17B', BNB:'#F3BA2F',
+  XRP:'#23292F', SOL:'#9945FF', LTC:'#345D9D', BCH:'#8DC351',
+  USDC:'#2775CA', DOGE:'#C2A633', ADA:'#0033AD', DOT:'#E6007A',
+  TRX:'#EF0027', MATIC:'#8247E5', AVAX:'#E84142', LINK:'#2A5ADA',
+  DAI:'#F5AC37', SHIB:'#E52A1A', UNI:'#FF007A', ATOM:'#2E3148',
+  NEAR:'#000000', APT:'#000000', FIL:'#0090FF', ARB:'#28A0F0',
+  OP:'#FF0420', PEPE:'#6BA845', WIF:'#000000', SUI:'#4DA2FF',
+  TON:'#0088CC', INJ:'#00F0FF', RNDR:'#000000', IMX:'#000000',
+  GRT:'#6747ED', AAVE:'#B6509E', ALGO:'#000000', ETC:'#328B47',
+  HBAR:'#000000', ICP:'#3B00B9', VET:'#15BDFF', XLM:'#000000',
+  XMR:'#FF6600', CRO:'#103F68', FTM:'#1969FF', THETA:'#2AB8E6',
+  AXS:'#0055FF', SAND:'#00ADEF', MANA:'#FF4555', CHZ:'#EC0128',
+  ZIL:'#49C1BF', BAT:'#FF5000', ZRX:'#000000', ENJ:'#7866D5',
+};
 function getCoinLogoHTML(coin) {
   if (!coin) return '';
   const c = String(coin).toUpperCase();
-  return `<img class="coin-logo" src="https://cryptologos.cc/logos/${c.toLowerCase()}-${c.toLowerCase()}-logo.svg?v=040" alt="${c}" onerror="this.style.display='none'">`;
+  const color = COIN_COLORS[c] || '#8899AA';
+  const fs = c.length > 3 ? '9px' : '11px';
+  return `<svg class="coin-logo" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="12" fill="${color}"/><text x="12" y="12" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="${fs}" font-weight="700" font-family="Segoe UI,Arial,sans-serif">${c.length > 4 ? c.slice(0,4) : c}</text></svg>`;
 }
 
 // ===== 充值行 =====
