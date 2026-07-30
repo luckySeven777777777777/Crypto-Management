@@ -2601,7 +2601,7 @@ app.get('/api/admin/list', async (req, res) => {
           created: a.created || 0,
           lastLogin: a.lastLogin || 0,
           platform_id: a.platform_id || 'default',
-          platform_name: getPlatformName(a.platform_id)
+          platform_name: (() => { try { return getPlatformName(a.platform_id); } catch(_) { return a.platform_id || 'default'; } })()
         });
       });
     }
@@ -2959,7 +2959,7 @@ app.get('/api/admin/me', async (req, res) => {
       permissions: admin.permissions || {},
       isSuper: !!admin.isSuper,
       platform_id: admin.platform_id || 'default',
-      platform_name: getPlatformName(admin.platform_id)
+      platform_name: (() => { try { return getPlatformName(admin.platform_id); } catch(_) { return admin.platform_id || 'default'; } })()
     });
   } catch (e) {
     console.error('admin me error', e);
