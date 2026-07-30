@@ -2028,7 +2028,7 @@ const ADMIN_PERMS_KEY = 'nexbit_admin_perms';
 const ADMIN_SUPER_KEY = 'nexbit_admin_super';
 const ADMIN_NAME_KEY  = 'nexbit_admin_name';
 const ADMIN_ID_KEY    = 'nexbit_admin_id';
-function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
+function setAdminToken(t){ if(!t || t==='undefined' || t==='null' || t.length<10){ console.warn('[setAdminToken] 拒绝无效token:', t); return; } try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
 function setAdminPerms(p, isSuper){ try{ localStorage.setItem(ADMIN_PERMS_KEY, JSON.stringify(p)); localStorage.setItem(ADMIN_SUPER_KEY, isSuper?'1':'0'); }catch(e){} }
 function getAdminPerms(){ try{ return JSON.parse(localStorage.getItem(ADMIN_PERMS_KEY) || '{}'); }catch(e){ return {}; } }
@@ -2037,7 +2037,7 @@ function setAdminName(n){ try{ localStorage.setItem(ADMIN_NAME_KEY, n); }catch(e
 function getAdminName(){ try{ return localStorage.getItem(ADMIN_NAME_KEY) || ''; }catch(e){ return ''; } }
 function setAdminId(n){ try{ localStorage.setItem(ADMIN_ID_KEY, n); }catch(e){} }
 function getAdminId(){ try{ return localStorage.getItem(ADMIN_ID_KEY) || ''; }catch(e){ return ''; } }
-function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
+function authHeaders(){ const t = getAdminToken(); if (!t || t==='undefined' || t==='null' || t.length<10) { console.warn('[authHeaders] token无效，跳过Authorization:', t); return { 'Content-Type':'application/json' }; } return { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t }; }
 
 function formatMoney(val) {
   if (val === undefined || val === null) return '0.00';
@@ -2234,6 +2234,11 @@ async function submit2FALogin() {
 }
 
 async function completeLogin(j, id) {
+  if (!j.token || j.token === 'undefined' || j.token === 'null' || j.token.length < 10) {
+    console.error('[completeLogin] token无效，拒绝完成登录:', j.token);
+    showCenterNotify('登录失败: 服务端返回无效凭据，请联系管理员');
+    return;
+  }
   setAdminToken(j.token);
   let perms = j.permissions || {};
   let isSuper = !!j.isSuper;
@@ -5207,10 +5212,7 @@ async function resetWithdrawPassword() {
 
   const res = await fetch('/api/admin/reset-withdraw-password', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + (localStorage.getItem('nexbit_admin_token') || '')
-    },
+    headers: authHeaders(),
     body: JSON.stringify(payload)
   });
 
@@ -5520,9 +5522,9 @@ function startConfigPolling() {
 async function checkKickStatus() {
   try {
     const token = getAdminToken();
-    if (!token) return;
+    if (!token || token === 'undefined' || token === 'null' || token.length < 10) return;
     const resp = await fetch('/api/admin/check-kicked', {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: authHeaders()
     });
     if (!resp.ok) {
       // token 已失效（被踢出后从 DB 删除），强制登出
