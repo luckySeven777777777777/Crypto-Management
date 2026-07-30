@@ -68,190 +68,68 @@ async function sendLoanToTelegram(text, photos = []) {
   }
 }
 
-
 /* ---------------------------------------------------------
-   Multi-Platform Configuration (In-Memory Store)
+   Multi-Platform Telegram Config Cache
 --------------------------------------------------------- */
-const platforms = new Map();
+const platformConfigCache = {};
 
-function getPlatformName(platformId) {
-  // 防御：platformId 可能为非字符串（数字/对象/null/undefined），统一转为安全字符串
-  const safeId = (platformId != null && typeof platformId === 'string') ? platformId : String(platformId || 'default');
-  const lookupKey = safeId.toLowerCase() || 'default';
-  const p = platforms.get(lookupKey);
-  return p ? p.name : (safeId || 'default');
-}
-
-function loadPlatformsFromEnv() {
-  // 始终内置 default 平台
-  platforms.set('default', {
-    id: 'default',
-    name: 'Default',
-    bot_token: process.env.PLATFORM_DEFAULT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '',
-    chat_ids: (process.env.PLATFORM_DEFAULT_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
-    created_at: Date.now()
-  });
-
-  // 扫描 PLATFORM_{NAME}_BOT_TOKEN 环境变量
-  Object.keys(process.env).forEach(key => {
-    const match = key.match(/^PLATFORM_(\w+)_BOT_TOKEN$/);
-    if (match) {
-      const rawName = match[1];
-      const id = rawName.toLowerCase();
-      if (id === 'default') {
-        const p = platforms.get('default');
-        p.bot_token = process.env[key];
-        p.chat_ids = (process.env[`PLATFORM_${rawName}_CHAT_IDS`] || '').split(',').map(s => s.trim()).filter(Boolean);
-        return;
-      }
-      const name = rawName;
-      const chatKey = `PLATFORM_${rawName}_CHAT_IDS`;
-      platforms.set(id, {
-        id,
-        name,
-        bot_token: process.env[key],
-        chat_ids: (process.env[chatKey] || '').split(',').map(s => s.trim()).filter(Boolean),
-        created_at: Date.now()
-      });
-    }
-  });
-
-  console.log('[PLATFORMS] Loaded ' + platforms.size + ' platform(s) from env');
-}
-
-loadPlatformsFromEnv();
-
-async function loadPlatformsFromDB() {
-  if (!db) return;
+function getPlatformConfig(name) {
   try {
-    const snap = await db.ref('platforms').once('value');
-    if (snap.exists()) {
-      const fbPlatforms = snap.val();
-      Object.entries(fbPlatforms).forEach(([id, p]) => {
-        if (!platforms.has(id)) {
-          platforms.set(id, p);
-        }
-      });
-      console.log('[PLATFORMS] Merged ' + Object.keys(fbPlatforms).length + ' platform(s) from DB');
-    }
-  } catch(e) {
-    console.warn('[PLATFORMS] Failed to load from DB:', e.message);
+    const key = String(name || 'default').trim();
+    if (platformConfigCache[key]) return platformConfigCache[key];
+
+    const tokenEnv = `PLATFORM_${key.toUpperCase()}_BOT_TOKEN`;
+    const chatIdsEnv = `PLATFORM_${key.toUpperCase()}_CHAT_IDS`;
+
+    const token = process.env[tokenEnv] || process.env.TELEGRAM_BOT_TOKEN || '';
+    const chatIds = (process.env[chatIdsEnv] || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+
+    const config = {
+      platform_id: key,
+      bot_token: token,
+      chat_ids: chatIds
+    };
+
+    // Also resolve a display name: look for PLATFORM_<NAME>_NAME or capitalize key
+    const nameEnv = `PLATFORM_${key.toUpperCase()}_NAME`;
+    config.platform_name = process.env[nameEnv] || (key === 'default' ? 'Default' : key.toUpperCase());
+
+    platformConfigCache[key] = config;
+    console.log('[PLATFORM] Loaded config for:', key, 'token:', token ? '***' : 'MISSING', 'chats:', chatIds.length);
+    return config;
+  } catch (e) {
+    console.error('[PLATFORM] getPlatformConfig error:', e.message);
+    return { platform_id: String(name || 'default'), bot_token: '', chat_ids: [], platform_name: String(name || 'Default') };
   }
 }
 
-function getPlatformConfig(platformId) {
-  const pid = (platformId || 'default').toLowerCase();
-  const p = platforms.get(pid) || platforms.get('default');
-  if (!p) {
-    const token = process.env.TELEGRAM_BOT_TOKEN || '';
-    const chatsStr = process.env.TELEGRAM_CHAT_IDS || '';
-    return { token, chats: chatsStr.split(',').map(s => s.trim()).filter(Boolean) };
-  }
-  return { token: p.bot_token || '', chats: p.chat_ids || [] };
-}
-
-async function sendPlatformTelegram(platformId, text) {
+async function sendPlatformTelegram(platformId, message) {
   try {
     const cfg = getPlatformConfig(platformId);
-    if (!cfg.token || cfg.chats.length === 0) return;
-    for (const chatId of cfg.chats) {
-      await axios.post(`https://api.telegram.org/bot${cfg.token}/sendMessage`,
-        { chat_id: chatId, text, parse_mode: 'HTML' }, { timeout: 10000 }).catch(()=>{});
+    if (!cfg.bot_token || cfg.chat_ids.length === 0) {
+      // fallback to default if platform-specific not configured
+      if (platformId !== 'default') {
+        console.log('[PLATFORM] No config for', platformId, 'falling back to default');
+        return sendPlatformTelegram('default', message);
+      }
+      return;
     }
-  } catch(e) {}
+    const text = String(message || '').slice(0, 4096);
+    for (const chatId of cfg.chat_ids) {
+      try {
+        await axios.post(
+          `https://api.telegram.org/bot${cfg.bot_token}/sendMessage`,
+          { chat_id: chatId, text, parse_mode: 'HTML' },
+          { timeout: 10000 }
+        );
+      } catch (err) {
+        console.error(`[PLATFORM] TG send error for ${cfg.platform_id} chat ${chatId}:`, err.response?.data || err.message);
+      }
+    }
+  } catch (e) {
+    console.error('[PLATFORM] sendPlatformTelegram error:', e.message);
+  }
 }
-
-/* --------------------- Platform APIs --------------------- */
-app.post('/api/platforms', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false });
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token))
-      return res.status(403).json({ ok: false });
-
-    const { name, bot_token, chat_ids } = req.body;
-    if (!name) return res.status(400).json({ ok: false, error: 'missing name' });
-
-    // 自动从 name 生成 id（小写+下划线）
-    const id = name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '_').replace(/^_|_$/g, '') || ('platform_' + Date.now());
-    if (platforms.has(id)) return res.status(400).json({ ok: false, error: 'platform id already exists, choose a different name' });
-
-    const platform = {
-      id,
-      name,
-      bot_token: bot_token || '',
-      chat_ids: Array.isArray(chat_ids) ? chat_ids : (chat_ids || '').split(',').map(s => s.trim()).filter(Boolean),
-      created_at: Date.now()
-    };
-    platforms.set(id, platform);
-
-    // 持久化到 Firebase
-    if (db) {
-      try { await db.ref(`platforms/${id}`).set(platform); } catch(e) {}
-    }
-
-    return res.json({ ok: true, platform });
-  } catch(e) {
-    console.error('create platform error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.get('/api/platforms', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false });
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token))
-      return res.status(403).json({ ok: false });
-
-    // 从 DB 合并平台数据
-    await loadPlatformsFromDB();
-
-    const list = Array.from(platforms.values()).map(p => ({
-      id: p.id,
-      name: p.name,
-      bot_token: p.bot_token ? (p.bot_token.substring(0, 10) + '...' + p.bot_token.substring(p.bot_token.length - 4)) : '',
-      chat_ids: p.chat_ids || [],
-      created_at: p.created_at
-    }));
-
-    return res.json({ ok: true, platforms: list });
-  } catch(e) {
-    console.error('list platforms error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.delete('/api/platforms/:id', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false });
-    const token = auth.slice(7);
-    if (!await isValidAdminToken(token))
-      return res.status(403).json({ ok: false });
-
-    const id = req.params.id;
-    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
-    if (id === 'default') return res.status(400).json({ ok: false, error: 'cannot delete default platform' });
-
-    if (!platforms.has(id)) return res.status(404).json({ ok: false, error: 'platform not found' });
-
-    platforms.delete(id);
-    if (db) {
-      try { await db.ref(`platforms/${id}`).remove(); } catch(e) {}
-    }
-
-    return res.json({ ok: true });
-  } catch(e) {
-    console.error('delete platform error', e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
 
 /* --------------------- Global safety handlers --------------------- */
 process.on('unhandledRejection', (reason, p) => {
@@ -1720,12 +1598,13 @@ async function saveOrder(type, data) {
     type,
     processed: false,
 
-    platform_id: clean.platform_id || 'default',
-
     coin: clean.coin || null,
 
     // 保存钱包地址
     wallet: clean.wallet || null,
+
+    // platform_id: 默认 'default'，兼容历史数据
+    platform_id: clean.platform_id || 'default',
 
     // ✅ estimate 修复
     estimate:
@@ -1895,22 +1774,8 @@ const id = await saveOrder('buysell', {
   second: second ?? null,
   priceRangePercent: priceRangePercent ?? null,
   originalAmount: originalAmount ?? null,
-  platform_id: req.body.platform_id || 'default',
   processed: false
 });
-
-// 平台化 TG 通知
-const platId = req.body.platform_id || 'default';
-sendPlatformTelegram(platId,
-  `\u{1F4C8} <b>New BuySell Order</b>\n\n` +
-  `\u{1F4CB} Order: <b>${id}</b>\n` +
-  `\u{1F464} User: <b>${uid}</b>\n` +
-  `\u{1F4B0} Amount: <b>${amt} USDT</b>\n` +
-  `\u{1FA99} Coin: <b>${coin}</b> (${coinQty.toFixed(6)})\n` +
-  `\u{1F4C8} Side: <b>${sideLower.toUpperCase()}</b>\n` +
-  `\u{1F4C5} Time: ${new Date().toLocaleString()}\n` +
-  `\u{1F310} Platform: <b>${platId}</b>`
-).catch(()=>{});
 
     return res.json({ ok:true, orderId: id });
   } catch(e){
@@ -1945,16 +1810,6 @@ async function handleRechargeRequest(req, res) {
     }
 
     const id = await saveOrder('recharge', payload);
-    // 平台化 TG 通知
-    const platId = payload.platform_id || 'default';
-    sendPlatformTelegram(platId,
-      `\u{1F4E5} <b>New Recharge</b>\n\n` +
-      `\u{1F4CB} Order: <b>${id}</b>\n` +
-      `\u{1F464} User: <b>${userId}</b>\n` +
-      `\u{1F4B0} Amount: <b>${payload.amount || '--'} ${payload.coin || 'USDT'}</b>\n` +
-      `\u{1F4C5} Time: ${new Date().toLocaleString()}\n` +
-      `\u{1F310} Platform: <b>${platId}</b>`
-    ).catch(()=>{});
     return res.json({ ok:true, orderId: id });
   } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
 }
@@ -2092,18 +1947,6 @@ app.post('/api/order/withdraw', async (req, res) => {
       deducted: true,
       processed: false
     });
-
-    // 平台化 TG 通知
-    const platId = payload.platform_id || 'default';
-    sendPlatformTelegram(platId,
-      `\u{1F4E4} <b>New Withdrawal</b>\n\n` +
-      `\u{1F4CB} Order: <b>${orderId}</b>\n` +
-      `\u{1F464} User: <b>${userId}</b>\n` +
-      `\u{1F4B0} Amount: <b>${payload.amount || '--'} ${payload.coin || ''}</b>\n` +
-      `\u{1F4B1} Estimate: <b>${estimateUSDT} USDT</b>\n` +
-      `\u{1F4C5} Time: ${new Date().toLocaleString()}\n` +
-      `\u{1F310} Platform: <b>${platId}</b>`
-    ).catch(()=>{});
 
     return res.json({ ok:true, orderId });
 
@@ -2316,25 +2159,6 @@ app.get('/api/transactions', async (req, res) => {
     if (!await isValidAdminToken(token))
       return res.status(403).json({ ok:false });
 
-    // 获取当前管理员信息（含 role / permissions / platform_id）
-    let isAdminRole = true;
-    let adminPlatformId = 'default';
-    try {
-      const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
-      if (tokenSnap.exists()) {
-        const adminId = tokenSnap.val().id;
-        const adminSnap = await db.ref(`admins/${adminId}`).once('value');
-        if (adminSnap.exists()) {
-          const adm = adminSnap.val();
-          // 检查 permissions.admin 字段
-          if (adm.permissions && adm.permissions.admin === false) {
-            isAdminRole = false;
-          }
-          adminPlatformId = adm.platform_id || 'default';
-        }
-      }
-    } catch(e) { /* fallback: allow all */ }
-
     if (!db) {
       return res.json({
         ok:true,
@@ -2346,7 +2170,26 @@ app.get('/api/transactions', async (req, res) => {
       });
     }
 
-    const platformId = req.query.platform_id || '';
+    // Get the current admin's info for platform filtering
+    let currentAdminId = '';
+    let currentAdminPlatform = '';
+    let currentAdminIsSuper = false;
+    let currentAdminCreated = 0;
+    try {
+      const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
+      if (tokenSnap.exists()) {
+        currentAdminId = tokenSnap.val().id;
+        const adminSnap = await db.ref(`admins/${currentAdminId}`).once('value');
+        if (adminSnap.exists()) {
+          const ad = adminSnap.val();
+          currentAdminPlatform = ad.platform_id || 'default';
+          currentAdminIsSuper = !!ad.isSuper;
+          currentAdminCreated = ad.created || 0;
+        }
+      }
+    } catch (e) {
+      console.error('[transactions] failed to get admin info:', e.message);
+    }
 
     const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] =
       await Promise.all([
@@ -2360,18 +2203,44 @@ app.get('/api/transactions', async (req, res) => {
     let withdrawList = sortByTimeDesc(Object.values(withdrawSnap.val() || {}));
     let buysellList  = sortByTimeDesc(Object.values(buysellSnap.val() || {}));
 
-    // 多平台过滤：按 platform_id 筛选
-    if (platformId) {
-      rechargeList = rechargeList.filter(o => (o.platform_id || 'default') === platformId);
-      withdrawList = withdrawList.filter(o => (o.platform_id || 'default') === platformId);
-      buysellList  = buysellList.filter(o => (o.platform_id || 'default') === platformId);
+    // Platform filtering: non-super-admin only sees own platform orders
+    if (!currentAdminIsSuper && currentAdminPlatform) {
+      try {
+        rechargeList = rechargeList.filter(o => {
+          const pid = o.platform_id || 'default';
+          return pid === currentAdminPlatform;
+        });
+        withdrawList = withdrawList.filter(o => {
+          const pid = o.platform_id || 'default';
+          return pid === currentAdminPlatform;
+        });
+        buysellList = buysellList.filter(o => {
+          const pid = o.platform_id || 'default';
+          return pid === currentAdminPlatform;
+        });
+      } catch (e) {
+        console.error('[transactions] platform filter error:', e.message);
+      }
     }
 
-    // 非 admin 角色：根据所属 platform_id 过滤，只返回同平台的订单
-    if (!isAdminRole) {
-      rechargeList = rechargeList.filter(o => (o.platform_id || 'default') === adminPlatformId);
-      withdrawList = withdrawList.filter(o => (o.platform_id || 'default') === adminPlatformId);
-      buysellList  = buysellList.filter(o => (o.platform_id || 'default') === adminPlatformId);
+    // Non-admin users: only see orders created after their own account creation
+    if (!currentAdminIsSuper && currentAdminCreated > 0) {
+      try {
+        rechargeList = rechargeList.filter(o => {
+          const t = Number(o.timestamp || 0);
+          return t >= currentAdminCreated;
+        });
+        withdrawList = withdrawList.filter(o => {
+          const t = Number(o.timestamp || 0);
+          return t >= currentAdminCreated;
+        });
+        buysellList = buysellList.filter(o => {
+          const t = Number(o.timestamp || 0);
+          return t >= currentAdminCreated;
+        });
+      } catch (e) {
+        console.error('[transactions] created filter error:', e.message);
+      }
     }
 
     return res.json({
@@ -2450,9 +2319,6 @@ app.post('/api/admin/create', async (req, res) => {
       }
     }
 
-    // 平台ID提取
-    const platform_id = req.body.platform_id || 'default';
-
     // 权限处理
     const permissions = {
       recharge: req.body.recharge === true || req.body.recharge === 'true',
@@ -2464,6 +2330,7 @@ app.post('/api/admin/create', async (req, res) => {
 
     // 保存管理员信息到 Firebase 数据库
     const nickname = req.body.nickname || id;
+    const platformId = String(req.body.platform_id || 'default').trim();
     await db.ref(`admins/${id}`).set({
       id,
       nickname,
@@ -2474,7 +2341,7 @@ app.post('/api/admin/create', async (req, res) => {
       status: '离线',   // 初始状态离线
       permissions,
       createdBy,
-      platform_id
+      platform_id: platformId
     });
 
     // 生成管理员 token
@@ -2587,22 +2454,28 @@ app.get('/api/admin/list', async (req, res) => {
     const list = [];
     if (snap.exists()) {
       snap.forEach(child => {
-        const a = child.val();
-        // 在线状态：5分钟内活跃的 token 视为在线
-        list.push({
-          id: a.id,
-          nickname: a.nickname || a.id,
-          loginToken: a.loginToken || '',
-          isSuper: !!a.isSuper,
-          isActive: a.isActive !== false,
-          status: a.status || '离线',
-          permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
-          createdBy: a.createdBy || 'system',
-          created: a.created || 0,
-          lastLogin: a.lastLogin || 0,
-          platform_id: a.platform_id || 'default',
-          platform_name: (() => { try { return getPlatformName(a.platform_id); } catch(_) { return a.platform_id || 'default'; } })()
-        });
+        try {
+          const a = child.val();
+          // 在线状态：5分钟内活跃的 token 视为在线
+          const platformId = a.platform_id || 'default';
+          const cfg = getPlatformConfig(platformId);
+          list.push({
+            id: a.id,
+            nickname: a.nickname || a.id,
+            loginToken: a.loginToken || '',
+            isSuper: !!a.isSuper,
+            isActive: a.isActive !== false,
+            status: a.status || '离线',
+            permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
+            createdBy: a.createdBy || 'system',
+            created: a.created || 0,
+            lastLogin: a.lastLogin || 0,
+            platform_id: platformId,
+            platform_name: cfg.platform_name || platformId
+          });
+        } catch (e) {
+          console.error('[admin list] skipped one entry due to:', e.message);
+        }
       });
     }
     return res.json({ ok: true, admins: list });
@@ -2958,8 +2831,7 @@ app.get('/api/admin/me', async (req, res) => {
       nickname: admin.nickname || admin.id,
       permissions: admin.permissions || {},
       isSuper: !!admin.isSuper,
-      platform_id: admin.platform_id || 'default',
-      platform_name: (() => { try { return getPlatformName(admin.platform_id); } catch(_) { return admin.platform_id || 'default'; } })()
+      platform_id: admin.platform_id || 'default'
     });
   } catch (e) {
     console.error('admin me error', e);
@@ -2998,7 +2870,7 @@ app.post('/api/admin/login', async (req, res) => {
     // 更新状态为在线并记录最后登录时间
     await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
 
-    return res.json({ ok: true, token, nickname: admin.nickname || admin.id, permissions: admin.permissions || {}, isSuper: !!admin.isSuper });  // 返回登录成功的 token 和权限
+    return res.json({ ok: true, token, nickname: admin.nickname || admin.id, permissions: admin.permissions || {}, isSuper: !!admin.isSuper, platform_id: admin.platform_id || 'default' });  // 返回登录成功的 token 和权限
 
   } catch (e) {
     console.error(e);
@@ -3290,7 +3162,8 @@ async function ensureDefaultAdmin() {
     id: 'admin',
     hashed,
     created,
-    isSuper: true
+    isSuper: true,
+    platform_id: 'default'
   });
 
   await db.ref(`admins_by_token/${token}`).set({
@@ -4518,90 +4391,5 @@ app.post('/api/admin/unfreeze-balance', async (req, res) => {
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
-
-/* ---------------------------------------------------------
-   Multi-Platform Management APIs
---------------------------------------------------------- */
-// 获取平台列表
-app.get('/api/platforms', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    if (!db) return res.json({ ok: true, platforms: [{ id: 'default', name: 'Default' }] });
-
-    const snap = await db.ref('platforms').once('value');
-    const platforms = snap.exists() ? snap.val() : { default: { id: 'default', name: 'Default', created: now() } };
-
-    return res.json({ ok: true, platforms: Object.values(platforms) });
-  } catch (e) {
-    console.error('get platforms error', e);
-    return res.status(500).json({ ok: false });
-  }
-});
-
-// 创建新平台
-app.post('/api/platforms', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const { id, name } = req.body;
-    if (!id || !name)
-      return res.status(400).json({ ok: false, error: 'missing id/name' });
-
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-
-    // 确保默认平台存在
-    const defSnap = await db.ref('platforms/default').once('value');
-    if (!defSnap.exists()) {
-      await db.ref('platforms/default').set({ id: 'default', name: 'Default', created: now() });
-    }
-
-    await db.ref(`platforms/${id}`).set({
-      id,
-      name,
-      created: now()
-    });
-
-    return res.json({ ok: true, platform: { id, name } });
-  } catch (e) {
-    console.error('create platform error', e);
-    return res.status(500).json({ ok: false });
-  }
-});
-
-// 删除平台
-app.delete('/api/platforms/:id', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-    const adminToken = auth.slice(7);
-    if (!await isValidAdminToken(adminToken))
-      return res.status(403).json({ ok: false, error: 'forbidden' });
-
-    const platformId = req.params.id;
-    if (!platformId || platformId === 'default')
-      return res.status(400).json({ ok: false, error: 'cannot delete default platform' });
-
-    if (!db) return res.json({ ok: false, error: 'no-db' });
-
-    await db.ref(`platforms/${platformId}`).remove();
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('delete platform error', e);
-    return res.status(500).json({ ok: false });
-  }
-});
-
 
 app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
