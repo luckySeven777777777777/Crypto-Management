@@ -1110,6 +1110,33 @@ button {
     </table>
   </div>
 
+  <!-- 平台管理（仅超级管理员可见） -->
+  <div class="card" id="platformMgmtCard" style="margin-bottom:16px;display:none">
+    <div class="page-title" style="font-size:16px">平台管理</div>
+
+    <div class="filters" style="margin-bottom:10px">
+      <input id="platformName" placeholder="平台昵称（随意取，如 平台A / 小明平台）" style="width:240px">
+      <input id="platformBotToken" placeholder="Bot Token（可选）" style="width:240px">
+      <input id="platformChatIds" placeholder="Chat IDs（逗号分隔，可选）" style="width:240px">
+      <button class="primary" onclick="createPlatform()">创建平台</button>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>平台昵称</th>
+          <th>Bot Token</th>
+          <th>Chat IDs</th>
+          <th>创建时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="platformTableBody">
+        <tr><td colspan="5">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
   <!-- Google 2FA -->
   <div class="card" style="margin-bottom:16px">
     <div class="page-title" style="font-size:16px">Google 二级验证码（2FA）</div>
@@ -2113,7 +2140,7 @@ function syncPlatformDropdown(admins) {
   try {
     const sel = document.getElementById('platformSelect');
     if (!sel) return;
-    // Collect unique platforms
+    // Collect unique platforms - always include admins data + public API
     const platforms = new Map();
     platforms.set('default', 'Default');
     try { platforms.set(getAdminPlatform(), getAdminPlatform()); } catch(e) {}
@@ -2146,6 +2173,66 @@ function syncPlatformDropdown(admins) {
     syncCreatePlatformDropdown(platforms);
     setPlatformSelectState();
   } catch(e) { console.error('[platform] syncPlatformDropdown error:', e.message); }
+}
+
+async function syncAdminPlatformDropdown() {
+  try {
+    const platforms = new Map();
+    platforms.set('default', 'Default');
+    // Fetch from public API
+    try {
+      const r = await fetch('/api/platforms/public');
+      const j = await r.json();
+      if (j && j.platforms && Array.isArray(j.platforms)) {
+        j.platforms.forEach(p => {
+          try {
+            const pid = String(p.id || '').trim();
+            const pname = String(p.name || pid).trim();
+            if (pid && !platforms.has(pid)) platforms.set(pid, pname);
+          } catch(e) {}
+        });
+      }
+    } catch(e) { console.error('[platform] syncAdminPlatformDropdown fetch error:', e.message); }
+    syncCreatePlatformDropdown(platforms);
+  } catch(e) { console.error('[platform] syncAdminPlatformDropdown error:', e.message); }
+}
+
+async function syncTopPlatformDropdown() {
+  try {
+    const sel = document.getElementById('platformSelect');
+    if (!sel) return;
+    const platforms = new Map();
+    platforms.set('default', 'Default');
+    // Fetch from public API
+    try {
+      const r = await fetch('/api/platforms/public');
+      const j = await r.json();
+      if (j && j.platforms && Array.isArray(j.platforms)) {
+        j.platforms.forEach(p => {
+          try {
+            const pid = String(p.id || '').trim();
+            const pname = String(p.name || pid).trim();
+            if (pid && !platforms.has(pid)) platforms.set(pid, pname);
+          } catch(e) {}
+        });
+      }
+    } catch(e) { console.error('[platform] syncTopPlatformDropdown fetch error:', e.message); }
+    const currentVal = sel.value || currentPlatform;
+    sel.innerHTML = '';
+    platforms.forEach((name, id) => {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (platforms.has(currentVal)) {
+      sel.value = currentVal;
+    } else if (platforms.has('default')) {
+      sel.value = 'default';
+    }
+    currentPlatform = sel.value;
+    setPlatformSelectState();
+  } catch(e) { console.error('[platform] syncTopPlatformDropdown error:', e.message); }
 }
 
 function syncCreatePlatformDropdown(platforms) {
@@ -5309,6 +5396,11 @@ async function loadAdmins(){
     }
     // Sync platform dropdown
     try { syncPlatformDropdown(j.admins || []); } catch(e) { console.error('[loadAdmins] syncPlatformDropdown error:', e.message); }
+    // Also sync from public API for full list
+    try { syncAdminPlatformDropdown(); } catch(e) { console.error('[loadAdmins] syncAdminPlatformDropdown error:', e.message); }
+    try { syncTopPlatformDropdown(); } catch(e) { console.error('[loadAdmins] syncTopPlatformDropdown error:', e.message); }
+    // Load platform management list (super admin only)
+    try { loadPlatformList(); } catch(e) { console.error('[loadAdmins] loadPlatformList error:', e.message); }
     // Render table with try-catch to prevent "加载中..." stuck
     try {
       renderAdminTable(j.admins || []);
@@ -5562,6 +5654,117 @@ async function pushAdminUpdate(id, btn) {
     }
   } catch(e) {
     showCenterNotify('推送失败: ' + e.message);
+  }
+}
+
+// ===== 平台管理函数 =====
+async function loadPlatformList() {
+  try {
+    const card = document.getElementById('platformMgmtCard');
+    if (card) {
+      card.style.display = isSuperAdmin() ? '' : 'none';
+    }
+    if (!isSuperAdmin()) return;
+
+    const tbody = document.getElementById('platformTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5">加载中...</td></tr>';
+
+    const r = await fetch('/api/admin/platforms', { headers: authHeaders() });
+    const j = await r.json();
+    if (!j || !j.platforms) {
+      tbody.innerHTML = '<tr><td colspan="5">加载失败</td></tr>';
+      return;
+    }
+
+    const platforms = j.platforms || [];
+    if (!platforms.length) {
+      tbody.innerHTML = '<tr><td colspan="5">暂无平台（除 Default 外）</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = platforms.map(p => {
+      const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-CN') : '--';
+      const safeName = escHtml1(p.name || p.id);
+      const safeId = escHtml1(p.id);
+      const safeToken = escHtml1(p.bot_token_masked || '--');
+      const safeChats = escHtml1(p.chat_ids || '--');
+      return '<tr>' +
+        '<td><strong>' + safeName + '</strong><div class="small">ID: ' + safeId + '</div></td>' +
+        '<td><code>' + safeToken + '</code></td>' +
+        '<td>' + safeChats + '</td>' +
+        '<td>' + escHtml1(timeStr) + '</td>' +
+        '<td><button class="danger" onclick="deletePlatform(\'' + safeId + '\')">删除</button></td>' +
+      '</tr>';
+    }).join('');
+
+    // Sync public dropdowns after loading
+    try { syncAdminPlatformDropdown(); } catch(e) {}
+    try { syncTopPlatformDropdown(); } catch(e) {}
+  } catch(e) {
+    console.error('[loadPlatformList] error:', e.message);
+    try {
+      const tbody = document.getElementById('platformTableBody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5">加载失败: ' + e.message + '</td></tr>';
+    } catch(e2) {}
+  }
+}
+
+async function createPlatform() {
+  try {
+    const nameEl = document.getElementById('platformName');
+    const tokenEl = document.getElementById('platformBotToken');
+    const chatsEl = document.getElementById('platformChatIds');
+    const name = nameEl ? nameEl.value.trim() : '';
+    if (!name) {
+      showCenterNotify('请输入平台昵称');
+      return;
+    }
+    const bot_token = tokenEl ? tokenEl.value.trim() : '';
+    const chat_ids = chatsEl ? chatsEl.value.trim() : '';
+
+    const r = await fetch('/api/admin/platforms', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ name, bot_token, chat_ids })
+    });
+    const j = await r.json();
+    if (!j.ok) {
+      showCenterNotify('创建失败: ' + (j.error || '未知错误'));
+      return;
+    }
+    // Clear inputs
+    if (nameEl) nameEl.value = '';
+    if (tokenEl) tokenEl.value = '';
+    if (chatsEl) chatsEl.value = '';
+    showCenterNotify('平台 "' + (j.platform && j.platform.name || name) + '" 创建成功');
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('创建失败: ' + e.message);
+  }
+}
+
+async function deletePlatform(id) {
+  try {
+    if (!id || id === 'default') {
+      showCenterNotify('无法删除 Default 平台');
+      return;
+    }
+    if (!confirm('确认删除平台 "' + id + '"?\n此操作不可恢复。')) return;
+
+    const r = await fetch('/api/admin/platforms/' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: authHeaders()
+    });
+    const j = await r.json();
+    if (!j.ok) {
+      showCenterNotify('删除失败: ' + (j.error || '未知错误'));
+      return;
+    }
+    showCenterNotify('平台 "' + id + '" 已删除');
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('删除失败: ' + e.message);
   }
 }
 
