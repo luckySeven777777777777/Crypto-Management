@@ -1099,7 +1099,7 @@ button {
           <th data-i18n="text" data-key="account">账号</th>
           <th data-i18n="text" data-key="permissions">权限</th>
           <th data-i18n="text" data-key="loginLink">登录链接</th>
-          <th>所属平台</th>
+          <th id="adminPlatformHeader">所属平台</th>
           <th data-i18n="text" data-key="status">状态</th>
           <th data-i18n="text" data-key="operation">操作</th>
         </tr>
@@ -5386,6 +5386,16 @@ async function loadAdmins(){
   const origText = btn ? btn.textContent : '刷新';
   if (btn) { btn.disabled = true; btn.textContent = '刷新中...'; }
   try {
+    // Hide platform dropdown for non-super admins
+    const platformSelectEl = document.getElementById('newAdminPlatform');
+    if (platformSelectEl) {
+      platformSelectEl.style.display = isSuperAdmin() ? '' : 'none';
+    }
+    // Hide platform column header for non-super admins
+    const platformHeader = document.getElementById('adminPlatformHeader');
+    if (platformHeader) {
+      platformHeader.style.display = isSuperAdmin() ? '' : 'none';
+    }
     const r = await fetch('/api/admin/list', { headers: authHeaders() });
     const j = await r.json();
     if (!j.ok) {
@@ -5430,6 +5440,7 @@ function renderAdminTable(admins){
     tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
     return;
   }
+  const showPlatformCol = isSuperAdmin();
   let html = '';
   // 非超级管理员只能看到自己和自己创建的下级账号
   if (!isSuperAdmin()) {
@@ -5445,6 +5456,7 @@ function renderAdminTable(admins){
     const star = a.isSuper ? ' <span style="color:gold">★</span>' : '';
     const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(a.id);
     const platformName = a.platform_name || a.platform_id || 'Default';
+    const platformCol = showPlatformCol ? '<td><span style="font-weight:600">' + escHtml1(platformName) + '</span></td>' : '';
 
     html += '<tr>' +
       '<td>' + escHtml1(a.id) + star + '</td>' +
@@ -5459,7 +5471,7 @@ function renderAdminTable(admins){
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
         '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
       '</td>' +
-      '<td><span style="font-weight:600">' + escHtml1(platformName) + '</span></td>' +
+      platformCol +
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
       '<td>' +
         '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
@@ -5487,7 +5499,13 @@ async function createAdmin(){
   const id = idEl ? idEl.value.trim() : '';
   const nickname = nickEl ? nickEl.value.trim() : '';
   const password = pwEl ? pwEl.value : '';
-  const platformId = platformEl ? platformEl.value : 'default';
+  // Non-super admin: auto-set platform to own platform, ignore dropdown
+  let platformId = 'default';
+  if (isSuperAdmin()) {
+    platformId = platformEl ? platformEl.value : 'default';
+  } else {
+    platformId = getAdminPlatform() || 'default';
+  }
   if (!id || !password) return showCenterNotify('请输入管理员账号和密码');
 
   const cb = name => {
