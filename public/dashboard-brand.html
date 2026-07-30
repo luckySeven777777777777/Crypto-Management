@@ -731,6 +731,13 @@ button {
 <body>
 <div class="top-header">
   <div class="brand">管理后台</div>
+  <!-- 平台切换 -->
+  <div style="display:flex;align-items:center;gap:8px;margin-left:16px" id="platformSelectorBar">
+    <select id="platformSelect" onchange="switchPlatform()" style="padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:#fff;font-size:13px;cursor:pointer;outline:none;min-width:120px">
+      <option value="default">Default</option>
+    </select>
+    <button id="platformMgmtBtn" onclick="openPlatformMgmt()" style="display:none;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);color:#fff;font-size:12px;cursor:pointer;white-space:nowrap">平台管理</button>
+  </div>
   <div class="header-nav">
     <div class="icon active" data-page="dashboard" title="主页">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -800,6 +807,10 @@ button {
     <!-- Dashboard -->
     <div id="page-dashboard" class="container">
       <div class="page-title" data-i18n="text" data-key="dashboard">控制台</div>
+      <!-- 非 admin 权限提示 -->
+      <div id="permissionHint" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#856404">
+        仅显示您所属平台的数据
+      </div>
 
       <div class="grid" style="grid-template-columns:repeat(3,1fr)">
   <div class="card">
@@ -849,6 +860,9 @@ button {
     <!-- BuySell page -->
     <div id="page-buysell" class="container" style="display:none">
       <div class="page-title" data-i18n="text" data-key="buysellMgmt">BuySell 管理</div>
+      <div id="permissionHintBS" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#856404">
+        仅显示您所属平台的数据
+      </div>
 
      <div class="filters">
   <label>开始 <input type="date" id="bs_start"></label>
@@ -918,6 +932,9 @@ button {
     <!-- Recharge page -->
     <div id="page-recharge" class="container" style="display:none">
       <div class="page-title">充值管理</div>
+      <div id="permissionHintR" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#856404">
+        仅显示您所属平台的数据
+      </div>
 
       <div class="filters">
         <label>开始 <input type="date" id="r_start"></label>
@@ -960,6 +977,9 @@ button {
     <!-- Withdraw page -->
     <div id="page-withdraw" class="container" style="display:none">
       <div class="page-title">提款管理</div>
+      <div id="permissionHintW" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 14px;margin-bottom:12px;font-size:13px;color:#856404">
+        仅显示您所属平台的数据
+      </div>
 
       <div class="filters">
         <label>开始 <input type="date" id="w_start"></label>
@@ -1075,6 +1095,9 @@ button {
       <input id="newAdminId" data-i18n="placeholder" data-key="account" placeholder="管理员账号">
       <input id="newAdminNickname" data-i18n="placeholder" data-key="nickname" placeholder="昵称（显示用）">
       <input id="newAdminPassword" data-i18n="placeholder" data-key="initPwd" placeholder="初始密码">
+      <select id="newAdminPlatform" style="padding:8px;border:1px solid #ddd;border-radius:6px;min-width:120px">
+        <option value="default">Default</option>
+      </select>
 
       <label><input type="checkbox" value="recharge"> <span data-i18n="text" data-key="recharge">充值</span></label>
       <label><input type="checkbox" value="withdraw"> <span data-i18n="text" data-key="withdraw">提款</span></label>
@@ -1091,13 +1114,14 @@ button {
         <tr>
           <th data-i18n="text" data-key="account">账号</th>
           <th data-i18n="text" data-key="permissions">权限</th>
+          <th>所属平台</th>
           <th data-i18n="text" data-key="loginLink">登录链接</th>
           <th data-i18n="text" data-key="status">状态</th>
           <th data-i18n="text" data-key="operation">操作</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="5"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+        <tr><td colspan="6"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -2009,6 +2033,11 @@ function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="
 async function fetchAll(params = {}) {
   const url = new URL(API_TRANSACTIONS, window.location.origin);
   Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
+  // 多平台支持：自动附带当前选中的 platform_id
+  const platSelect = document.getElementById('platformSelect');
+  if (platSelect && platSelect.value) {
+    url.searchParams.append('platform_id', platSelect.value);
+  }
   const res = await fetch(url.toString(), {
     headers: authHeaders()   // ✅ 关键就在这一行
   });
@@ -2024,6 +2053,7 @@ const ADMIN_PERMS_KEY = 'nexbit_admin_perms';
 const ADMIN_SUPER_KEY = 'nexbit_admin_super';
 const ADMIN_NAME_KEY  = 'nexbit_admin_name';
 const ADMIN_ID_KEY    = 'nexbit_admin_id';
+const MY_PLATFORM_KEY = 'nexbit_my_platform_id';
 function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
 function setAdminPerms(p, isSuper){ try{ localStorage.setItem(ADMIN_PERMS_KEY, JSON.stringify(p)); localStorage.setItem(ADMIN_SUPER_KEY, isSuper?'1':'0'); }catch(e){} }
@@ -2033,6 +2063,8 @@ function setAdminName(n){ try{ localStorage.setItem(ADMIN_NAME_KEY, n); }catch(e
 function getAdminName(){ try{ return localStorage.getItem(ADMIN_NAME_KEY) || ''; }catch(e){ return ''; } }
 function setAdminId(n){ try{ localStorage.setItem(ADMIN_ID_KEY, n); }catch(e){} }
 function getAdminId(){ try{ return localStorage.getItem(ADMIN_ID_KEY) || ''; }catch(e){ return ''; } }
+function setMyPlatformId(n){ try{ localStorage.setItem(MY_PLATFORM_KEY, n); }catch(e){} }
+function getMyPlatformId(){ try{ return localStorage.getItem(MY_PLATFORM_KEY) || 'default'; }catch(e){ return 'default'; } }
 function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
 
 function formatMoney(val) {
@@ -2171,6 +2203,15 @@ async function submitAdminLogin(){
       document.getElementById('adminUser').innerText = displayName;
       setAdminName(displayName);
       setAdminId(id);
+      // 从 /api/admin/me 获取 platform_id
+      try {
+        const meRes = await fetch('/api/admin/me', { headers: authHeaders() });
+        const meJson = await meRes.json();
+        if (meJson.ok && meJson.platform_id) {
+          setMyPlatformId(meJson.platform_id);
+          localStorage.setItem('nexbit_platform_id', meJson.platform_id);
+        }
+      } catch(e) {}
       // 启动配置更新轮询
       startConfigPolling();
       // 登录成功后重置下级标记，恢复后台元素
@@ -2182,6 +2223,8 @@ async function submitAdminLogin(){
       closeAdminLogin();
       filterHeaderNav();
       applyTranslations();
+      updatePermissionUI();
+      loadPlatforms();
       loadDashboard();
     } else {
       showCenterNotify('登录失败: ' + (j.error || '未知'));
@@ -5097,7 +5140,20 @@ function resetWithdrawPage() {
     }
   })();
 
-  ensureLoggedIn().then(ok => { if (ok) loadDashboard(); });
+  ensureLoggedIn().then(async ok => { 
+    if (ok) { 
+      // 恢复上次选中的平台
+      const savedPlat = localStorage.getItem('nexbit_platform_id');
+      if (savedPlat) {
+        currentPlatformId = savedPlat;
+        const sel = document.getElementById('platformSelect');
+        if (sel) sel.value = savedPlat;
+      }
+      await loadPlatforms(); 
+      updatePermissionUI();
+      loadDashboard(); 
+    } 
+  });
 
 </script>
 <script>
@@ -5173,7 +5229,7 @@ function renderAdminTable(admins){
   // 过滤掉空白ID的异常账号
   admins = admins.filter(a => a.id && a.id.trim());
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="5">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
     return;
   }
   let html = '';
@@ -5200,6 +5256,7 @@ function renderAdminTable(admins){
         '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label> ' +
         '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label>' +
       '</td>' +
+      '<td>' + escHtml1(a.platform_name || a.platform_id || 'default') + '</td>' +
       '<td>' +
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
         '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
@@ -5227,6 +5284,7 @@ async function createAdmin(){
   const idEl = document.getElementById('newAdminId');
   const nickEl = document.getElementById('newAdminNickname');
   const pwEl = document.getElementById('newAdminPassword');
+  const platEl = document.getElementById('newAdminPlatform');
   const id = idEl.value.trim();
   const nickname = nickEl.value.trim();
   const password = pwEl.value;
@@ -5243,6 +5301,7 @@ async function createAdmin(){
       headers: authHeaders(),
       body: JSON.stringify({
         id, nickname: nickname || id, password,
+        platform_id: platEl ? platEl.value : 'default',
         recharge: cb('recharge'),
         withdraw: cb('withdraw'),
         buysell:  cb('buysell'),
@@ -5483,6 +5542,169 @@ document.addEventListener('DOMContentLoaded', () => {
   if (myId) { startConfigPolling(); startKickPolling(); }
 });
 
+// ===== 多平台支持函数 =====
+let currentPlatformId = 'default';
+let isAdminRole = true;
+let adminCreatedAt = 0;
+
+// 加载平台列表
+async function loadPlatforms() {
+  try {
+    const r = await fetch('/api/platforms', { headers: authHeaders() });
+    const j = await r.json();
+    if (j.ok && j.platforms) {
+      const sel = document.getElementById('platformSelect');
+      const adminPlatSel = document.getElementById('newAdminPlatform');
+      const isAdmin = isSuperAdmin() || (getAdminPerms().admin === true);
+      
+      if (sel) {
+        const currentVal = localStorage.getItem('nexbit_platform_id') || sel.value || 'default';
+        if (isAdmin) {
+          sel.innerHTML = j.platforms.map(p => 
+            `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${p.name || p.id}</option>`
+          ).join('');
+          sel.disabled = false;
+        } else {
+          // 非 admin：只显示自己所属平台，锁定
+          const myPlatformId = getMyPlatformId();
+          const myPlatform = j.platforms.find(p => p.id === myPlatformId) || j.platforms[0];
+          if (myPlatform) {
+            sel.innerHTML = `<option value="${myPlatform.id}" selected>${myPlatform.name || myPlatform.id}</option>`;
+            sel.value = myPlatform.id;
+          }
+          sel.disabled = true;
+        }
+        currentPlatformId = sel.value || 'default';
+      }
+      
+      // 同步填充创建管理员表单的平台下拉
+      if (adminPlatSel) {
+        adminPlatSel.innerHTML = j.platforms.map(p => 
+          `<option value="${p.id}">${p.name || p.id}</option>`
+        ).join('');
+      }
+    }
+  } catch(e) { console.error('loadPlatforms error', e); }
+}
+
+// 切换平台
+function switchPlatform() {
+  const sel = document.getElementById('platformSelect');
+  if (!sel) return;
+  // 非 admin 不允许切换
+  if (!isSuperAdmin() && getAdminPerms().admin !== true) {
+    sel.value = getMyPlatformId();
+    return;
+  }
+  currentPlatformId = sel.value || 'default';
+  localStorage.setItem('nexbit_platform_id', currentPlatformId);
+  // 刷新当前页面数据
+  const active = document.querySelector('.header-nav .icon.active')?.getAttribute('data-page') || '';
+  if (active === 'dashboard') loadDashboard();
+  else if (active === 'recharge') r_search();
+  else if (active === 'withdraw') w_search();
+  else if (active === 'buysell') bs_search();
+  else if (active === 'orders') o_search();
+  else if (active === 'members') loadMembers();
+}
+
+// 更新权限提示和平台管理按钮可见性
+function updatePermissionUI() {
+  const perms = getAdminPerms();
+  const isAdmin = isSuperAdmin() || (perms.admin === true);
+  isAdminRole = isAdmin;
+  
+  // 平台管理按钮：仅 admin 可见
+  const mgmtBtn = document.getElementById('platformMgmtBtn');
+  if (mgmtBtn) mgmtBtn.style.display = isAdmin ? '' : 'none';
+  
+  // 权限提示：非 admin 显示
+  const hints = ['permissionHint', 'permissionHintR', 'permissionHintW', 'permissionHintBS'];
+  hints.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isAdmin ? 'none' : '';
+  });
+}
+
+// 打开平台管理
+async function openPlatformMgmt() {
+  if (!isAdminRole) return;
+  document.getElementById('platformMgmtModal').style.display = 'flex';
+  await loadPlatformList();
+}
+
+function closePlatformMgmt() {
+  document.getElementById('platformMgmtModal').style.display = 'none';
+}
+
+async function loadPlatformList() {
+  try {
+    const r = await fetch('/api/platforms', { headers: authHeaders() });
+    const j = await r.json();
+    const tbody = document.getElementById('platformTableBody');
+    if (j.ok && j.platforms) {
+      tbody.innerHTML = j.platforms.map(p => {
+        const createdAt = p.created_at ? new Date(p.created_at).toLocaleString() : '--';
+        const chatIdsDisplay = (p.chat_ids || []).length > 0 ? p.chat_ids.join(', ') : '--';
+        return `<tr>
+          <td>${escHtml1(p.name || p.id)}</td>
+          <td style="font-family:monospace;font-size:11px">${escHtml1(p.bot_token || '--')}</td>
+          <td style="font-size:11px;max-width:200px;word-break:break-all">${escHtml1(chatIdsDisplay)}</td>
+          <td style="font-size:11px">${createdAt}</td>
+          <td>${p.id === 'default' ? '<span style="color:#888;font-size:12px">默认平台</span>' : `<button class="danger" onclick="deletePlatform('${escHtml1(p.id)}')" style="padding:3px 10px;font-size:12px">删除</button>`}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="5">加载失败</td></tr>';
+    }
+  } catch(e) { console.error('loadPlatformList error', e); }
+}
+
+async function createPlatform() {
+  const name = document.getElementById('newPlatformName').value.trim();
+  const botToken = document.getElementById('newPlatformBotToken').value.trim();
+  const chatIds = document.getElementById('newPlatformChatIds').value.trim();
+  if (!name) { showCenterNotify('请输入平台名称'); return; }
+  
+  try {
+    const r = await fetch('/api/platforms', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ name, bot_token: botToken, chat_ids: chatIds })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      showCenterNotify('平台创建成功: ' + (j.platform ? j.platform.name : name));
+      document.getElementById('newPlatformName').value = '';
+      document.getElementById('newPlatformBotToken').value = '';
+      document.getElementById('newPlatformChatIds').value = '';
+      await loadPlatformList();
+      await loadPlatforms();
+    } else {
+      showCenterNotify('创建失败: ' + (j.error || '未知'));
+    }
+  } catch(e) { showCenterNotify('创建失败: ' + e.message); }
+}
+
+async function deletePlatform(id) {
+  if (!confirm('确认删除平台 ' + id + '？
+注意：此操作不可逆，但不会删除该平台的订单数据。')) return;
+  try {
+    const r = await fetch('/api/platforms/' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: authHeaders()
+    });
+    const j = await r.json();
+    if (j.ok) {
+      showCenterNotify('平台已删除: ' + id);
+      await loadPlatformList();
+      await loadPlatforms();
+    } else {
+      showCenterNotify('删除失败: ' + (j.error || '未知'));
+    }
+  } catch(e) { showCenterNotify('删除失败: ' + e.message); }
+}
+
 // ESC 键关闭当前打开的弹窗/模态框
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
@@ -5539,6 +5761,27 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 
+
+<!-- 平台管理弹窗 -->
+<div id="platformMgmtModal" class="modal" style="display:none" onclick="closePlatformMgmt()">
+  <div class="box" onclick="event.stopPropagation()" style="width:700px;max-height:80vh;overflow-y:auto">
+    <div style="font-weight:700;margin-bottom:12px;font-size:16px">平台管理</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <input id="newPlatformName" placeholder="平台名称（如：平台A、小明平台）" style="flex:1;min-width:130px;padding:8px;border:1px solid #ddd;border-radius:6px">
+      <input id="newPlatformBotToken" placeholder="Bot Token" style="flex:1.5;min-width:160px;padding:8px;border:1px solid #ddd;border-radius:6px">
+      <input id="newPlatformChatIds" placeholder="Chat IDs（逗号分隔）" style="flex:1;min-width:140px;padding:8px;border:1px solid #ddd;border-radius:6px">
+      <button class="primary" onclick="createPlatform()" style="padding:8px 16px;white-space:nowrap">新增平台</button>
+    </div>
+    <div style="font-size:12px;color:#888;margin-bottom:8px">注：平台 ID 由名称自动生成。环境变量中也支持 PLATFORM_{NAME}_BOT_TOKEN 和 PLATFORM_{NAME}_CHAT_IDS。</div>
+    <table class="table" style="width:100%">
+      <thead><tr><th>平台名称</th><th>Bot Token</th><th>Chat IDs</th><th>创建时间</th><th>操作</th></tr></thead>
+      <tbody id="platformTableBody"><tr><td colspan="5">加载中...</td></tr></tbody>
+    </table>
+    <div style="text-align:right;margin-top:12px">
+      <button onclick="closePlatformMgmt()" style="padding:6px 16px">关闭</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
