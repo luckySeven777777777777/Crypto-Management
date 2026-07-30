@@ -2270,12 +2270,35 @@ app.get('/api/transactions', async (req, res) => {
       }
     }
 
+    // Platform-based user filtering: non-super admin only sees users who have orders in their platform
+    let usersObj = usersSnap.val() || {};
+    if (!currentAdminIsSuper && currentAdminPlatform) {
+      try {
+        // Collect all user IDs from filtered orders
+        const visibleUserIds = new Set();
+        [...rechargeList, ...withdrawList, ...buysellList].forEach(o => {
+          const uid = o.userId || o.user;
+          if (uid) visibleUserIds.add(uid);
+        });
+        // Only keep users that appear in the filtered orders
+        const filteredUsers = {};
+        for (const [uid, userData] of Object.entries(usersObj)) {
+          if (visibleUserIds.has(uid)) {
+            filteredUsers[uid] = userData;
+          }
+        }
+        usersObj = filteredUsers;
+      } catch (e) {
+        console.error('[transactions] user platform filter error:', e.message);
+      }
+    }
+
     return res.json({
       ok: true,
       recharge: rechargeList,
       withdraw: withdrawList,
       buysell:  buysellList,
-      users: usersSnap.val() || {}
+      users: usersObj
     });
 
   } catch (e) {
@@ -2477,6 +2500,22 @@ app.get('/api/admin/list', async (req, res) => {
     if (!await isValidAdminToken(adminToken))
       return res.status(403).json({ ok: false, error: 'forbidden' });
 
+    // Resolve current admin info for platform filtering
+    let currentAdminPlatform = '';
+    let currentAdminIsSuper = false;
+    try {
+      const tokenSnap = await db.ref(`admins_by_token/${adminToken}`).once('value');
+      if (tokenSnap.exists()) {
+        const adminId = tokenSnap.val().id;
+        const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+        if (adminSnap.exists()) {
+          const ad = adminSnap.val();
+          currentAdminPlatform = ad.platform_id || 'default';
+          currentAdminIsSuper = !!ad.isSuper;
+        }
+      }
+    } catch(e) { console.error('[admin list] failed to get admin info:', e.message); }
+
     const snap = await db.ref('admins').once('value');
     const list = [];
     if (snap.exists()) {
@@ -2498,8 +2537,13 @@ app.get('/api/admin/list', async (req, res) => {
       snap.forEach(child => {
         try {
           const a = child.val();
-          // 在线状态：5分钟内活跃的 token 视为在线
           const platformId = a.platform_id || 'default';
+
+          // Platform isolation: non-super admin only sees admins on same platform
+          if (!currentAdminIsSuper && currentAdminPlatform) {
+            if (platformId !== currentAdminPlatform) return;
+          }
+
           // 优先从 Firebase platforms 查真实昵称，查不到 fallback 到环境变量
           const cfg = getPlatformConfig(platformId);
           let platformName = firebasePlatforms[platformId] || cfg.platform_name || platformId;
