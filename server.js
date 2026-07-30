@@ -105,9 +105,36 @@ function getPlatformConfig(name) {
 
 async function sendPlatformTelegram(platformId, message) {
   try {
-    const cfg = getPlatformConfig(platformId);
+    // 1. 先从内存 cache 查
+    let cfg = getPlatformConfig(platformId);
+
+    // 2. 如果 cache 没有 token，从 Firebase platforms 表查
+    if ((!cfg.bot_token || cfg.chat_ids.length === 0) && db && platformId !== 'default') {
+      try {
+        const snap = await db.ref(`platforms/${platformId}`).once('value');
+        if (snap.exists()) {
+          const p = snap.val();
+          const fbToken = String(p.bot_token || '').trim();
+          const fbChats = String(p.chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+          if (fbToken && fbChats.length > 0) {
+            cfg = {
+              platform_id: platformId,
+              bot_token: fbToken,
+              chat_ids: fbChats,
+              platform_name: p.name || platformId
+            };
+            // 回写内存 cache，后续调用直接命中
+            platformConfigCache[platformId] = cfg;
+            console.log('[PLATFORM] Loaded config from Firebase for:', platformId, 'token:', cfg.bot_token ? '***' : 'MISSING', 'chats:', fbChats.length);
+          }
+        }
+      } catch (e) {
+        console.error('[PLATFORM] Firebase lookup error for', platformId, ':', e.message);
+      }
+    }
+
     if (!cfg.bot_token || cfg.chat_ids.length === 0) {
-      // fallback to default if platform-specific not configured
+      // 3. 最终 fallback 到 default
       if (platformId !== 'default') {
         console.log('[PLATFORM] No config for', platformId, 'falling back to default');
         return sendPlatformTelegram('default', message);
