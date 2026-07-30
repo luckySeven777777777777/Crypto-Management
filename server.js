@@ -3160,9 +3160,20 @@ async function ensureDefaultAdmin() {
 
   await db.ref('admins/admin').set({
     id: 'admin',
+    nickname: 'admin',
     hashed,
     created,
     isSuper: true,
+    isActive: true,
+    status: '离线',
+    permissions: {
+      recharge: true,
+      withdraw: true,
+      buysell: true,
+      admin: true,
+      balance_adjust: true
+    },
+    createdBy: 'system',
     platform_id: 'default'
   });
 
