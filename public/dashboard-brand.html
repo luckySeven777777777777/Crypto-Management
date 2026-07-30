@@ -2043,9 +2043,16 @@ function hideAllPages(){ $all(".main > .container").forEach(c=>c.style.display="
 ------------------------------ */
 async function fetchAll(params = {}) {
   const url = new URL(API_TRANSACTIONS, window.location.origin);
+  // 自动带上当前平台的 platform_id 过滤
+  try {
+    const pid = currentPlatform || getAdminPlatform() || 'default';
+    url.searchParams.set('platform_id', pid);
+  } catch(e) {
+    url.searchParams.set('platform_id', 'default');
+  }
   Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
   const res = await fetch(url.toString(), {
-    headers: authHeaders()   // ✅ 关键就在这一行
+    headers: authHeaders()
   });
   return await res.json();
 }
@@ -2528,7 +2535,8 @@ const body = {
   orderId,
   type: normalizeType(type),
   status: finalStatus,   // ✅ 必须用 finalStatus
-  note                  // ✅ 用上面算出来的 note
+  note,                  // ✅ 用上面算出来的 note
+  platform_id: (function() { try { return currentPlatform || getAdminPlatform() || 'default'; } catch(e) { return 'default'; } })()
 };
 
 
@@ -2637,7 +2645,8 @@ async function submitRemark(){
     type: normalizeType(_remarkType),
     status: _remarkStatus,
     note: remark,
-    frontNote: frontNote || null
+    frontNote: frontNote || null,
+    platform_id: (function() { try { return currentPlatform || getAdminPlatform() || 'default'; } catch(e) { return 'default'; } })()
   };
 
   try{
@@ -4796,7 +4805,8 @@ async function confirmRecharge(orderId) {
       },
       body: JSON.stringify({
         orderId,
-        status: 'success'
+        status: 'success',
+        platform_id: (function() { try { return currentPlatform || getAdminPlatform() || 'default'; } catch(e) { return 'default'; } })()
       })
     });
 
@@ -4933,13 +4943,15 @@ async function batchAction(select, key, searchFn) {
   
   const finalStatus = action === 'approve' ? 'success' : action === 'reject' ? 'failed' : undefined;
   
+  const platformId = (function() { try { return currentPlatform || getAdminPlatform() || 'default'; } catch(e) { return 'default'; } })();
+  
   let count = 0;
   for (const cb of checked) {
     const orderId = cb.dataset.orderid;
     const type = cb.dataset.type;
     if (!orderId || !type) continue;
     
-    const body = { orderId, type, note };
+    const body = { orderId, type, note, platform_id: platformId };
     if (finalStatus) body.status = finalStatus;
     
     try {
@@ -5300,6 +5312,20 @@ function resetWithdrawPage() {
 /* -----------------------------
    Init
 ------------------------------ */
+  // ===== 从 URL 读取 platform 参数并初始化 =====
+  (function initPlatformFromUrl() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const p = params.get('platform');
+      if (p && p.trim()) {
+        currentPlatform = p.trim();
+        setAdminPlatform(currentPlatform);
+      }
+    } catch(e) {
+      console.error('[platform] initPlatformFromUrl error:', e.message);
+    }
+  })();
+
   // 检查 URL 中的 login 参数：清除旧登录态，触发下级登录样式
   let _isSubAdminLogin = sessionStorage.getItem('is_sub_admin_login') === '1';
   (function prefillLoginFromUrl() {
