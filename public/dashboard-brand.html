@@ -1118,6 +1118,7 @@ button {
       <input id="platformName" placeholder="平台昵称（随意取，如 平台A / 小明平台）" style="width:240px">
       <input id="platformBotToken" placeholder="Bot Token（可选）" style="width:240px">
       <input id="platformChatIds" placeholder="Chat IDs（逗号分隔，可选）" style="width:240px">
+      <input id="platformDomain" placeholder="前台域名，如 www.abc.com（可选）" style="width:240px">
       <button class="primary" onclick="createPlatform()">创建平台</button>
     </div>
 
@@ -1125,6 +1126,7 @@ button {
       <thead>
         <tr>
           <th>平台昵称</th>
+          <th>域名</th>
           <th>Bot Token</th>
           <th>Chat IDs</th>
           <th>创建时间</th>
@@ -2101,6 +2103,12 @@ function setPlatformSelectState() {
   try {
     const sel = document.getElementById('platformSelect');
     if (!sel) return;
+    // 域名匹配成功 → 玩家端，隐藏平台下拉
+    if (_domainMatchedPlatform) {
+      sel.style.display = 'none';
+      return;
+    }
+    sel.style.display = '';
     if (isSuperAdmin()) {
       sel.disabled = false;
       sel.style.cursor = 'pointer';
@@ -5312,17 +5320,34 @@ function resetWithdrawPage() {
 /* -----------------------------
    Init
 ------------------------------ */
-  // ===== 从 URL 读取 platform 参数并初始化 =====
-  (function initPlatformFromUrl() {
+  // ===== 域名优先平台匹配 =====
+  // 域名匹配 > URL参数 > localStorage > default
+  let _domainMatchedPlatform = false;
+  (async function initPlatformByDomain() {
     try {
+      const hostname = window.location.hostname;
+      // 1. 域名匹配优先
+      if (hostname) {
+        const r = await fetch('/api/platform/by-domain?domain=' + encodeURIComponent(hostname));
+        const j = await r.json();
+        if (j && j.success && j.platform_id && j.platform_id !== 'default') {
+          currentPlatform = j.platform_id;
+          setAdminPlatform(currentPlatform);
+          _domainMatchedPlatform = true;
+          return;
+        }
+      }
+      // 2. 回退到 URL 参数 ?platform=
       const params = new URLSearchParams(window.location.search);
       const p = params.get('platform');
       if (p && p.trim()) {
         currentPlatform = p.trim();
         setAdminPlatform(currentPlatform);
+        return;
       }
+      // 3. currentPlatform 默认 'default'，由 getAdminPlatform()/localStorage 兜底
     } catch(e) {
-      console.error('[platform] initPlatformFromUrl error:', e.message);
+      console.error('[platform] initPlatformByDomain error:', e.message);
     }
   })();
 
@@ -5712,18 +5737,18 @@ async function loadPlatformList() {
 
     const tbody = document.getElementById('platformTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5">加载中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6">加载中...</td></tr>';
 
     const r = await fetch('/api/admin/platforms', { headers: authHeaders() });
     const j = await r.json();
     if (!j || !j.platforms) {
-      tbody.innerHTML = '<tr><td colspan="5">加载失败</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6">加载失败</td></tr>';
       return;
     }
 
     const platforms = j.platforms || [];
     if (!platforms.length) {
-      tbody.innerHTML = '<tr><td colspan="5">暂无平台（除 Default 外）</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6">暂无平台（除 Default 外）</td></tr>';
       return;
     }
 
@@ -5731,10 +5756,12 @@ async function loadPlatformList() {
       const timeStr = p.created_at ? new Date(p.created_at).toLocaleString('zh-CN') : '--';
       const safeName = escHtml1(p.name || p.id);
       const safeId = escHtml1(p.id);
+      const safeDomain = escHtml1(p.domain || '--');
       const safeToken = escHtml1(p.bot_token_masked || '--');
       const safeChats = escHtml1(p.chat_ids || '--');
       return '<tr>' +
         '<td><strong>' + safeName + '</strong><div class="small">ID: ' + safeId + '</div></td>' +
+        '<td>' + safeDomain + '</td>' +
         '<td><code>' + safeToken + '</code></td>' +
         '<td>' + safeChats + '</td>' +
         '<td>' + escHtml1(timeStr) + '</td>' +
@@ -5749,7 +5776,7 @@ async function loadPlatformList() {
     console.error('[loadPlatformList] error:', e.message);
     try {
       const tbody = document.getElementById('platformTableBody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="5">加载失败: ' + e.message + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6">加载失败: ' + e.message + '</td></tr>';
     } catch(e2) {}
   }
 }
@@ -5759,6 +5786,7 @@ async function createPlatform() {
     const nameEl = document.getElementById('platformName');
     const tokenEl = document.getElementById('platformBotToken');
     const chatsEl = document.getElementById('platformChatIds');
+    const domainEl = document.getElementById('platformDomain');
     const name = nameEl ? nameEl.value.trim() : '';
     if (!name) {
       showCenterNotify('请输入平台昵称');
@@ -5766,11 +5794,12 @@ async function createPlatform() {
     }
     const bot_token = tokenEl ? tokenEl.value.trim() : '';
     const chat_ids = chatsEl ? chatsEl.value.trim() : '';
+    const domain = domainEl ? domainEl.value.trim() : '';
 
     const r = await fetch('/api/admin/platforms', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ name, bot_token, chat_ids })
+      body: JSON.stringify({ name, bot_token, chat_ids, domain })
     });
     const j = await r.json();
     if (!j.ok) {
@@ -5781,6 +5810,7 @@ async function createPlatform() {
     if (nameEl) nameEl.value = '';
     if (tokenEl) tokenEl.value = '';
     if (chatsEl) chatsEl.value = '';
+    if (domainEl) domainEl.value = '';
     showCenterNotify('平台 "' + (j.platform && j.platform.name || name) + '" 创建成功');
     loadPlatformList();
   } catch(e) {
