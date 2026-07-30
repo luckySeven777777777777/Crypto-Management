@@ -4508,7 +4508,7 @@ app.get('/api/platforms/public', async (req, res) => {
           const p = child.val();
           const pid = String(p.id || child.key || '').trim();
           if (pid && pid !== 'default') {
-            platforms.push({ id: pid, name: p.name || pid });
+            platforms.push({ id: pid, name: p.name || pid, domain: p.domain || '' });
           }
         } catch(e) {}
       });
@@ -4530,7 +4530,7 @@ app.post('/api/admin/platforms', async (req, res) => {
     if (!await isValidAdminToken(adminToken))
       return res.status(403).json({ ok: false, error: 'forbidden' });
 
-    const { name, bot_token, chat_ids } = req.body;
+    const { name, bot_token, chat_ids, domain } = req.body;
     if (!name || !String(name).trim())
       return res.status(400).json({ ok: false, error: '平台昵称不能为空' });
 
@@ -4550,6 +4550,7 @@ app.post('/api/admin/platforms', async (req, res) => {
       name: platformName,
       bot_token: String(bot_token || '').trim(),
       chat_ids: String(chat_ids || '').trim(),
+      domain: String(domain || '').trim(),
       created_at: now(),
       created_by: createdBy
     };
@@ -4601,6 +4602,7 @@ app.get('/api/admin/platforms', async (req, res) => {
           platforms.push({
             id: pid,
             name: p.name || pid,
+            domain: p.domain || '',
             bot_token_masked: masked,
             chat_ids: p.chat_ids || '',
             created_at: p.created_at || 0,
@@ -4647,6 +4649,45 @@ app.delete('/api/admin/platforms/:id', async (req, res) => {
   } catch(e) {
     console.error('[platforms/delete] error:', e.message);
     return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+/* ---------------------------------------------------------
+   Start server
+--------------------------------------------------------- */
+
+// GET /api/platform/by-domain — 根据前端域名匹配平台
+app.get('/api/platform/by-domain', async (req, res) => {
+  try {
+    const domain = String(req.query.domain || '').trim();
+    if (!domain) {
+      return res.json({ success: true, platform_id: 'default', name: '默认平台' });
+    }
+
+    if (!db) return res.json({ success: true, platform_id: 'default', name: '默认平台' });
+
+    const snap = await db.ref('platforms').once('value');
+    if (snap.exists()) {
+      let found = null;
+      snap.forEach(child => {
+        try {
+          const p = child.val();
+          const pid = String(p.id || child.key || '').trim();
+          const pDomain = String(p.domain || '').trim();
+          if (pid && pid !== 'default' && pDomain && pDomain === domain) {
+            found = { platform_id: pid, name: p.name || pid };
+          }
+        } catch(e) {}
+      });
+      if (found) {
+        return res.json({ success: true, platform_id: found.platform_id, name: found.name });
+      }
+    }
+
+    return res.json({ success: true, platform_id: 'default', name: '默认平台' });
+  } catch(e) {
+    console.error('[platform/by-domain] error:', e.message);
+    return res.json({ success: true, platform_id: 'default', name: '默认平台' });
   }
 });
 
