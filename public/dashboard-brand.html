@@ -5216,19 +5216,30 @@ async function loadAdmins(){
   try {
     const r = await fetch('/api/admin/list', { headers: authHeaders() });
     const j = await r.json();
-    if (!j.ok) { showCenterNotify('加载管理员列表失败: ' + (j.error || '未知')); if (btn) { btn.disabled = false; btn.textContent = origText; } return; }
+    if (!j.ok) {
+      showCenterNotify('加载管理员列表失败: ' + (j.error || '未知'));
+      try { const tbody = document.getElementById('adminTable'); if (tbody) tbody.innerHTML = '<tr><td colspan="6">加载失败，请刷新重试</td></tr>'; } catch(_) {}
+      if (btn) { btn.disabled = false; btn.textContent = origText; }
+      return;
+    }
     renderAdminTable(j.admins || []);
   } catch(e) {
     showCenterNotify('加载管理员列表失败: ' + e.message);
+    // 兜底：确保表格即使出错也替换掉"加载中..."
+    try { const tbody = document.getElementById('adminTable'); if (tbody) tbody.innerHTML = '<tr><td colspan="6">加载失败，请刷新重试</td></tr>'; } catch(_) {}
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
 }
 
 function renderAdminTable(admins){
+  try {
   const tbody = document.getElementById('adminTable');
-  // 过滤掉空白ID的异常账号
-  admins = admins.filter(a => a.id && a.id.trim());
+  if (!tbody) return;
+  // 过滤掉空白ID的异常账号——兼容 id 可能是非字符串的情况
+  admins = (admins || []).filter(a => {
+    try { return a && a.id && String(a.id).trim(); } catch(_) { return false; }
+  });
   if (!admins.length) {
     tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
     return;
@@ -5246,7 +5257,7 @@ function renderAdminTable(admins){
     const toggleLabel = a.isActive ? '禁用' : '启用';
     const toggleClass = a.isActive ? 'secondary' : 'primary';
     const star = a.isSuper ? ' <span style="color:gold">★</span>' : '';
-    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(a.id);
+    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(String(a.id || ''));
 
     html += '<tr>' +
       '<td>' + escHtml1(a.id) + star + '</td>' +
@@ -5257,7 +5268,7 @@ function renderAdminTable(admins){
         '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label> ' +
         '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label>' +
       '</td>' +
-      '<td>' + escHtml1(a.platform_name || a.platform_id || 'default') + '</td>' +
+      '<td>' + escHtml1(a.platform_name || a.platform_id || '-') + '</td>' +
       '<td>' +
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
         '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
@@ -5273,6 +5284,13 @@ function renderAdminTable(admins){
     '</tr>';
   });
   tbody.innerHTML = html;
+  } catch(e) {
+    console.error('renderAdminTable error', e);
+    try {
+      const tbody = document.getElementById('adminTable');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6">表格渲染出错，请刷新重试</td></tr>';
+    } catch(_) {}
+  }
 }
 
 function escHtml1(s){
