@@ -77,34 +77,43 @@ process.on('uncaughtException', (err) => {
 });
 // 生成 2FA 密钥和二维码
 app.post('/api/admin/generate-2fa', async (req, res) => {
-  const { adminId } = req.body;  // 获取管理员ID
+  const { adminId } = req.body;
 
   if (!adminId) {
     return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
   }
 
-  // 生成 2FA 密钥
-  const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
-
-  // 使用二维码生成库生成二维码 URL
-  qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
-    if (err) {
-      return res.status(500).json({ ok: false, message: '二维码生成失败' });
+  try {
+    const snap = await db.ref(`admins/${adminId}`).once('value');
+    if (!snap.exists()) {
+      return res.status(404).json({ ok: false, message: '管理员不存在' });
     }
 
-    // 将密钥存储到数据库，方便后续验证
-    // 示例：await db.ref(`admins/${adminId}/2fa_secret`).set(secret.base32);
+    const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
 
-    // 返回生成的二维码和密钥
-    res.json({
-      ok: true,
-      qr_code: qr_code,  // 二维码链接
-      secret: secret.base32 // 2FA 密钥
+    // 暂存密钥到数据库（绑定确认前使用临时字段）
+    await db.ref(`admins/${adminId}`).update({
+      '2fa_tempSecret': secret.base32,
+      '2fa_tempOtpUrl': secret.otpauth_url
     });
-  });
+
+    qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
+      if (err) {
+        return res.status(500).json({ ok: false, message: '二维码生成失败' });
+      }
+      res.json({
+        ok: true,
+        qr_code: qr_code,
+        secret: secret.base32
+      });
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, message: '服务器错误' });
+  }
 });
 
-// 验证 2FA 验证码
+// 验证 2FA 验证码（绑定确认）
 app.post('/api/admin/verify-2fa', async (req, res) => {
   const { adminId, code } = req.body;
 
@@ -112,21 +121,41 @@ app.post('/api/admin/verify-2fa', async (req, res) => {
     return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
   }
 
-  // 从数据库获取管理员的 2FA 密钥（此处为假设，实际使用时需从数据库读取）
-  // 例如：const secret = await db.ref(`admins/${adminId}/2fa_secret`).once('value');
-  const secret = '你的2FA密钥';  // 这里需要替换为从数据库中获取的密钥
+  try {
+    const snap = await db.ref(`admins/${adminId}`).once('value');
+    if (!snap.exists()) {
+      return res.status(404).json({ ok: false, message: '管理员不存在' });
+    }
 
-  // 使用 speakeasy 库验证验证码
-  const verified = speakeasy.totp.verify({
-    secret: secret,
-    encoding: 'base32',
-    token: code
-  });
+    const admin = snap.val();
+    // 优先使用临时密钥，其次使用已绑定的正式密钥
+    const secret = admin['2fa_tempSecret'] || admin['2fa_secret'];
 
-  if (verified) {
-    return res.json({ ok: true, message: '2FA 验证成功' });
-  } else {
-    return res.status(400).json({ ok: false, message: '验证码错误' });
+    if (!secret) {
+      return res.status(400).json({ ok: false, message: '请先生成2FA密钥' });
+    }
+
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: 'base32',
+      token: code
+    });
+
+    if (verified) {
+      // 验证通过，写入正式字段并清除临时字段
+      await db.ref(`admins/${adminId}`).update({
+        '2fa_secret': secret,
+        '2fa_enabled': true,
+        '2fa_tempSecret': null,
+        '2fa_tempOtpUrl': null
+      });
+      return res.json({ ok: true, message: '2FA 绑定成功' });
+    } else {
+      return res.status(400).json({ ok: false, message: '验证码错误' });
+    }
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, message: '服务器错误' });
   }
 });
 /* ---------------------------------------------------------
@@ -2332,7 +2361,8 @@ app.get('/api/admin/list', async (req, res) => {
           permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
           createdBy: a.createdBy || 'system',
           created: a.created || 0,
-          lastLogin: a.lastLogin || 0
+          lastLogin: a.lastLogin || 0,
+          has2fa: !!(a['2fa_secret'] && a['2fa_enabled'])
         });
       });
     }
@@ -2718,6 +2748,12 @@ app.post('/api/admin/login', async (req, res) => {
     if (admin.isActive === false)
       return res.status(403).json({ ok: false, error: '账号已被禁用，请联系超级管理员' });
 
+    // 检查是否绑定了 2FA
+    const has2fa = !!(admin['2fa_secret'] && admin['2fa_enabled']);
+    if (has2fa) {
+      return res.json({ ok: true, need2fa: true, message: '需要 2FA 验证' });
+    }
+
     const token = uuidv4();  // 生成新 token
     await db.ref(`admins_by_token/${token}`).set({
       id,
@@ -2729,6 +2765,75 @@ app.post('/api/admin/login', async (req, res) => {
 
     return res.json({ ok: true, token, nickname: admin.nickname || admin.id, permissions: admin.permissions || {}, isSuper: !!admin.isSuper });  // 返回登录成功的 token 和权限
 
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 登录验证 2FA 验证码
+app.post('/api/admin/verify-login-2fa', async (req, res) => {
+  const { id, code } = req.body;
+
+  if (!id || !code) {
+    return res.status(400).json({ ok: false, error: 'missing id/code' });
+  }
+
+  try {
+    const adminSnap = await db.ref(`admins/${id}`).once('value');
+    if (!adminSnap.exists()) {
+      return res.status(404).json({ ok: false, error: 'admin not found' });
+    }
+
+    const adminData = adminSnap.val();
+    const secret = adminData['2fa_secret'];
+
+    if (!secret) {
+      return res.status(400).json({ ok: false, error: '2FA 未绑定' });
+    }
+
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: 'base32',
+      token: code
+    });
+
+    if (!verified) {
+      return res.status(401).json({ ok: false, error: '2FA 验证码错误' });
+    }
+
+    // 验证通过，生成 token 完成登录
+    const token = uuidv4();
+    await db.ref(`admins_by_token/${token}`).set({
+      id,
+      created: now()
+    });
+
+    await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
+
+    return res.json({
+      ok: true,
+      token,
+      nickname: adminData.nickname || adminData.id,
+      permissions: adminData.permissions || {},
+      isSuper: !!adminData.isSuper
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// 查询 2FA 绑定状态
+app.get('/api/admin/2fa-status', async (req, res) => {
+  const id = req.query.id;
+  if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+  try {
+    const snap = await db.ref(`admins/${id}`).once('value');
+    if (!snap.exists()) return res.status(404).json({ ok: false, error: 'admin not found' });
+    const admin = snap.val();
+    const has2fa = !!(admin['2fa_secret'] && admin['2fa_enabled']);
+    return res.json({ ok: true, has2fa });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: 'internal server error' });
