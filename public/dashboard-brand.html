@@ -5149,7 +5149,8 @@ function resetWithdrawPage() {
         const sel = document.getElementById('platformSelect');
         if (sel) sel.value = savedPlat;
       }
-      await loadPlatforms(); 
+      // 平台列表和权限 UI 异步加载，不阻塞 dashboard
+      loadPlatforms().catch(e => console.error('loadPlatforms init error', e));
       updatePermissionUI();
       loadDashboard(); 
     } 
@@ -5552,7 +5553,9 @@ async function loadPlatforms() {
   try {
     const r = await fetch('/api/platforms', { headers: authHeaders() });
     const j = await r.json();
-    if (j.ok && j.platforms) {
+    // 防御：确保 platforms 是数组
+    const platList = (j.ok && Array.isArray(j.platforms)) ? j.platforms : [];
+    if (platList.length) {
       const sel = document.getElementById('platformSelect');
       const adminPlatSel = document.getElementById('newAdminPlatform');
       const isAdmin = isSuperAdmin() || (getAdminPerms().admin === true);
@@ -5560,14 +5563,14 @@ async function loadPlatforms() {
       if (sel) {
         const currentVal = localStorage.getItem('nexbit_platform_id') || sel.value || 'default';
         if (isAdmin) {
-          sel.innerHTML = j.platforms.map(p => 
+          sel.innerHTML = platList.map(p => 
             `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${p.name || p.id}</option>`
           ).join('');
           sel.disabled = false;
         } else {
           // 非 admin：只显示自己所属平台，锁定
           const myPlatformId = getMyPlatformId();
-          const myPlatform = j.platforms.find(p => p.id === myPlatformId) || j.platforms[0];
+          const myPlatform = platList.find(p => p.id === myPlatformId) || platList[0];
           if (myPlatform) {
             sel.innerHTML = `<option value="${myPlatform.id}" selected>${myPlatform.name || myPlatform.id}</option>`;
             sel.value = myPlatform.id;
@@ -5579,7 +5582,7 @@ async function loadPlatforms() {
       
       // 同步填充创建管理员表单的平台下拉
       if (adminPlatSel) {
-        adminPlatSel.innerHTML = j.platforms.map(p => 
+        adminPlatSel.innerHTML = platList.map(p => 
           `<option value="${p.id}">${p.name || p.id}</option>`
         ).join('');
       }
@@ -5642,8 +5645,9 @@ async function loadPlatformList() {
     const r = await fetch('/api/platforms', { headers: authHeaders() });
     const j = await r.json();
     const tbody = document.getElementById('platformTableBody');
-    if (j.ok && j.platforms) {
-      tbody.innerHTML = j.platforms.map(p => {
+    const platList = (j.ok && Array.isArray(j.platforms)) ? j.platforms : [];
+    if (platList.length) {
+      tbody.innerHTML = platList.map(p => {
         const createdAt = p.created_at ? new Date(p.created_at).toLocaleString() : '--';
         const chatIdsDisplay = (p.chat_ids || []).length > 0 ? p.chat_ids.join(', ') : '--';
         return `<tr>
