@@ -75,8 +75,11 @@ async function sendLoanToTelegram(text, photos = []) {
 const platforms = new Map();
 
 function getPlatformName(platformId) {
-  const p = platforms.get((platformId || 'default').toLowerCase());
-  return p ? p.name : (platformId || 'default');
+  // 防御：platformId 可能为非字符串（数字/对象/null/undefined），统一转为安全字符串
+  const safeId = (platformId != null && typeof platformId === 'string') ? platformId : String(platformId || 'default');
+  const lookupKey = safeId.toLowerCase() || 'default';
+  const p = platforms.get(lookupKey);
+  return p ? p.name : (safeId || 'default');
 }
 
 function loadPlatformsFromEnv() {
