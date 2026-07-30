@@ -2157,21 +2157,33 @@ app.get('/api/transactions', async (req, res) => {
    Admin token helpers
 --------------------------------------------------------- */
 async function isValidAdminToken(token){
-  if (!db || !token) return false;
+  if (!db) { console.log('[isValidAdminToken] db未初始化'); return false; }
+  if (!token) { console.log('[isValidAdminToken] token为空'); return false; }
   try {
+    const tokenPreview = token.substring(0, 8) + '...';
+    console.log(`[isValidAdminToken] 检查 token=${tokenPreview}`);
     const snap = await db.ref(`admins_by_token/${token}`).once('value');
-    if (!snap.exists()) return false;
+    if (!snap.exists()) {
+      console.log(`[isValidAdminToken] ✗ token=${tokenPreview} 在 admins_by_token 中不存在`);
+      return false;
+    }
     const rec = snap.val();
     const ttlDays = safeNumber(process.env.ADMIN_TOKEN_TTL_DAYS, 30); // 30天有效期
     const ageMs = now() - (rec.created || 0);
+    console.log(`[isValidAdminToken] token=${tokenPreview} ageMs=${ageMs}ms ttlDays=${ttlDays} id=${rec.id}`);
     if (ageMs > ttlDays * 24 * 60 * 60 * 1000) { 
+      console.log(`[isValidAdminToken] ✗ token=${tokenPreview} 已过期`);
       try { 
         await db.ref(`admins_by_token/${token}`).remove(); 
       } catch (e) {} 
       return false; 
     }
+    console.log(`[isValidAdminToken] ✓ token=${tokenPreview} 验证通过`);
     return true;
-  } catch(e) { return false; }
+  } catch(e) { 
+    console.log(`[isValidAdminToken] ✗ 异常:`, e.message);
+    return false; 
+  }
 }
 
 
@@ -2339,8 +2351,12 @@ app.post('/api/admin/member-tag', async (req, res) => {
 app.get('/api/admin/list', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer '))
+    const authPreview = auth ? (auth.substring(0, 20) + (auth.length > 20 ? '...' : '')) : '(空)';
+    console.log(`[/api/admin/list] Authorization header: ${authPreview}`);
+    if (!auth.startsWith('Bearer ')) {
+      console.log(`[/api/admin/list] ✗ Authorization header 不以 "Bearer " 开头`);
       return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
     const adminToken = auth.slice(7);
     if (!await isValidAdminToken(adminToken))
       return res.status(403).json({ ok: false, error: 'forbidden' });
@@ -2755,10 +2771,13 @@ app.post('/api/admin/login', async (req, res) => {
     }
 
     const token = uuidv4();  // 生成新 token
+    const tokenPreview = token.substring(0, 8) + '...';
+    console.log(`[login] 生成 token=${tokenPreview} id=${id}`);
     await db.ref(`admins_by_token/${token}`).set({
       id,
       created: now()  // 保存 token 和创建时间
     });
+    console.log(`[login] 已写入 admins_by_token/${tokenPreview}`);
 
     // 更新状态为在线并记录最后登录时间
     await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
@@ -2804,10 +2823,13 @@ app.post('/api/admin/verify-login-2fa', async (req, res) => {
 
     // 验证通过，生成 token 完成登录
     const token = uuidv4();
+    const tokenPreview = token.substring(0, 8) + '...';
+    console.log(`[verify-login-2fa] 生成 token=${tokenPreview} id=${id}`);
     await db.ref(`admins_by_token/${token}`).set({
       id,
       created: now()
     });
+    console.log(`[verify-login-2fa] 已写入 admins_by_token/${tokenPreview}`);
 
     await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
 
