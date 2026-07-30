@@ -2049,6 +2049,20 @@ function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'
 // ===== Platform Dropdown Management =====
 let currentPlatform = 'default';
 
+function updateBrandWithPlatform() {
+  try {
+    const brandEl = document.querySelector('.top-header .brand');
+    if (!brandEl) return;
+    if (isSuperAdmin()) {
+      brandEl.textContent = '管理后台';
+    } else {
+      const sel = document.getElementById('platformSelect');
+      const pname = sel ? sel.options[sel.selectedIndex]?.textContent || getAdminPlatform() : getAdminPlatform();
+      brandEl.textContent = '管理后台 - ' + pname;
+    }
+  } catch(e) { console.error('[platform] updateBrandWithPlatform error:', e.message); }
+}
+
 function setPlatformSelectState() {
   try {
     const sel = document.getElementById('platformSelect');
@@ -2070,6 +2084,7 @@ function setPlatformSelectState() {
       }
     }
     sel.value = currentPlatform;
+    updateBrandWithPlatform();
   } catch(e) { console.error('[platform] setPlatformSelectState error:', e.message); }
 }
 
@@ -5286,12 +5301,24 @@ async function loadAdmins(){
   try {
     const r = await fetch('/api/admin/list', { headers: authHeaders() });
     const j = await r.json();
-    if (!j.ok) { showCenterNotify('加载管理员列表失败: ' + (j.error || '未知')); if (btn) { btn.disabled = false; btn.textContent = origText; } return; }
+    if (!j.ok) {
+      showCenterNotify('加载管理员列表失败: ' + (j.error || '未知'));
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
+      if (btn) { btn.disabled = false; btn.textContent = origText; }
+      return;
+    }
     // Sync platform dropdown
-    syncPlatformDropdown(j.admins || []);
-    renderAdminTable(j.admins || []);
+    try { syncPlatformDropdown(j.admins || []); } catch(e) { console.error('[loadAdmins] syncPlatformDropdown error:', e.message); }
+    // Render table with try-catch to prevent "加载中..." stuck
+    try {
+      renderAdminTable(j.admins || []);
+    } catch(e) {
+      console.error('[loadAdmins] renderAdminTable error:', e.message);
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+    }
   } catch(e) {
     showCenterNotify('加载管理员列表失败: ' + e.message);
+    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
@@ -5300,8 +5327,13 @@ async function loadAdmins(){
 function renderAdminTable(admins){
   const tbody = document.getElementById('adminTable');
   if (!tbody) { console.error('[renderAdminTable] adminTable element not found'); return; }
+  // Safety: ensure admins is an array
+  if (!Array.isArray(admins)) {
+    tbody.innerHTML = '<tr><td colspan="6">数据格式错误</td></tr>';
+    return;
+  }
   // 过滤掉空白ID的异常账号
-  admins = admins.filter(a => a.id && a.id.trim());
+  admins = admins.filter(a => a && a.id && String(a.id).trim());
   if (!admins.length) {
     tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
     return;
