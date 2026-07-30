@@ -2453,12 +2453,32 @@ app.get('/api/admin/list', async (req, res) => {
     const snap = await db.ref('admins').once('value');
     const list = [];
     if (snap.exists()) {
+      // Pre-load Firebase platforms for nickname lookup
+      let firebasePlatforms = {};
+      try {
+        const pSnap = await db.ref('platforms').once('value');
+        if (pSnap.exists()) {
+          pSnap.forEach(child => {
+            try {
+              const p = child.val();
+              const pid = String(p.id || child.key || '').trim();
+              if (pid) firebasePlatforms[pid] = p.name || pid;
+            } catch(e) {}
+          });
+        }
+      } catch(e) { console.error('[admin list] failed to load platforms:', e.message); }
+
       snap.forEach(child => {
         try {
           const a = child.val();
           // 在线状态：5分钟内活跃的 token 视为在线
           const platformId = a.platform_id || 'default';
+          // 优先从 Firebase platforms 查真实昵称，查不到 fallback 到环境变量
           const cfg = getPlatformConfig(platformId);
+          let platformName = firebasePlatforms[platformId] || cfg.platform_name || platformId;
+          if (platformId === 'default' && !firebasePlatforms['default']) {
+            platformName = 'Default';
+          }
           list.push({
             id: a.id,
             nickname: a.nickname || a.id,
@@ -2471,7 +2491,7 @@ app.get('/api/admin/list', async (req, res) => {
             created: a.created || 0,
             lastLogin: a.lastLogin || 0,
             platform_id: platformId,
-            platform_name: cfg.platform_name || platformId
+            platform_name: platformName
           });
         } catch (e) {
           console.error('[admin list] skipped one entry due to:', e.message);
@@ -4396,6 +4416,166 @@ app.post('/api/admin/unfreeze-balance', async (req, res) => {
   } catch (e) {
     console.error('unfreeze-balance error', e);
     return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+/* ---------------------------------------------------------
+   Platform CRUD APIs (admin-only + public)
+--------------------------------------------------------- */
+
+// GET /api/platforms/public — 公开接口，供前端下拉使用
+app.get('/api/platforms/public', async (req, res) => {
+  try {
+    if (!db) return res.json({ platforms: [{ id: 'default', name: 'Default' }] });
+    const snap = await db.ref('platforms').once('value');
+    const platforms = [];
+    // Always include default
+    platforms.push({ id: 'default', name: 'Default' });
+    if (snap.exists()) {
+      snap.forEach(child => {
+        try {
+          const p = child.val();
+          const pid = String(p.id || child.key || '').trim();
+          if (pid && pid !== 'default') {
+            platforms.push({ id: pid, name: p.name || pid });
+          }
+        } catch(e) {}
+      });
+    }
+    return res.json({ platforms });
+  } catch(e) {
+    console.error('[platforms/public] error:', e.message);
+    return res.json({ platforms: [{ id: 'default', name: 'Default' }] });
+  }
+});
+
+// POST /api/admin/platforms — 创建平台（需要 admin 权限）
+app.post('/api/admin/platforms', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { name, bot_token, chat_ids } = req.body;
+    if (!name || !String(name).trim())
+      return res.status(400).json({ ok: false, error: '平台昵称不能为空' });
+
+    const platformName = String(name).trim();
+    // 自动生成 id：基于 name 的 slug
+    const id = platformName.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '_').replace(/^_|_$/g, '') || ('platform_' + Date.now());
+
+    // 获取创建人
+    let createdBy = 'system';
+    try {
+      const callerSnap = await db.ref(`admins_by_token/${adminToken}`).once('value');
+      if (callerSnap.exists()) createdBy = callerSnap.val().id || 'system';
+    } catch(e) {}
+
+    const platformData = {
+      id,
+      name: platformName,
+      bot_token: String(bot_token || '').trim(),
+      chat_ids: String(chat_ids || '').trim(),
+      created_at: now(),
+      created_by: createdBy
+    };
+
+    await db.ref(`platforms/${id}`).set(platformData);
+
+    // 同时写入环境变量缓存供 sendPlatformTelegram 使用
+    platformConfigCache[id] = {
+      platform_id: id,
+      bot_token: platformData.bot_token,
+      chat_ids: platformData.chat_ids.split(',').filter(Boolean),
+      platform_name: platformName
+    };
+
+    return res.json({ ok: true, platform: { id, name: platformName, created_at: platformData.created_at } });
+  } catch(e) {
+    console.error('[platforms/create] error:', e.message);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// GET /api/admin/platforms — 列出所有平台（需要 admin 权限）
+app.get('/api/admin/platforms', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    if (!db) return res.json({ platforms: [] });
+
+    const snap = await db.ref('platforms').once('value');
+    const platforms = [];
+    if (snap.exists()) {
+      snap.forEach(child => {
+        try {
+          const p = child.val();
+          const pid = String(p.id || child.key || '').trim();
+          // 脱敏 bot_token：只显示前6后4位
+          let masked = '';
+          const raw = String(p.bot_token || '');
+          if (raw.length > 10) {
+            masked = raw.slice(0, 6) + '****' + raw.slice(-4);
+          } else if (raw.length > 0) {
+            masked = '****';
+          }
+          platforms.push({
+            id: pid,
+            name: p.name || pid,
+            bot_token_masked: masked,
+            chat_ids: p.chat_ids || '',
+            created_at: p.created_at || 0,
+            created_by: p.created_by || 'system'
+          });
+        } catch(e) {}
+      });
+    }
+    return res.json({ platforms });
+  } catch(e) {
+    console.error('[platforms/list] error:', e.message);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// DELETE /api/admin/platforms/:id — 删除平台（需要 admin 权限，禁止删除 default）
+app.delete('/api/admin/platforms/:id', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const pid = String(req.params.id || '').trim();
+    if (!pid)
+      return res.status(400).json({ ok: false, error: 'missing platform id' });
+    if (pid === 'default')
+      return res.status(400).json({ ok: false, error: '不能删除 Default 平台' });
+
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+
+    const snap = await db.ref(`platforms/${pid}`).once('value');
+    if (!snap.exists())
+      return res.status(404).json({ ok: false, error: '平台不存在' });
+
+    await db.ref(`platforms/${pid}`).remove();
+
+    // 清理缓存
+    try { delete platformConfigCache[pid]; } catch(e) {}
+
+    return res.json({ ok: true });
+  } catch(e) {
+    console.error('[platforms/delete] error:', e.message);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
 
