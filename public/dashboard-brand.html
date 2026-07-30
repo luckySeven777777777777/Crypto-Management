@@ -1093,12 +1093,11 @@ button {
           <th data-i18n="text" data-key="permissions">权限</th>
           <th data-i18n="text" data-key="loginLink">登录链接</th>
           <th data-i18n="text" data-key="status">状态</th>
-          <th>2FA</th>
           <th data-i18n="text" data-key="operation">操作</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="6"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+        <tr><td colspan="5"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -1257,13 +1256,9 @@ button {
     <div style="margin-bottom:8px">
       <input id="adminName" placeholder="管理员ID" style="width:100%;margin-bottom:8px;padding:8px" />
       <input id="adminPassword" type="password" placeholder="密码" style="width:100%;padding:8px" />
-      <div id="twoFactorSection" style="display:none;margin-top:8px">
-        <input id="admin2FACode" type="text" placeholder="6位2FA验证码" maxlength="6" style="width:100%;padding:8px" />
-      </div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button id="btnAdminLogin" onclick="submitAdminLogin()" class="primary">登录</button>
-      <button id="btnAdminBack" onclick="backToPasswordStep()" style="display:none">返回</button>
+      <button onclick="submitAdminLogin()" class="primary">登录</button>
       <button onclick="closeAdminLogin()">取消</button>
     </div>
     <div id="loginModalHint" style="margin-top:8px;font-size:12px;color:#666">提示：管理员可以通过后端 /api/admin/create 创建新账号。</div>
@@ -1770,9 +1765,10 @@ button {
 
   const data = await response.json();
   if (data.ok) {
-    showCenterNotify('2FA绑定成功', 'success');
-    // 刷新管理员列表以更新2FA状态
-    loadAdminList();
+    showCenterNotify('2FA验证成功');
+    setAdminToken(data.token); // 保存token
+    closeAdminLogin();
+    loadDashboard(); // 登录后跳转到后台主页
   } else {
     showCenterNotify('验证码错误');
   }
@@ -2028,7 +2024,7 @@ const ADMIN_PERMS_KEY = 'nexbit_admin_perms';
 const ADMIN_SUPER_KEY = 'nexbit_admin_super';
 const ADMIN_NAME_KEY  = 'nexbit_admin_name';
 const ADMIN_ID_KEY    = 'nexbit_admin_id';
-function setAdminToken(t){ if(!t || t==='undefined' || t==='null' || t.length<10){ console.warn('[setAdminToken] 拒绝无效token:', t); return; } try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
+function setAdminToken(t){ try{ localStorage.setItem(ADMIN_TOKEN_KEY, t); }catch(e){} }
 function getAdminToken(){ try{ return localStorage.getItem(ADMIN_TOKEN_KEY); }catch(e){ return null; } }
 function setAdminPerms(p, isSuper){ try{ localStorage.setItem(ADMIN_PERMS_KEY, JSON.stringify(p)); localStorage.setItem(ADMIN_SUPER_KEY, isSuper?'1':'0'); }catch(e){} }
 function getAdminPerms(){ try{ return JSON.parse(localStorage.getItem(ADMIN_PERMS_KEY) || '{}'); }catch(e){ return {}; } }
@@ -2037,7 +2033,7 @@ function setAdminName(n){ try{ localStorage.setItem(ADMIN_NAME_KEY, n); }catch(e
 function getAdminName(){ try{ return localStorage.getItem(ADMIN_NAME_KEY) || ''; }catch(e){ return ''; } }
 function setAdminId(n){ try{ localStorage.setItem(ADMIN_ID_KEY, n); }catch(e){} }
 function getAdminId(){ try{ return localStorage.getItem(ADMIN_ID_KEY) || ''; }catch(e){ return ''; } }
-function authHeaders(){ const t = getAdminToken(); if (!t || t==='undefined' || t==='null' || t.length<10) { console.warn('[authHeaders] token无效，跳过Authorization:', t); return { 'Content-Type':'application/json' }; } return { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t }; }
+function authHeaders(){ const t = getAdminToken(); return t ? { 'Content-Type':'application/json', 'Authorization':'Bearer ' + t } : { 'Content-Type':'application/json' }; }
 
 function formatMoney(val) {
   if (val === undefined || val === null) return '0.00';
@@ -2129,18 +2125,6 @@ async function ensureLoggedIn(){
   return false;
 }
 function closeAdminLogin(){
-  // 重置2FA状态
-  document.getElementById('twoFactorSection').style.display = 'none';
-  document.getElementById('btnAdminLogin').style.display = '';
-  document.getElementById('btnAdminBack').style.display = 'none';
-  document.getElementById('btnAdminLogin').onclick = submitAdminLogin;
-  document.getElementById('btnAdminLogin').innerText = '登录';
-  document.getElementById('loginModalTitle').innerText = '管理员登录';
-  document.getElementById('loginModalHint').style.display = '';
-  document.getElementById('adminPassword').disabled = false;
-  document.getElementById('adminName').disabled = false;
-  document.getElementById('admin2FACode').value = '';
-
   document.getElementById('adminLoginModal').style.display = 'none';
   // 下级登录模式：不恢复后台，保持隐藏
   if (_isSubAdminLogin) return;
@@ -2151,20 +2135,6 @@ function closeAdminLogin(){
   if (header) header.style.display = '';
   document.body.style.background = '';
 }
-
-function backToPasswordStep() {
-  document.getElementById('twoFactorSection').style.display = 'none';
-  document.getElementById('btnAdminLogin').style.display = '';
-  document.getElementById('btnAdminBack').style.display = 'none';
-  document.getElementById('btnAdminLogin').onclick = submitAdminLogin;
-  document.getElementById('btnAdminLogin').innerText = '登录';
-  document.getElementById('loginModalTitle').innerText = '管理员登录';
-  document.getElementById('loginModalHint').style.display = '';
-  document.getElementById('adminPassword').disabled = false;
-  document.getElementById('adminName').disabled = false;
-  document.getElementById('admin2FACode').value = '';
-}
-
 async function submitAdminLogin(){
   const id = document.getElementById('adminName').value.trim();
   const pw = document.getElementById('adminPassword').value;
@@ -2177,101 +2147,48 @@ async function submitAdminLogin(){
       body: JSON.stringify({ id, password: pw }) 
     });
     const j = await r.json();
-    
-    // 需要2FA验证
-    if (j.ok && j.need2fa) {
-      document.getElementById('twoFactorSection').style.display = 'block';
-      document.getElementById('btnAdminLogin').style.display = 'none';
-      document.getElementById('btnAdminBack').style.display = '';
-      document.getElementById('loginModalTitle').innerText = 'Google 2FA 验证';
-      document.getElementById('loginModalHint').style.display = 'none';
-      document.getElementById('adminPassword').disabled = true;
-      document.getElementById('adminName').disabled = true;
-      document.getElementById('btnAdminLogin').onclick = submit2FALogin;
-      document.getElementById('btnAdminLogin').innerText = '验证';
-      document.getElementById('btnAdminLogin').style.display = '';
-      document.getElementById('admin2FACode').focus();
-      return;
-    }
-    
     if (j.ok && j.token) {
-      await completeLogin(j, id);
+      setAdminToken(j.token);
+      let perms = j.permissions || {};
+      let isSuper = !!j.isSuper;
+      // 如果服务端 login 未返回权限，从 admin list 补拉
+      if (!isSuper && Object.keys(perms).length === 0) {
+        try {
+          const lr = await fetch('/api/admin/list', { headers: authHeaders() });
+          const lj = await lr.json();
+          if (lj.ok && lj.admins) {
+            const me = lj.admins.find(a => a.id === id);
+            if (me) {
+              perms = me.permissions || {};
+              isSuper = !!me.isSuper;
+              console.log('[submitAdminLogin] 从 /api/admin/list 补拉权限', perms, isSuper);
+            }
+          }
+        } catch(e) { console.error('[submitAdminLogin] 补拉权限失败', e); }
+      }
+      setAdminPerms(perms, isSuper);
+      const displayName = j.nickname || id;
+      document.getElementById('adminUser').innerText = displayName;
+      setAdminName(displayName);
+      setAdminId(id);
+      // 启动配置更新轮询
+      startConfigPolling();
+      // 登录成功后重置下级标记，恢复后台元素
+      _isSubAdminLogin = false;
+      sessionStorage.removeItem('is_sub_admin_login');
+      document.querySelector('.header-nav').style.display = '';
+      document.querySelector('.top-header').style.display = '';
+      document.body.style.background = '';
+      closeAdminLogin();
+      filterHeaderNav();
+      applyTranslations();
+      loadDashboard();
     } else {
       showCenterNotify('登录失败: ' + (j.error || '未知'));
     }
   } catch(e){
     showCenterNotify('请求失败'); 
   }
-}
-
-async function submit2FALogin() {
-  const id = document.getElementById('adminName').value.trim();
-  const code = document.getElementById('admin2FACode').value.trim();
-  if (!code || code.length !== 6) return showCenterNotify('请输入6位2FA验证码');
-  
-  try {
-    const r = await fetch('/api/admin/verify-login-2fa', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, code })
-    });
-    const j = await r.json();
-    if (j.ok && j.token) {
-      // 恢复登录界面
-      document.getElementById('adminPassword').disabled = false;
-      document.getElementById('adminName').disabled = false;
-      document.getElementById('twoFactorSection').style.display = 'none';
-      document.getElementById('btnAdminBack').style.display = 'none';
-      document.getElementById('btnAdminLogin').onclick = submitAdminLogin;
-      document.getElementById('btnAdminLogin').innerText = '登录';
-      await completeLogin(j, id);
-    } else {
-      showCenterNotify('2FA验证失败: ' + (j.error || '验证码错误'));
-    }
-  } catch(e) {
-    showCenterNotify('请求失败');
-  }
-}
-
-async function completeLogin(j, id) {
-  if (!j.token || j.token === 'undefined' || j.token === 'null' || j.token.length < 10) {
-    console.error('[completeLogin] token无效，拒绝完成登录:', j.token);
-    showCenterNotify('登录失败: 服务端返回无效凭据，请联系管理员');
-    return;
-  }
-  setAdminToken(j.token);
-  let perms = j.permissions || {};
-  let isSuper = !!j.isSuper;
-  // 如果服务端 login 未返回权限，从 admin list 补拉
-  if (!isSuper && Object.keys(perms).length === 0) {
-    try {
-      const lr = await fetch('/api/admin/list', { headers: authHeaders() });
-      const lj = await lr.json();
-      if (lj.ok && lj.admins) {
-        const me = lj.admins.find(a => a.id === id);
-        if (me) {
-          perms = me.permissions || {};
-          isSuper = !!me.isSuper;
-          console.log('[completeLogin] 从 /api/admin/list 补拉权限', perms, isSuper);
-        }
-      }
-    } catch(e) { console.error('[completeLogin] 补拉权限失败', e); }
-  }
-  setAdminPerms(perms, isSuper);
-  const displayName = j.nickname || id;
-  document.getElementById('adminUser').innerText = displayName;
-  setAdminName(displayName);
-  setAdminId(id);
-  startConfigPolling();
-  _isSubAdminLogin = false;
-  sessionStorage.removeItem('is_sub_admin_login');
-  document.querySelector('.header-nav').style.display = '';
-  document.querySelector('.top-header').style.display = '';
-  document.body.style.background = '';
-  closeAdminLogin();
-  filterHeaderNav();
-  applyTranslations();
-  loadDashboard();
 }
 
 /* -----------------------------
@@ -5212,7 +5129,10 @@ async function resetWithdrawPassword() {
 
   const res = await fetch('/api/admin/reset-withdraw-password', {
     method: 'POST',
-    headers: authHeaders(),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + (localStorage.getItem('nexbit_admin_token') || '')
+    },
     body: JSON.stringify(payload)
   });
 
@@ -5253,7 +5173,7 @@ function renderAdminTable(admins){
   // 过滤掉空白ID的异常账号
   admins = admins.filter(a => a.id && a.id.trim());
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5">暂无管理员</td></tr>';
     return;
   }
   let html = '';
@@ -5285,7 +5205,6 @@ function renderAdminTable(admins){
         '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
       '</td>' +
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
-      '<td>' + (a.has2fa ? '<span style="background:#4CAF50;color:#fff;padding:2px 8px;border-radius:3px;font-size:11px">2FA已绑定</span>' : '<span style="color:#999;font-size:11px">未绑定</span>') + '</td>' +
       '<td>' +
         '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
         '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
@@ -5522,9 +5441,9 @@ function startConfigPolling() {
 async function checkKickStatus() {
   try {
     const token = getAdminToken();
-    if (!token || token === 'undefined' || token === 'null' || token.length < 10) return;
+    if (!token) return;
     const resp = await fetch('/api/admin/check-kicked', {
-      headers: authHeaders()
+      headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!resp.ok) {
       // token 已失效（被踢出后从 DB 删除），强制登出
