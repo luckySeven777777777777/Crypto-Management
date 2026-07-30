@@ -68,6 +68,188 @@ async function sendLoanToTelegram(text, photos = []) {
   }
 }
 
+
+/* ---------------------------------------------------------
+   Multi-Platform Configuration (In-Memory Store)
+--------------------------------------------------------- */
+const platforms = new Map();
+
+function getPlatformName(platformId) {
+  const p = platforms.get((platformId || 'default').toLowerCase());
+  return p ? p.name : (platformId || 'default');
+}
+
+function loadPlatformsFromEnv() {
+  // 始终内置 default 平台
+  platforms.set('default', {
+    id: 'default',
+    name: 'Default',
+    bot_token: process.env.PLATFORM_DEFAULT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '',
+    chat_ids: (process.env.PLATFORM_DEFAULT_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
+    created_at: Date.now()
+  });
+
+  // 扫描 PLATFORM_{NAME}_BOT_TOKEN 环境变量
+  Object.keys(process.env).forEach(key => {
+    const match = key.match(/^PLATFORM_(\w+)_BOT_TOKEN$/);
+    if (match) {
+      const rawName = match[1];
+      const id = rawName.toLowerCase();
+      if (id === 'default') {
+        const p = platforms.get('default');
+        p.bot_token = process.env[key];
+        p.chat_ids = (process.env[`PLATFORM_${rawName}_CHAT_IDS`] || '').split(',').map(s => s.trim()).filter(Boolean);
+        return;
+      }
+      const name = rawName;
+      const chatKey = `PLATFORM_${rawName}_CHAT_IDS`;
+      platforms.set(id, {
+        id,
+        name,
+        bot_token: process.env[key],
+        chat_ids: (process.env[chatKey] || '').split(',').map(s => s.trim()).filter(Boolean),
+        created_at: Date.now()
+      });
+    }
+  });
+
+  console.log('[PLATFORMS] Loaded ' + platforms.size + ' platform(s) from env');
+}
+
+loadPlatformsFromEnv();
+
+async function loadPlatformsFromDB() {
+  if (!db) return;
+  try {
+    const snap = await db.ref('platforms').once('value');
+    if (snap.exists()) {
+      const fbPlatforms = snap.val();
+      Object.entries(fbPlatforms).forEach(([id, p]) => {
+        if (!platforms.has(id)) {
+          platforms.set(id, p);
+        }
+      });
+      console.log('[PLATFORMS] Merged ' + Object.keys(fbPlatforms).length + ' platform(s) from DB');
+    }
+  } catch(e) {
+    console.warn('[PLATFORMS] Failed to load from DB:', e.message);
+  }
+}
+
+function getPlatformConfig(platformId) {
+  const pid = (platformId || 'default').toLowerCase();
+  const p = platforms.get(pid) || platforms.get('default');
+  if (!p) {
+    const token = process.env.TELEGRAM_BOT_TOKEN || '';
+    const chatsStr = process.env.TELEGRAM_CHAT_IDS || '';
+    return { token, chats: chatsStr.split(',').map(s => s.trim()).filter(Boolean) };
+  }
+  return { token: p.bot_token || '', chats: p.chat_ids || [] };
+}
+
+async function sendPlatformTelegram(platformId, text) {
+  try {
+    const cfg = getPlatformConfig(platformId);
+    if (!cfg.token || cfg.chats.length === 0) return;
+    for (const chatId of cfg.chats) {
+      await axios.post(`https://api.telegram.org/bot${cfg.token}/sendMessage`,
+        { chat_id: chatId, text, parse_mode: 'HTML' }, { timeout: 10000 }).catch(()=>{});
+    }
+  } catch(e) {}
+}
+
+/* --------------------- Platform APIs --------------------- */
+app.post('/api/platforms', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false });
+    const token = auth.slice(7);
+    if (!await isValidAdminToken(token))
+      return res.status(403).json({ ok: false });
+
+    const { name, bot_token, chat_ids } = req.body;
+    if (!name) return res.status(400).json({ ok: false, error: 'missing name' });
+
+    // 自动从 name 生成 id（小写+下划线）
+    const id = name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '_').replace(/^_|_$/g, '') || ('platform_' + Date.now());
+    if (platforms.has(id)) return res.status(400).json({ ok: false, error: 'platform id already exists, choose a different name' });
+
+    const platform = {
+      id,
+      name,
+      bot_token: bot_token || '',
+      chat_ids: Array.isArray(chat_ids) ? chat_ids : (chat_ids || '').split(',').map(s => s.trim()).filter(Boolean),
+      created_at: Date.now()
+    };
+    platforms.set(id, platform);
+
+    // 持久化到 Firebase
+    if (db) {
+      try { await db.ref(`platforms/${id}`).set(platform); } catch(e) {}
+    }
+
+    return res.json({ ok: true, platform });
+  } catch(e) {
+    console.error('create platform error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/platforms', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false });
+    const token = auth.slice(7);
+    if (!await isValidAdminToken(token))
+      return res.status(403).json({ ok: false });
+
+    // 从 DB 合并平台数据
+    await loadPlatformsFromDB();
+
+    const list = Array.from(platforms.values()).map(p => ({
+      id: p.id,
+      name: p.name,
+      bot_token: p.bot_token ? (p.bot_token.substring(0, 10) + '...' + p.bot_token.substring(p.bot_token.length - 4)) : '',
+      chat_ids: p.chat_ids || [],
+      created_at: p.created_at
+    }));
+
+    return res.json({ ok: true, platforms: list });
+  } catch(e) {
+    console.error('list platforms error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/platforms/:id', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false });
+    const token = auth.slice(7);
+    if (!await isValidAdminToken(token))
+      return res.status(403).json({ ok: false });
+
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+    if (id === 'default') return res.status(400).json({ ok: false, error: 'cannot delete default platform' });
+
+    if (!platforms.has(id)) return res.status(404).json({ ok: false, error: 'platform not found' });
+
+    platforms.delete(id);
+    if (db) {
+      try { await db.ref(`platforms/${id}`).remove(); } catch(e) {}
+    }
+
+    return res.json({ ok: true });
+  } catch(e) {
+    console.error('delete platform error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 /* --------------------- Global safety handlers --------------------- */
 process.on('unhandledRejection', (reason, p) => {
   console.error('UNHANDLED REJECTION at: Promise', p, 'reason:', reason);
@@ -1507,7 +1689,8 @@ async function saveOrder(type, data) {
     'currency',
     'second',
     'priceRangePercent',
-    'originalAmount'
+    'originalAmount',
+    'platform_id'
   ];
 
   const clean = {};
@@ -1533,6 +1716,8 @@ async function saveOrder(type, data) {
 
     type,
     processed: false,
+
+    platform_id: clean.platform_id || 'default',
 
     coin: clean.coin || null,
 
@@ -1707,8 +1892,22 @@ const id = await saveOrder('buysell', {
   second: second ?? null,
   priceRangePercent: priceRangePercent ?? null,
   originalAmount: originalAmount ?? null,
+  platform_id: req.body.platform_id || 'default',
   processed: false
 });
+
+// 平台化 TG 通知
+const platId = req.body.platform_id || 'default';
+sendPlatformTelegram(platId,
+  `\u{1F4C8} <b>New BuySell Order</b>\n\n` +
+  `\u{1F4CB} Order: <b>${id}</b>\n` +
+  `\u{1F464} User: <b>${uid}</b>\n` +
+  `\u{1F4B0} Amount: <b>${amt} USDT</b>\n` +
+  `\u{1FA99} Coin: <b>${coin}</b> (${coinQty.toFixed(6)})\n` +
+  `\u{1F4C8} Side: <b>${sideLower.toUpperCase()}</b>\n` +
+  `\u{1F4C5} Time: ${new Date().toLocaleString()}\n` +
+  `\u{1F310} Platform: <b>${platId}</b>`
+).catch(()=>{});
 
     return res.json({ ok:true, orderId: id });
   } catch(e){
@@ -1743,6 +1942,16 @@ async function handleRechargeRequest(req, res) {
     }
 
     const id = await saveOrder('recharge', payload);
+    // 平台化 TG 通知
+    const platId = payload.platform_id || 'default';
+    sendPlatformTelegram(platId,
+      `\u{1F4E5} <b>New Recharge</b>\n\n` +
+      `\u{1F4CB} Order: <b>${id}</b>\n` +
+      `\u{1F464} User: <b>${userId}</b>\n` +
+      `\u{1F4B0} Amount: <b>${payload.amount || '--'} ${payload.coin || 'USDT'}</b>\n` +
+      `\u{1F4C5} Time: ${new Date().toLocaleString()}\n` +
+      `\u{1F310} Platform: <b>${platId}</b>`
+    ).catch(()=>{});
     return res.json({ ok:true, orderId: id });
   } catch(e){ console.error(e); return res.status(500).json({ ok:false, error:e.message }); }
 }
@@ -1880,6 +2089,18 @@ app.post('/api/order/withdraw', async (req, res) => {
       deducted: true,
       processed: false
     });
+
+    // 平台化 TG 通知
+    const platId = payload.platform_id || 'default';
+    sendPlatformTelegram(platId,
+      `\u{1F4E4} <b>New Withdrawal</b>\n\n` +
+      `\u{1F4CB} Order: <b>${orderId}</b>\n` +
+      `\u{1F464} User: <b>${userId}</b>\n` +
+      `\u{1F4B0} Amount: <b>${payload.amount || '--'} ${payload.coin || ''}</b>\n` +
+      `\u{1F4B1} Estimate: <b>${estimateUSDT} USDT</b>\n` +
+      `\u{1F4C5} Time: ${new Date().toLocaleString()}\n` +
+      `\u{1F310} Platform: <b>${platId}</b>`
+    ).catch(()=>{});
 
     return res.json({ ok:true, orderId });
 
@@ -2092,6 +2313,25 @@ app.get('/api/transactions', async (req, res) => {
     if (!await isValidAdminToken(token))
       return res.status(403).json({ ok:false });
 
+    // 获取当前管理员信息（含 role / permissions / platform_id）
+    let isAdminRole = true;
+    let adminPlatformId = 'default';
+    try {
+      const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
+      if (tokenSnap.exists()) {
+        const adminId = tokenSnap.val().id;
+        const adminSnap = await db.ref(`admins/${adminId}`).once('value');
+        if (adminSnap.exists()) {
+          const adm = adminSnap.val();
+          // 检查 permissions.admin 字段
+          if (adm.permissions && adm.permissions.admin === false) {
+            isAdminRole = false;
+          }
+          adminPlatformId = adm.platform_id || 'default';
+        }
+      }
+    } catch(e) { /* fallback: allow all */ }
+
     if (!db) {
       return res.json({
         ok:true,
@@ -2103,6 +2343,8 @@ app.get('/api/transactions', async (req, res) => {
       });
     }
 
+    const platformId = req.query.platform_id || '';
+
     const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] =
       await Promise.all([
         db.ref('orders/recharge').once('value'),
@@ -2111,11 +2353,29 @@ app.get('/api/transactions', async (req, res) => {
         db.ref('users').once('value')
       ]);
 
+    let rechargeList = sortByTimeDesc(Object.values(rechargeSnap.val() || {}));
+    let withdrawList = sortByTimeDesc(Object.values(withdrawSnap.val() || {}));
+    let buysellList  = sortByTimeDesc(Object.values(buysellSnap.val() || {}));
+
+    // 多平台过滤：按 platform_id 筛选
+    if (platformId) {
+      rechargeList = rechargeList.filter(o => (o.platform_id || 'default') === platformId);
+      withdrawList = withdrawList.filter(o => (o.platform_id || 'default') === platformId);
+      buysellList  = buysellList.filter(o => (o.platform_id || 'default') === platformId);
+    }
+
+    // 非 admin 角色：根据所属 platform_id 过滤，只返回同平台的订单
+    if (!isAdminRole) {
+      rechargeList = rechargeList.filter(o => (o.platform_id || 'default') === adminPlatformId);
+      withdrawList = withdrawList.filter(o => (o.platform_id || 'default') === adminPlatformId);
+      buysellList  = buysellList.filter(o => (o.platform_id || 'default') === adminPlatformId);
+    }
+
     return res.json({
       ok: true,
-      recharge: sortByTimeDesc(Object.values(rechargeSnap.val() || {})),
-      withdraw: sortByTimeDesc(Object.values(withdrawSnap.val() || {})),
-      buysell:  sortByTimeDesc(Object.values(buysellSnap.val() || {})),
+      recharge: rechargeList,
+      withdraw: withdrawList,
+      buysell:  buysellList,
       users: usersSnap.val() || {}
     });
 
@@ -2187,6 +2447,9 @@ app.post('/api/admin/create', async (req, res) => {
       }
     }
 
+    // 平台ID提取
+    const platform_id = req.body.platform_id || 'default';
+
     // 权限处理
     const permissions = {
       recharge: req.body.recharge === true || req.body.recharge === 'true',
@@ -2207,7 +2470,8 @@ app.post('/api/admin/create', async (req, res) => {
       isActive: true,   // 默认启用
       status: '离线',   // 初始状态离线
       permissions,
-      createdBy
+      createdBy,
+      platform_id
     });
 
     // 生成管理员 token
@@ -2332,7 +2596,9 @@ app.get('/api/admin/list', async (req, res) => {
           permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
           createdBy: a.createdBy || 'system',
           created: a.created || 0,
-          lastLogin: a.lastLogin || 0
+          lastLogin: a.lastLogin || 0,
+          platform_id: a.platform_id || 'default',
+          platform_name: getPlatformName(a.platform_id)
         });
       });
     }
@@ -2688,7 +2954,9 @@ app.get('/api/admin/me', async (req, res) => {
       id: admin.id,
       nickname: admin.nickname || admin.id,
       permissions: admin.permissions || {},
-      isSuper: !!admin.isSuper
+      isSuper: !!admin.isSuper,
+      platform_id: admin.platform_id || 'default',
+      platform_name: getPlatformName(admin.platform_id)
     });
   } catch (e) {
     console.error('admin me error', e);
@@ -4247,5 +4515,90 @@ app.post('/api/admin/unfreeze-balance', async (req, res) => {
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
+
+/* ---------------------------------------------------------
+   Multi-Platform Management APIs
+--------------------------------------------------------- */
+// 获取平台列表
+app.get('/api/platforms', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    if (!db) return res.json({ ok: true, platforms: [{ id: 'default', name: 'Default' }] });
+
+    const snap = await db.ref('platforms').once('value');
+    const platforms = snap.exists() ? snap.val() : { default: { id: 'default', name: 'Default', created: now() } };
+
+    return res.json({ ok: true, platforms: Object.values(platforms) });
+  } catch (e) {
+    console.error('get platforms error', e);
+    return res.status(500).json({ ok: false });
+  }
+});
+
+// 创建新平台
+app.post('/api/platforms', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { id, name } = req.body;
+    if (!id || !name)
+      return res.status(400).json({ ok: false, error: 'missing id/name' });
+
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+
+    // 确保默认平台存在
+    const defSnap = await db.ref('platforms/default').once('value');
+    if (!defSnap.exists()) {
+      await db.ref('platforms/default').set({ id: 'default', name: 'Default', created: now() });
+    }
+
+    await db.ref(`platforms/${id}`).set({
+      id,
+      name,
+      created: now()
+    });
+
+    return res.json({ ok: true, platform: { id, name } });
+  } catch (e) {
+    console.error('create platform error', e);
+    return res.status(500).json({ ok: false });
+  }
+});
+
+// 删除平台
+app.delete('/api/platforms/:id', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const platformId = req.params.id;
+    if (!platformId || platformId === 'default')
+      return res.status(400).json({ ok: false, error: 'cannot delete default platform' });
+
+    if (!db) return res.json({ ok: false, error: 'no-db' });
+
+    await db.ref(`platforms/${platformId}`).remove();
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('delete platform error', e);
+    return res.status(500).json({ ok: false });
+  }
+});
+
 
 app.listen(PORT, () => { console.log('🚀 Server running on', PORT); });
