@@ -3662,7 +3662,7 @@ function renderLoanRow(o) {
     <td>${escHtml(uid)}</td>
     <td>贷款</td>
     <td>💲 USDT</td>
-    <td>$${amount}</td>
+    <td>${amount}</td>
     <td>${(Number(o.dailyInterest || 0) / Number(o.amount || 1) * 100).toFixed(2)}%</td>
     <td>${period}</td>
     <td>${escHtml(ip)}</td>
@@ -5653,7 +5653,7 @@ function renderAdminTable(admins){
   tbody.innerHTML = html;
 }
 
-function escHtml1(s){
+function escHtml(s){
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
