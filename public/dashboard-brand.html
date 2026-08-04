@@ -1014,6 +1014,7 @@ button {
        <thead>
 <tr>
 <th>会员ID</th>
+<th>👤头像</th>
 <th>钱包地址</th>
 <th>账号余额</th>
 <th>加减操作</th>
@@ -1024,7 +1025,7 @@ button {
 <th>标签</th>
 </tr>
 </thead>
-        <tbody id="m_table"><tr><td colspan="9" class="small">暂无数据</td></tr></tbody>
+        <tbody id="m_table"><tr><td colspan="10" class="small">暂无数据</td></tr></tbody>
       </table>
     </div>
 
@@ -4506,7 +4507,7 @@ async function loadMembers(resetPage = true){
   if (resetPage) memberPage = 1;
   
   const tbody = $('#m_table');
-  tbody.innerHTML = `<tr><td colspan="9">${__('loading')}</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="10">${__('loading')}</td></tr>`;
 
   try{
     const all = await fetchAll();
@@ -4537,7 +4538,7 @@ async function loadMembers(resetPage = true){
     });
 
     if(!Object.keys(users).length){
-      tbody.innerHTML = `<tr><td colspan="9">暂无数据</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10">暂无数据</td></tr>`;
       return;
     }
 
@@ -4556,6 +4557,25 @@ async function loadMembers(resetPage = true){
     // 降序：最新的在最上面
     rows.sort((a, b) => b.sortKey - a.sortKey);
 
+    // 批量获取头像
+    const uids = rows.map(r => r.uid);
+    let avatarMap = {};
+    try {
+      const ar = await fetch('/api/profiles/batch', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ uids })
+      });
+      const aj = await ar.json();
+      if (aj.ok) {
+        avatarMap = aj.avatars || {};
+        for (const [uid, avatar] of Object.entries(avatarMap)) {
+          if (avatar) _cachedAvatars[uid] = avatar;
+        }
+        localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(_cachedAvatars));
+      }
+    } catch(e) {}
+
     // 分页
     const total = rows.length;
     const totalPages = Math.ceil(total / MEMBER_PAGE_SIZE);
@@ -4567,6 +4587,7 @@ async function loadMembers(resetPage = true){
       const uid = r.uid;
       const u  = r.u;
       const bal = u.balance !== undefined && u.balance !== null ? Number(u.balance) : 0;
+      const avatarUrl = avatarMap[uid] || getAvatarUrl(uid);
 
       // 标签：优先使用手动设置的标签，否则自动计算
       const tag = getMemberTag(u);
@@ -4579,6 +4600,7 @@ async function loadMembers(resetPage = true){
       return `
       <tr class="row-tag-${tagColor}">
         <td><span class="uid-clickable" onclick="openProfile('${uid}')">${uid}</span></td>
+        <td style="text-align:center"><img src="${avatarUrl}" style="width:32px;height:32px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'" /></td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${walletMap[uid] || u.wallet || ''}">${walletMap[uid] || u.wallet || '--'}</td>
         <td>${bal.toFixed(2)}</td>
         <td>${(isSuperAdmin() || (getAdminPerms().balance_adjust)) ? `<button class="primary" style="margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','add')">+</button> <button class="primary" style="background:#ff4444;margin:0 2px;padding:2px 10px" onclick="adjustBalance('${uid}','deduct')">-</button>` : '--'}</td>
@@ -4614,7 +4636,7 @@ async function loadMembers(resetPage = true){
 
       tbody.innerHTML += `
       <tr>
-        <td colspan="9" style="text-align:center;padding:12px 0">
+        <td colspan="10" style="text-align:center;padding:12px 0">
           <div style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
           <button ${memberPage<=1?'disabled':''} onclick="memberPage--;loadMembers(false)">上一页</button>
           ${memberPageBtns}
@@ -4626,7 +4648,7 @@ async function loadMembers(resetPage = true){
     }
 
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="9">${__('loadFailed')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10">${__('loadFailed')}</td></tr>`;
   }
 }
 
