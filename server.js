@@ -2219,6 +2219,7 @@ app.get('/api/transactions', async (req, res) => {
         recharge: [],
         withdraw: [],
         buysell: [],
+        loans: [],
         users: {},
         stats: {}
       });
