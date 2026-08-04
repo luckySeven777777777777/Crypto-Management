@@ -3645,7 +3645,7 @@ async function loans_search(){
 function renderLoanRow(o) {
   const uid = o.userId || '--';
   const wallet = o.wallet || '--';
-  const timeStr = formatTime(o.timestamp);
+  const timeStr = o.timestamp ? new Date(o.timestamp).toLocaleString('zh-CN') : '--';
   const amount = Number(o.amount || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2});
   const dailyInterest = Number(o.dailyInterest || 0).toFixed(4);
   const period = o.period || '--';
