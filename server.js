@@ -3037,7 +3037,8 @@ if (!await isValidAdminToken(token))
     const { type, orderId, status, note, frontNote } = req.body;
     if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
 
-    const ref = db.ref(`orders/${type}/${orderId}`);
+    const storagePath = type === 'loan' ? 'loans' : type;
+    const ref = db.ref(`orders/${storagePath}/${orderId}`);
     const snap = await ref.once('value');
     if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
 
