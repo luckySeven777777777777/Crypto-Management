@@ -2586,6 +2586,7 @@ const body = {
       if(active==='recharge') r_search();
       else if(active==='withdraw') w_search();
       else if(active==='buysell') bs_search();
+      else if(active==='loans') loans_search();
       else o_search();
     }else{
       showCenterNotify(__('operationFailed'));
@@ -2633,17 +2634,20 @@ async function addRemark(orderId, type, currentStatus){
   // Fetch order data in background
   try {
     const all = await fetchAll();
-    const isRecharge = type === 'recharge';
-    const list = isRecharge ? (all.recharge || []) : (all.withdraw || []);
+    let list;
+    if (type === 'recharge') list = all.recharge || [];
+    else if (type === 'withdraw') list = all.withdraw || [];
+    else if (type === 'loan') list = all.loans || [];
+    else list = all.withdraw || [];
     const order = list.find(o => o.orderId === orderId);
     const users = all.users || {};
     const user = users[order ? order.userId : ''] || {};
 
     const tag = getMemberTag(user);
     const tagRemark = tag.remark || '--';
-    const coin = (order && order.coin) ? String(order.coin).toUpperCase() : '--';
+    const coin = (order && (order.coin || order.currency)) ? String(order.coin || order.currency).toUpperCase() : '--';
     const amount = order && order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
-    const estimate = order && order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
+    const estimate = order && order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : (order && order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--');
     document.getElementById('rm-orderId').innerText = orderId || '--';
     document.getElementById('rm-userId').innerText = (order && order.userId) || '--';
     document.getElementById('rm-level').innerText = tagRemark;
@@ -2698,6 +2702,7 @@ async function submitRemark(){
       if(active === 'recharge') r_search();
       else if(active === 'withdraw') w_search();
       else if(active === 'buysell') bs_search();
+      else if(active === 'loans') loans_search();
       else o_search();
 
     }else{
