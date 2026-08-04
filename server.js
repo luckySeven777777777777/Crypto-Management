@@ -16,7 +16,7 @@ const upload = multer();
 const app = express();
 app.disable('etag');
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 const PORT = process.env.PORT || 8080;
 
@@ -227,8 +227,8 @@ app.use(cors({
   methods: ['GET','POST','OPTIONS'],
   allowedHeaders: ['Content-Type','x-user-id','x-userid','Authorization','X-User-Id']
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname,'public')));
 
 /* ---------------------------------------------------------
@@ -4260,6 +4260,33 @@ app.post('/api/profiles/:uid', async (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     console.error('save profile error', e);
+    return res.status(500).json({ ok: false, error: 'internal error' });
+  }
+});
+
+// 批量获取用户头像
+app.post('/api/profiles/batch', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { uids } = req.body;
+    if (!Array.isArray(uids) || uids.length === 0)
+      return res.status(400).json({ ok: false, error: 'invalid params' });
+
+    const snap = await db.ref('profiles').once('value');
+    const allProfiles = snap.exists() ? snap.val() : {};
+    const result = {};
+    for (const uid of uids) {
+      result[uid] = (allProfiles[uid] && allProfiles[uid].avatar) ? allProfiles[uid].avatar : '';
+    }
+    return res.json({ ok: true, avatars: result });
+  } catch (e) {
+    console.error('batch profiles error', e);
     return res.status(500).json({ ok: false, error: 'internal error' });
   }
 });
