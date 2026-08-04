@@ -3006,10 +3006,31 @@ if (!await isValidAdminToken(token))
 
     // prevent double-processing
     if (order.processed === true) {
-      // still record admin action but don't apply balance changes again
+      if (note || frontNote) {
+        const remarkUpdateData = {
+          note: note || null,
+          frontNote: frontNote || null,
+          updated: now()
+        };
+        await ref.update(remarkUpdateData);
+
+        const newSnap = await ref.once('value');
+        const latestOrder = { ...newSnap.val(), orderId };
+
+        broadcastSSE({
+          type: 'update',
+          typeName: type,
+          userId: latestOrder.userId,
+          order: latestOrder,
+          action: { admin: adminId, status: order.status, note }
+        });
+
+        return res.json({ ok: true });
+      }
+
       const actIdSkip = uuidv4();
-      await db.ref(`admin_actions/${actIdSkip}`).set({ id: actIdSkip, admin: adminId, operatorNickname, type, orderId, status, note, time: now(), skipped:true });
-      return res.json({ ok:true, message:'already processed' });
+      await db.ref(`admin_actions/${actIdSkip}`).set({ id: actIdSkip, admin: adminId, operatorNickname, type, orderId, status, note, time: now(), skipped: true });
+      return res.json({ ok: true, message: 'already processed' });
     }
 
     // update order status and mark processed after applying business logic
