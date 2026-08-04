@@ -3657,19 +3657,19 @@ function renderLoanRow(o) {
   const ip = o.ip || '--';
   const orderId = o.orderId || '--';
   return `<tr>
-    <td><span>${escHtml(orderId)}</span><br><small>${escHtml(uid)}</small><br><small style="color:#888">${escHtml(wallet)}</small></td>
+    <td><span>${escHtml1(orderId)}</span><br><small>${escHtml1(uid)}</small><br><small style="color:#888">${escHtml1(wallet)}</small></td>
     <td>${timeStr}</td>
-    <td>${escHtml(uid)}</td>
+    <td>${escHtml1(uid)}</td>
     <td>贷款</td>
     <td>💲 USDT</td>
     <td>${amount}</td>
     <td>${(Number(o.dailyInterest || 0) / Number(o.amount || 1) * 100).toFixed(2)}%</td>
     <td>${period}</td>
-    <td>${escHtml(ip)}</td>
+    <td>${escHtml1(ip)}</td>
     <td><span style="color:${statusColor};font-weight:600">${statusText}</span></td>
     <td>${renderActionButtons(o.orderId, 'loan', o.processed, o.status, o.lockedBy || '')}</td>
-    <td>${escHtml(operator)}</td>
-    <td>${escHtml(note)}</td>
+    <td>${escHtml1(operator)}</td>
+    <td>${escHtml1(note)}</td>
     <td><span style="cursor:pointer;font-size:18px" onclick="showLoanDetail('${orderId}')">📋</span></td>
   </tr>`;
 }
@@ -5653,7 +5653,7 @@ function renderAdminTable(admins){
   tbody.innerHTML = html;
 }
 
-function escHtml(s){
+function escHtml1(s){
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
