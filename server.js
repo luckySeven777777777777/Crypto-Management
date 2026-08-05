@@ -4789,8 +4789,11 @@ app.get('/api/loan/records', async (req, res) => {
 
     const snap = await db.ref('orders/loans').once('value');
     const allLoans = snap.val() || {};
-    const loans = Object.values(allLoans).filter(o => o.userId === userId);
-    return res.json({ success: true, loans });
+    const loans = Object.values(allLoans).filter(o => o.userId === userId).map(o => ({
+      ...o,
+      createdAt: o.timestamp || o.createdAt
+    }));
+    return res.json({ success: true, orders: loans });
   } catch (e) {
     console.error('[loan records error]', e);
     return res.status(500).json({ success: false, message: 'Server error' });
@@ -4803,13 +4806,16 @@ app.get('/api/loan/records', async (req, res) => {
 app.get('/api/order/loans/user/:userId', async (req, res) => {
   try {
     const userId = req.params.userId || '';
-    if (!userId) return res.json({ success: true, loans: [] });
-    if (!db) return res.json({ success: true, loans: [] });
+    if (!userId) return res.json({ success: true, orders: [] });
+    if (!db) return res.json({ success: true, orders: [] });
 
     const snap = await db.ref('orders/loans').once('value');
     const allLoans = snap.val() || {};
-    const loans = Object.values(allLoans).filter(o => o.userId === userId);
-    return res.json({ success: true, loans });
+    const loans = Object.values(allLoans).filter(o => o.userId === userId).map(o => ({
+      ...o,
+      createdAt: o.timestamp || o.createdAt
+    }));
+    return res.json({ success: true, orders: loans });
   } catch (e) {
     console.error('[loan records error]', e);
     return res.status(500).json({ success: false, message: 'Server error' });
