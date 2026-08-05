@@ -2125,7 +2125,34 @@ const text = `🔥 <b>New Loan Application</b> 🔥
 // 发送到 Telegram 群
 await sendLoanToTelegram(text, [front, back, hand]);
 
-return res.json({ success: true, orderId: 'loan_' + Date.now() });
+    // ✅ 写入 Firebase orders/loans
+    const orderId = 'loan_' + Date.now();
+    const platform_id = req.body.platform_id || 'default';
+    const ip = req.ip || req.headers['x-forwarded-for'] || '';
+    const wallet = req.body.wallet || '';
+    try {
+      if (db) {
+        await db.ref(`orders/loans/${orderId}`).set({
+          orderId,
+          userId,
+          amount: Number(amount),
+          period: Number(period),
+          dailyInterest: Number(amount) * 0.0016,
+          currency: 'USDT',
+          estimate: Number(amount),
+          timestamp: Date.now(),
+          status: 'pending',
+          type: 'loan',
+          platform_id,
+          ip,
+          wallet
+        });
+      }
+    } catch (e) {
+      console.error('[loan] Firebase write error:', e.message);
+    }
+
+return res.json({ success: true, orderId });
 
 
   } catch (e) {
@@ -2192,6 +2219,7 @@ app.get('/api/transactions', async (req, res) => {
         recharge: [],
         withdraw: [],
         buysell: [],
+        loans: [],
         users: {},
         stats: {}
       });
@@ -2218,17 +2246,19 @@ app.get('/api/transactions', async (req, res) => {
       console.error('[transactions] failed to get admin info:', e.message);
     }
 
-    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] =
+    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap, loansSnap] =
       await Promise.all([
         db.ref('orders/recharge').once('value'),
         db.ref('orders/withdraw').once('value'),
         db.ref('orders/buysell').once('value'),
-        db.ref('users').once('value')
+        db.ref('users').once('value'),
+        db.ref('orders/loans').once('value')
       ]);
 
     let rechargeList = sortByTimeDesc(Object.values(rechargeSnap.val() || {}));
     let withdrawList = sortByTimeDesc(Object.values(withdrawSnap.val() || {}));
     let buysellList  = sortByTimeDesc(Object.values(buysellSnap.val() || {}));
+    let loansList    = sortByTimeDesc(Object.values(loansSnap.val() || {}));
 
     // Platform filtering: non-super-admin only sees own platform orders
     if (!currentAdminIsSuper && currentAdminPlatform) {
@@ -2242,6 +2272,10 @@ app.get('/api/transactions', async (req, res) => {
           return pid === currentAdminPlatform;
         });
         buysellList = buysellList.filter(o => {
+          const pid = o.platform_id || 'default';
+          return pid === currentAdminPlatform;
+        });
+        loansList = loansList.filter(o => {
           const pid = o.platform_id || 'default';
           return pid === currentAdminPlatform;
         });
@@ -2265,6 +2299,10 @@ app.get('/api/transactions', async (req, res) => {
           const t = Number(o.timestamp || 0);
           return t >= currentAdminCreated;
         });
+        loansList = loansList.filter(o => {
+          const t = Number(o.timestamp || 0);
+          return t >= currentAdminCreated;
+        });
       } catch (e) {
         console.error('[transactions] created filter error:', e.message);
       }
@@ -2276,7 +2314,7 @@ app.get('/api/transactions', async (req, res) => {
       try {
         // Collect all user IDs from filtered orders
         const visibleUserIds = new Set();
-        [...rechargeList, ...withdrawList, ...buysellList].forEach(o => {
+        [...rechargeList, ...withdrawList, ...buysellList, ...loansList].forEach(o => {
           const uid = o.userId || o.user;
           if (uid) visibleUserIds.add(uid);
         });
@@ -2298,6 +2336,7 @@ app.get('/api/transactions', async (req, res) => {
       recharge: rechargeList,
       withdraw: withdrawList,
       buysell:  buysellList,
+      loans:    loansList,
       users: usersObj
     });
 
@@ -2998,7 +3037,8 @@ if (!await isValidAdminToken(token))
     const { type, orderId, status, note, frontNote } = req.body;
     if (!type || !orderId) return res.status(400).json({ ok:false, error:'missing type/orderId' });
 
-    const ref = db.ref(`orders/${type}/${orderId}`);
+    const storagePath = type === 'loan' ? 'loans' : type;
+    const ref = db.ref(`orders/${storagePath}/${orderId}`);
     const snap = await ref.once('value');
     if (!snap.exists()) return res.status(404).json({ ok:false, error:'order not found' });
 
@@ -3105,6 +3145,20 @@ if (isApproved) {
       userId,
       balance: curBal,
       source: 'recharge_approved'
+    });
+  } else if (type === 'loan') {
+    curBal += amt;
+    await userRef.update({
+      balance: curBal,
+      creditLoan: amt,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal,
+      source: 'loan_approved'
     });
   }
  }
@@ -4736,6 +4790,36 @@ app.get('/api/platform/by-domain', async (req, res) => {
   } catch(e) {
     console.error('[platform/by-domain] error:', e.message);
     return res.json({ success: true, platform_id: 'default', name: '默认平台' });
+  }
+});
+
+/* ---------------------------------------------------------
+   Loan Records — fetch user's loan history
+--------------------------------------------------------- */
+app.get('/api/loan/records', async (req, res) => {
+  try {
+    if (!db) return res.json({ success: false, records: [], message: 'no-db' });
+    const userId = String(req.query.userId || '').trim();
+    if (!userId) return res.json({ success: false, records: [], message: 'missing userId' });
+
+    const snap = await db.ref('orders/loans').once('value');
+    const allLoans = snap.val() || {};
+    const records = Object.values(allLoans)
+      .filter(o => String(o.userId) === userId)
+      .map(o => ({
+        orderId: o.orderId,
+        amount: o.amount,
+        period: o.period,
+        dailyInterest: o.dailyInterest,
+        status: o.status,
+        timestamp: o.timestamp
+      }))
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    return res.json({ success: true, records });
+  } catch (e) {
+    console.error('[loan/records] error:', e.message);
+    return res.status(500).json({ success: false, records: [], message: 'Server error' });
   }
 });
 
