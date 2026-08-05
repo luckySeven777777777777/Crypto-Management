@@ -3088,7 +3088,7 @@ function renderLoanRow(o) {
   <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
   <td>${renderActionButtons(o.orderId,'loan', o.processed, o.status, o.lockedBy || '')}</td>
   <td>${o.operatorNickname || '--'}</td>
-  <td>${o.note || '--'}${o.frontNote ? `<br><span style="font-size:11px;color:#ffaa00;">notice: ${o.frontNote}</span>` : ''}</td>
+  <td>${o.note || '--'}</td>
   <td><button class="small-btn" onclick="openViewDetail('${o.orderId}','loan')">查看详情</button></td>
 </tr>`;
 }
