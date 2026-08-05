@@ -1847,41 +1847,30 @@ app.post('/proxy/recharge', handleRechargeRequest);
 --------------------------------------------------------- */
 app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
   try {
-    const token = process.env.RECHARGE_TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.RECHARGE_TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
-    }
-
+    const platformId = req.body.platform_id || 'default';
     const text = String(req.body.text || '').slice(0, 4096);
 
-    for (const chatId of chats) {
-      try {
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
+    await sendPlatformTelegram(platformId, text);
 
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
-
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+    // 如果有图片，也发送到对应平台的 Telegram
+    if (req.file) {
+      const cfg = getPlatformConfig(platformId);
+      if (cfg.bot_token && cfg.chat_ids.length > 0) {
+        for (const chatId of cfg.chat_ids) {
+          try {
+            const fd = new FormData();
+            fd.append('chat_id', chatId);
+            fd.append('photo', req.file.buffer, {
+              filename: req.file.originalname || 'proof.jpg'
+            });
+            await axios.post(
+              `https://api.telegram.org/bot${cfg.bot_token}/sendPhoto`,
+              fd,
+              { headers: fd.getHeaders(), timeout: 15000 }
+            );
+          } catch (err) {
+            console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+          }
         }
       }
     }
@@ -1990,41 +1979,29 @@ function sortByTimeDesc(arr) {
 }
 app.post('/api/telegram/withdraw', upload.single('photo'), async (req, res) => {
   try {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chats = (process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
-    }
-
+    const platformId = req.body.platform_id || 'default';
     const text = String(req.body.text || '').slice(0, 4096);
 
-    for (const chatId of chats) {
-      try {
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
+    await sendPlatformTelegram(platformId, text);
 
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
-
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+    if (req.file) {
+      const cfg = getPlatformConfig(platformId);
+      if (cfg.bot_token && cfg.chat_ids.length > 0) {
+        for (const chatId of cfg.chat_ids) {
+          try {
+            const fd = new FormData();
+            fd.append('chat_id', chatId);
+            fd.append('photo', req.file.buffer, {
+              filename: req.file.originalname || 'proof.jpg'
+            });
+            await axios.post(
+              `https://api.telegram.org/bot${cfg.bot_token}/sendPhoto`,
+              fd,
+              { headers: fd.getHeaders(), timeout: 15000 }
+            );
+          } catch (err) {
+            console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+          }
         }
       }
     }
@@ -2038,43 +2015,29 @@ app.post('/api/telegram/withdraw', upload.single('photo'), async (req, res) => {
 // Trade Telegram 通知
 app.post('/api/telegram/trade', upload.single('photo'), async (req, res) => {
   try {
-    const token = process.env.TRADE_BOT_TOKEN;
-    const chats = (process.env.TRADE_CHAT_IDS || '').split(',').filter(Boolean);
-
-    if (!token || chats.length === 0) {
-      return res.status(500).json({ ok:false, error:'telegram not configured' });
-    }
-
+    const platformId = req.body.platform_id || 'default';
     const text = String(req.body.text || '').slice(0, 4096);
 
-    for (const chatId of chats) {
-      try {
-        // 发送文字消息
-        await axios.post(
-          `https://api.telegram.org/bot${token}/sendMessage`,
-          { chat_id: chatId, text },
-          { timeout: 10000 }
-        );
-      } catch (err) {
-        console.error(`Telegram sendMessage error for chat ${chatId}:`, err.response?.data || err.message);
-      }
+    await sendPlatformTelegram(platformId, text);
 
-      // 如果有图片，发送图片
-      if (req.file) {
-        try {
-          const fd = new FormData();
-          fd.append('chat_id', chatId);
-          fd.append('photo', req.file.buffer, {
-            filename: req.file.originalname || 'proof.jpg'
-          });
-
-          await axios.post(
-            `https://api.telegram.org/bot${token}/sendPhoto`,
-            fd,
-            { headers: fd.getHeaders(), timeout: 15000 }
-          );
-        } catch (err) {
-          console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+    if (req.file) {
+      const cfg = getPlatformConfig(platformId);
+      if (cfg.bot_token && cfg.chat_ids.length > 0) {
+        for (const chatId of cfg.chat_ids) {
+          try {
+            const fd = new FormData();
+            fd.append('chat_id', chatId);
+            fd.append('photo', req.file.buffer, {
+              filename: req.file.originalname || 'proof.jpg'
+            });
+            await axios.post(
+              `https://api.telegram.org/bot${cfg.bot_token}/sendPhoto`,
+              fd,
+              { headers: fd.getHeaders(), timeout: 15000 }
+            );
+          } catch (err) {
+            console.error(`Telegram sendPhoto error for chat ${chatId}:`, err.response?.data || err.message);
+          }
         }
       }
     }
@@ -2736,6 +2699,19 @@ app.get('/api/admin/check-kicked', async (req, res) => {
     if (admin.forceLogoutAt) {
       // 客户端检测到后自行清理
       return res.json({ kicked: true });
+    }
+    // 检查平台是否被禁用或踢出（超级管理员不受影响）
+    if (!admin.isSuper) {
+      const platformId = admin.platform_id || 'default';
+      if (platformId !== 'default') {
+        const platformSnap = await db.ref(`platforms/${platformId}`).once('value');
+        if (platformSnap.exists()) {
+          const p = platformSnap.val();
+          if (p.isActive === false || p.kicked === true || p.forceLogoutAt) {
+            return res.json({ kicked: true, reason: 'platform_disabled' });
+          }
+        }
+      }
     }
     return res.json({ kicked: false });
   } catch (e) {
@@ -4786,6 +4762,7 @@ app.post('/api/admin/toggle-platform', async (req, res) => {
 
     await db.ref(`platforms/${id}/isActive`).set(!!isActive);
     await db.ref(`platforms/${id}/last_operated_by`).set(operatedBy);
+    await db.ref(`platforms/${id}/configVersion`).set(now());
 
     return res.json({ ok: true });
   } catch(e) {
@@ -4827,10 +4804,33 @@ app.post('/api/admin/push-platform-update', async (req, res) => {
     };
 
     await db.ref(`platforms/${id}/last_operated_by`).set(operatedBy);
+    await db.ref(`platforms/${id}/configVersion`).set(now());
 
     return res.json({ ok: true });
   } catch(e) {
     console.error('[platforms/push-update] error:', e.message);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
+// GET /api/admin/check-platform-update — 检查平台配置更新
+app.get('/api/admin/check-platform-update', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const id = req.query.id || '';
+    if (!id)
+      return res.status(400).json({ ok: false, error: 'missing id' });
+
+    const snap = await db.ref(`platforms/${id}/configVersion`).once('value');
+    return res.json({ ok: true, configVersion: snap.exists() ? snap.val() : 0 });
+  } catch (e) {
+    console.error('platform check-update error', e);
     return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
@@ -4864,6 +4864,7 @@ app.post('/api/admin/kick-platform', async (req, res) => {
     await db.ref(`platforms/${id}/kicked`).set(true);
     await db.ref(`platforms/${id}/kicked_by`).set(operatedBy);
     await db.ref(`platforms/${id}/last_operated_by`).set(operatedBy);
+    await db.ref(`platforms/${id}/configVersion`).set(now());
 
     // 清理缓存
     try { delete platformConfigCache[id]; } catch(e) {}
@@ -4903,6 +4904,8 @@ app.post('/api/admin/edit-platform', async (req, res) => {
     if (domain !== undefined) updates.domain = String(domain).trim();
     if (bot_token !== undefined && bot_token.trim()) updates.bot_token = String(bot_token).trim();
     if (chat_ids !== undefined) updates.chat_ids = String(chat_ids).trim();
+
+    updates.configVersion = now();
 
     await db.ref(`platforms/${id}`).update(updates);
 
