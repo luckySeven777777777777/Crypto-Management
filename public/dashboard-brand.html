@@ -1127,7 +1127,6 @@ button {
       <label><input type="checkbox" value="buysell"> <span data-i18n="text" data-key="buysell">BuySell</span></label>
       <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
       <label><input type="checkbox" value="balance_adjust"> <span data-i18n="text" data-key="balanceAdjust">加减操作</span></label>
-      <label><input type="checkbox" value="loan"> <span data-i18n="text" data-key="loan">贷款</span></label>
 
       <select id="newAdminPlatform" style="margin-left:8px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
         <option value="default">所属平台：Default</option>
@@ -1143,15 +1142,13 @@ button {
           <th data-i18n="text" data-key="account">账号</th>
           <th data-i18n="text" data-key="permissions">权限</th>
           <th data-i18n="text" data-key="loginLink">登录链接</th>
-          <th>创建时间</th>
           <th id="adminPlatformHeader">所属平台</th>
           <th data-i18n="text" data-key="status">状态</th>
           <th data-i18n="text" data-key="operation">操作</th>
-          <th>操作人</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="8"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+        <tr><td colspan="6"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -1165,8 +1162,7 @@ button {
       <input id="platformBotToken" placeholder="Bot Token（可选）" style="width:240px">
       <input id="platformChatIds" placeholder="Chat IDs（逗号分隔，可选）" style="width:240px">
       <input id="platformDomain" placeholder="前台域名，如 www.abc.com（可选）" style="width:240px">
-      <button class="primary" id="platformSubmitBtn" onclick="createPlatform()">创建平台</button>
-      <button class="secondary" id="platformCancelBtn" style="display:none" onclick="cancelEditPlatform()">取消</button>
+      <button class="primary" onclick="createPlatform()">创建平台</button>
     </div>
 
     <table class="table">
@@ -1177,13 +1173,11 @@ button {
           <th>Bot Token</th>
           <th>Chat IDs</th>
           <th>创建时间</th>
-          <th>状态</th>
           <th>操作</th>
-          <th>操作人</th>
         </tr>
       </thead>
       <tbody id="platformTableBody">
-        <tr><td colspan="8">加载中...</td></tr>
+        <tr><td colspan="6">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -1606,7 +1600,7 @@ button {
       rejected:'已拒绝', pending:'待处理', buysellMgmt:'Buy/Sell 管理', rechargeMgmt:'充值管理', withdrawMgmt:'提款管理', loanMgmt:'贷款管理',
       memberMgmt:'会员管理', orderRecords:'订单记录', sysSettings:'系统设置', adminMgmt:'管理员账号管理',
       account:'管理员账号', nickname:'昵称（显示用）', initPwd:'初始密码', recharge:'充值', withdraw:'提款',
-      buysell:'BuySell', admin:'Admin', balanceAdjust:'加减操作', loan:'贷款', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'加减操作', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
       permissions:'权限', loginLink:'登录链接', copyLink:'复制登录链接', status:'状态', online:'在线', offline:'离线',
       enabled:'已启用', disabled:'已禁用', enable:'启用', disable:'禁用', update:'更新', del:'删除', kick:'踢出', kickConfirm:'确认踢出管理员',
       creator:'创建人', orders:'订单/会员/钱包', time:'时间', userId:'用户ID', type:'类型', amount:'金额',
@@ -2325,7 +2319,7 @@ function filterHeaderNav(){
   try {
     if(isSuperAdmin()) return; // 超级管理员显示全部
     const perms = getAdminPerms();
-    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0)+(perms.admin?1:0)+(perms.loan?1:0);
+    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0)+(perms.admin?1:0);
     const icons = document.querySelectorAll('.header-nav .icon[data-page]');
     if (!icons.length) return;
     if (!permCount) {
@@ -2343,7 +2337,6 @@ function filterHeaderNav(){
       if (page === 'buysell')  show = !!perms.buysell;
       if (page === 'recharge') show = !!perms.recharge;
       if (page === 'withdraw') show = !!perms.withdraw;
-      if (page === 'loan')     show = !!perms.loan;
       if (page === 'members')  show = !!perms.admin;
       if (page === 'orders')   show = permCount > 0;
       if (page === 'settings') show = !!perms.admin;
@@ -5636,7 +5629,7 @@ async function loadAdmins(){
     const j = await r.json();
     if (!j.ok) {
       showCenterNotify('加载管理员列表失败: ' + (j.error || '未知'));
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
       if (btn) { btn.disabled = false; btn.textContent = origText; }
       return;
     }
@@ -5652,11 +5645,11 @@ async function loadAdmins(){
       renderAdminTable(j.admins || []);
     } catch(e) {
       console.error('[loadAdmins] renderAdminTable error:', e.message);
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
     }
   } catch(e) {
     showCenterNotify('加载管理员列表失败: ' + e.message);
-    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
@@ -5667,23 +5660,17 @@ function renderAdminTable(admins){
   if (!tbody) { console.error('[renderAdminTable] adminTable element not found'); return; }
   // Safety: ensure admins is an array
   if (!Array.isArray(admins)) {
-    tbody.innerHTML = '<tr><td colspan="8">数据格式错误</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6">数据格式错误</td></tr>';
     return;
   }
   // 过滤掉空白ID的异常账号
   admins = admins.filter(a => a && a.id && String(a.id).trim());
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="8">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
     return;
   }
   const showPlatformCol = isSuperAdmin();
   let html = '';
-  const platformDomainMap = {};
-  if (window._platforms) {
-    for (const [pid, domain] of Object.entries(window._platforms)) {
-      platformDomainMap[pid] = domain;
-    }
-  }
   // 非超级管理员只能看到自己和自己创建的下级账号
   if (!isSuperAdmin()) {
     const myId = getAdminId();
@@ -5696,30 +5683,23 @@ function renderAdminTable(admins){
     const toggleLabel = a.isActive ? '禁用' : '启用';
     const toggleClass = a.isActive ? 'secondary' : 'primary';
     const star = a.isSuper ? ' <span style="color:gold">★</span>' : '';
-    let uniqueUrl;
-    if (a.platform_id && a.platform_id !== 'default' && platformDomainMap[a.platform_id]) {
-      uniqueUrl = 'https://' + platformDomainMap[a.platform_id] + '/dashboard-brand.html?login=' + encodeURIComponent(a.id);
-    } else {
-      uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(a.id);
-    }
+    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(a.id);
     const platformName = a.platform_name || a.platform_id || 'Default';
     const platformCol = showPlatformCol ? '<td><span style="font-weight:600">' + escHtml1(platformName) + '</span></td>' : '';
 
     html += '<tr>' +
       '<td>' + escHtml1(a.id) + star + '</td>' +
       '<td style="white-space:nowrap">' +
-        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
         '<label><input type="checkbox" data-field="recharge" ' + (perms.recharge ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 充值</label> ' +
         '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
-        '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label> ' +
-        '<label><input type="checkbox" data-field="loan" ' + (perms.loan ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 贷款</label> ' +
-        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label>' +
+        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
+        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label> ' +
+        '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label>' +
       '</td>' +
       '<td>' +
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
         '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
       '</td>' +
-      '<td>' + escHtml1(new Date(a.created).toLocaleString('zh-CN')) + '</td>' +
       platformCol +
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
       '<td>' +
@@ -5727,8 +5707,8 @@ function renderAdminTable(admins){
         '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
         (a.isSuper ? '' : '<button class="danger" style="padding:4px 10px" onclick="if(confirm(\'确认踢出管理员 ' + escHtml1(a.id) + '？\'))kickAdmin(\'' + escHtml1(a.id) + '\')">踢出</button> ') +
         '<button class="danger" onclick="if(confirm(\'确认删除管理员 ' + escHtml1(a.id) + '？\'))deleteAdmin(\'' + escHtml1(a.id) + '\')">删除</button>' +
+        '<div class="small">创建人: ' + escHtml1(a.createdBy || 'system') + '</div>' +
       '</td>' +
-      '<td>' + escHtml1(a.createdBy || 'system') + '</td>' +
     '</tr>';
   });
   tbody.innerHTML = html;
@@ -5773,8 +5753,7 @@ async function createAdmin(){
         withdraw: cb('withdraw'),
         buysell:  cb('buysell'),
         admin: cb('admin'),
-        balance_adjust: cb('balance_adjust'),
-        loan: cb('loan')
+        balance_adjust: cb('balance_adjust')
       })
     });
     const j = await r.json();
@@ -5782,12 +5761,7 @@ async function createAdmin(){
     if (idEl) idEl.value = '';
     if (nickEl) nickEl.value = '';
     if (pwEl) pwEl.value = '';
-    let uniqueUrl;
-    if (platformId && platformId !== 'default' && window._platforms && window._platforms[platformId]) {
-      uniqueUrl = 'https://' + window._platforms[platformId] + '/dashboard-brand.html?login=' + encodeURIComponent(id);
-    } else {
-      uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(id);
-    }
+    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(id);
     showCenterNotify('创建成功！\n账号：' + id + '\n昵称：' + (nickname || id) + '\n初始密码：' + password + '\n专属登录链接：\n' + uniqueUrl);
     loadAdmins();
   } catch(e) {
@@ -5845,7 +5819,7 @@ async function kickAdmin(id){
 async function updateAdminPermissions(id, ev){
   const tr = ev.target.closest('tr');
   const cbs = tr.querySelectorAll('input[data-field]');
-  const perms = { recharge: false, withdraw: false, buysell: false, admin: false, balance_adjust: false, loan: false };
+  const perms = { recharge: false, withdraw: false, buysell: false, admin: false, balance_adjust: false };
   cbs.forEach(cb => {
     perms[cb.getAttribute('data-field')] = cb.checked;
   });
@@ -5901,7 +5875,7 @@ async function pushAdminUpdate(id, btn) {
   if (btn) {
     const tr = btn.closest('tr');
     const cbs = tr.querySelectorAll('input[data-field]');
-    const perms = { recharge: false, withdraw: false, buysell: false, admin: false, loan: false };
+    const perms = { recharge: false, withdraw: false, buysell: false, admin: false };
     cbs.forEach(cb => {
       perms[cb.getAttribute('data-field')] = cb.checked;
     });
@@ -5941,21 +5915,18 @@ async function loadPlatformList() {
 
     const tbody = document.getElementById('platformTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6">加载中...</td></tr>';
 
     const r = await fetch('/api/admin/platforms', { headers: authHeaders() });
     const j = await r.json();
     if (!j || !j.platforms) {
-      tbody.innerHTML = '<tr><td colspan="8">加载失败</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6">加载失败</td></tr>';
       return;
     }
 
     const platforms = j.platforms || [];
-    // 存储平台域名映射供其他函数使用
-    window._platforms = {};
-    platforms.forEach(p => { window._platforms[p.id] = p.domain; });
     if (!platforms.length) {
-      tbody.innerHTML = '<tr><td colspan="8">暂无平台（除 Default 外）</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6">暂无平台（除 Default 外）</td></tr>';
       return;
     }
 
@@ -5966,24 +5937,13 @@ async function loadPlatformList() {
       const safeDomain = escHtml1(p.domain || '--');
       const safeToken = escHtml1(p.bot_token_masked || '--');
       const safeChats = escHtml1(p.chat_ids || '--');
-      const isActive = p.isActive !== false;
-      const toggleLabel = isActive ? '禁用' : '启用';
-      const toggleClass = isActive ? 'secondary' : 'primary';
       return '<tr>' +
         '<td><strong>' + safeName + '</strong><div class="small">ID: ' + safeId + '</div></td>' +
         '<td>' + safeDomain + '</td>' +
         '<td><code>' + safeToken + '</code></td>' +
         '<td>' + safeChats + '</td>' +
         '<td>' + escHtml1(timeStr) + '</td>' +
-        '<td><span style="color:' + (isActive ? 'green' : '#999') + '">' + (isActive ? '启用' : '禁用') + '</span></td>' +
-        '<td>' +
-          '<button class="' + toggleClass + '" onclick="togglePlatformStatus(\'' + safeId + '\',' + (!isActive) + ')">' + toggleLabel + '</button> ' +
-          '<button class="primary" style="padding:4px 10px" onclick="pushPlatformUpdate(\'' + safeId + '\')">更新</button> ' +
-          (p.id === 'default' ? '' : '<button class="danger" style="padding:4px 10px" onclick="if(confirm(\'确认踢出平台 ' + safeName + '？\'))kickPlatform(\'' + safeId + '\')">踢出</button> ') +
-          '<button class="primary" style="padding:4px 10px" onclick="editPlatform(\'' + safeId + '\')">编辑</button> ' +
-          '<button class="danger" onclick="if(confirm(\'确认删除平台 ' + safeName + '？\'))deletePlatform(\'' + safeId + '\')">删除</button>' +
-        '</td>' +
-        '<td>' + escHtml1(p.last_operated_by || p.created_by || 'system') + '</td>' +
+        '<td><button class="danger" onclick="deletePlatform(\'' + safeId + '\')">删除</button></td>' +
       '</tr>';
     }).join('');
 
@@ -5994,7 +5954,7 @@ async function loadPlatformList() {
     console.error('[loadPlatformList] error:', e.message);
     try {
       const tbody = document.getElementById('platformTableBody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="8">加载失败: ' + e.message + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6">加载失败: ' + e.message + '</td></tr>';
     } catch(e2) {}
   }
 }
@@ -6014,24 +5974,6 @@ async function createPlatform() {
     const chat_ids = chatsEl ? chatsEl.value.trim() : '';
     const domain = domainEl ? domainEl.value.trim() : '';
 
-    // Edit mode
-    if (_editingPlatformId) {
-      const body = { id: _editingPlatformId, name, domain, chat_ids };
-      if (bot_token) body.bot_token = bot_token;
-      const r = await fetch('/api/admin/edit-platform', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body)
-      });
-      const j = await r.json();
-      if (!j.ok) { showCenterNotify('编辑失败: ' + (j.error || '未知')); return; }
-      showCenterNotify('平台 ' + _editingPlatformId + ' 已更新');
-      cancelEditPlatform();
-      loadPlatformList();
-      return;
-    }
-
-    // Create mode
     const r = await fetch('/api/admin/platforms', {
       method: 'POST',
       headers: authHeaders(),
@@ -6050,7 +5992,7 @@ async function createPlatform() {
     showCenterNotify('平台 "' + (j.platform && j.platform.name || name) + '" 创建成功');
     loadPlatformList();
   } catch(e) {
-    showCenterNotify('操作失败: ' + e.message);
+    showCenterNotify('创建失败: ' + e.message);
   }
 }
 
@@ -6078,100 +6020,6 @@ async function deletePlatform(id) {
   }
 }
 
-// 平台管理 - 切换启用/禁用状态
-async function togglePlatformStatus(id, isActive) {
-  try {
-    const r = await fetch('/api/admin/toggle-platform', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ id, isActive })
-    });
-    const j = await r.json();
-    if (!j.ok) { showCenterNotify('操作失败: ' + (j.error || '未知')); return; }
-    loadPlatformList();
-  } catch(e) {
-    showCenterNotify('操作失败: ' + e.message);
-  }
-}
-
-// 平台管理 - 推送配置更新
-async function pushPlatformUpdate(id) {
-  try {
-    const r = await fetch('/api/admin/push-platform-update', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ id })
-    });
-    const j = await r.json();
-    if (!j.ok) { showCenterNotify('更新失败: ' + (j.error || '未知')); return; }
-    showCenterNotify('平台 ' + id + ' 配置已更新');
-    loadPlatformList();
-  } catch(e) {
-    showCenterNotify('更新失败: ' + e.message);
-  }
-}
-
-// 平台管理 - 踢出平台
-async function kickPlatform(id) {
-  try {
-    const r = await fetch('/api/admin/kick-platform', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ id })
-    });
-    const j = await r.json();
-    if (!j.ok) { showCenterNotify('踢出失败: ' + (j.error || '未知')); return; }
-    showCenterNotify('已踢出平台 ' + id);
-    loadPlatformList();
-  } catch(e) {
-    showCenterNotify('踢出失败: ' + e.message);
-  }
-}
-
-// 平台管理 - 编辑平台（弹出编辑框）
-let _editingPlatformId = null;
-
-function editPlatform(id) {
-  const row = event.target.closest('tr');
-  if (!row) return;
-  const nameCell = row.cells[0];
-  const domainCell = row.cells[1];
-  const tokenCell = row.cells[2];
-  const chatCell = row.cells[3];
-
-  const currentName = (nameCell.querySelector('strong') ? nameCell.querySelector('strong').textContent : '') || '';
-  const currentId = (nameCell.querySelector('.small') ? nameCell.querySelector('.small').textContent.replace('ID: ', '') : '') || id;
-  const currentDomain = domainCell.textContent === '--' ? '' : domainCell.textContent;
-  const currentToken = tokenCell.textContent === '--' ? '' : tokenCell.textContent;
-  const currentChats = chatCell.textContent === '--' ? '' : chatCell.textContent;
-
-  // Populate form fields
-  document.getElementById('platformName').value = currentName;
-  document.getElementById('platformDomain').value = currentDomain;
-  document.getElementById('platformBotToken').value = currentToken;
-  document.getElementById('platformChatIds').value = currentChats;
-
-  // Switch to edit mode
-  _editingPlatformId = currentId;
-  const btn = document.getElementById('platformSubmitBtn');
-  btn.textContent = '保存修改';
-  btn.className = 'warning';
-  document.getElementById('platformCancelBtn').style.display = '';
-  document.getElementById('platformName').focus();
-}
-
-function cancelEditPlatform() {
-  _editingPlatformId = null;
-  document.getElementById('platformName').value = '';
-  document.getElementById('platformDomain').value = '';
-  document.getElementById('platformBotToken').value = '';
-  document.getElementById('platformChatIds').value = '';
-  const btn = document.getElementById('platformSubmitBtn');
-  btn.textContent = '创建平台';
-  btn.className = 'primary';
-  document.getElementById('platformCancelBtn').style.display = 'none';
-}
-
 // 每 5 秒检查是否有配置更新，如有则刷新页面
 let _lastConfigVersion = 0;
 let _configPollTimer = null;
@@ -6188,8 +6036,8 @@ async function checkConfigUpdate() {
     if (_lastConfigVersion === 0) {
       _lastConfigVersion = ver;
     } else if (ver > _lastConfigVersion) {
-      _lastConfigVersion = ver;
-      // 静默拉取最新权限和 admin 列表，不重新加载页面（避免破坏登录态导致踢出）
+      clearInterval(_configPollTimer);
+      // 先从服务器拉取最新权限，确保刷新后权限生效
       try {
         const listRes = await fetch('/api/admin/list', { headers: authHeaders() });
         const listData = await listRes.json();
@@ -6200,17 +6048,15 @@ async function checkConfigUpdate() {
           }
         }
       } catch(e) { /* 静默忽略 */ }
-      showCenterNotify('配置已更新，权限已同步。');
+      showCenterNotify('配置已更新，页面将自动刷新以生效。');
+      setTimeout(function(){ location.reload(); }, 1200);
     }
   } catch(e) { /* 静默忽略 */ }
 }
 function startConfigPolling() {
   if (_configPollTimer) clearInterval(_configPollTimer);
   _lastConfigVersion = 0;
-  _configPollTimer = setInterval(() => {
-    checkConfigUpdate();
-    checkPlatformConfigUpdate();
-  }, 5000);
+  _configPollTimer = setInterval(checkConfigUpdate, 5000);
 }
 
 // 检查是否被踢出
@@ -6226,17 +6072,7 @@ async function checkKickStatus() {
       const kickedId = getAdminId();
       clearAdminState();
       showCenterNotify('您的账号已被管理员强制下线，请重新登录。');
-      setTimeout(function(){
-        let redirectUrl = window.location.pathname + '?login=' + encodeURIComponent(kickedId);
-        const myPlatform = getAdminPlatform();
-        const domain = window._platforms && window._platforms[myPlatform];
-        if (myPlatform && myPlatform !== 'default' && domain) {
-          redirectUrl = 'https://' + domain + '/dashboard-brand.html?login=' + encodeURIComponent(kickedId);
-        } else {
-          redirectUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(kickedId);
-        }
-        location.href = redirectUrl;
-      }, 1500);
+      setTimeout(function(){ location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId); }, 1500);
       return;
     }
     const data = await resp.json();
@@ -6244,17 +6080,7 @@ async function checkKickStatus() {
       const kickedId = getAdminId();
       clearAdminState();
       showCenterNotify('您的账号已被管理员强制下线，请重新登录。');
-      setTimeout(function(){
-        let redirectUrl = window.location.pathname + '?login=' + encodeURIComponent(kickedId);
-        const myPlatform = getAdminPlatform();
-        const domain = window._platforms && window._platforms[myPlatform];
-        if (myPlatform && myPlatform !== 'default' && domain) {
-          redirectUrl = 'https://' + domain + '/dashboard-brand.html?login=' + encodeURIComponent(kickedId);
-        } else {
-          redirectUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(kickedId);
-        }
-        location.href = redirectUrl;
-      }, 1500);
+      setTimeout(function(){ location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId); }, 1500);
     }
   } catch(e) {}
 }
@@ -6265,37 +6091,12 @@ function clearAdminState() {
   localStorage.removeItem(ADMIN_SUPER_KEY);
   localStorage.removeItem(ADMIN_NAME_KEY);
   localStorage.removeItem(ADMIN_ID_KEY);
-  localStorage.removeItem(ADMIN_PLATFORM_KEY);
 }
 
 let _kickPollTimer = null;
 function startKickPolling() {
   if (_kickPollTimer) clearInterval(_kickPollTimer);
   _kickPollTimer = setInterval(checkKickStatus, 8000);
-}
-
-// 平台配置更新轮询
-let _lastPlatformConfigVersion = 0;
-async function checkPlatformConfigUpdate() {
-  const platformId = getAdminPlatform();
-  if (!platformId || platformId === 'default') return;
-  try {
-    const r = await fetch('/api/admin/check-platform-update?id=' + encodeURIComponent(platformId), {
-      headers: authHeaders()
-    });
-    const j = await r.json();
-    if (!j.ok) return;
-    const ver = j.configVersion || 0;
-    if (_lastPlatformConfigVersion === 0) {
-      _lastPlatformConfigVersion = ver;
-    } else if (ver > _lastPlatformConfigVersion) {
-      clearInterval(_configPollTimer);
-      _configPollTimer = null;
-      _lastPlatformConfigVersion = 0;
-      showCenterNotify('平台配置已更新，正在刷新...');
-      setTimeout(function(){ window.location.reload(); }, 1000);
-    }
-  } catch(e) {}
 }
 
 // 页面加载后启动轮询
