@@ -2656,9 +2656,22 @@ app.get('/api/admin/check-kicked', async (req, res) => {
     const adminSnap = await db.ref(`admins/${tokenEntry.id}`).once('value');
     if (!adminSnap.exists()) return res.status(401).json({ ok: false });
     const admin = adminSnap.val();
+    // 1. 管理员自己被踢出
     if (admin.forceLogoutAt) {
-      // 客户端检测到后自行清理
       return res.json({ kicked: true });
+    }
+    // 2. 所属平台被禁用或踢出（非超管才检测）
+    if (!admin.isSuper) {
+      const platformId = admin.platform_id;
+      if (platformId && platformId !== 'default') {
+        const platformSnap = await db.ref(`platforms/${platformId}`).once('value');
+        if (platformSnap.exists()) {
+          const plat = platformSnap.val();
+          if (plat.forceLogoutAt || plat.isActive === false || plat.kicked === true) {
+            return res.json({ kicked: true });
+          }
+        }
+      }
     }
     return res.json({ kicked: false });
   } catch (e) {
@@ -4960,8 +4973,24 @@ app.post('/api/admin/platform/toggle-status', async (req, res) => {
       // 启用：清除强制下线标记
       await db.ref(`platforms/${platformId}`).update({ isActive: true, kicked: null, forceLogoutAt: null, configVersion: now(), last_operator: operatorId });
     } else {
-      // 禁用：写入 forceLogoutAt 强制该平台下的管理员退出
+      // 禁用：写入 forceLogoutAt，清除该平台下所有非超管管理员的 token
       await db.ref(`platforms/${platformId}`).update({ isActive: false, forceLogoutAt: now(), configVersion: now(), last_operator: operatorId });
+      // 清除该平台下所有非超管管理员的登录 token
+      try {
+        const adminsSnap = await db.ref('admins').once('value');
+        if (adminsSnap.exists()) {
+          const updates = {};
+          adminsSnap.forEach(child => {
+            const a = child.val();
+            if (!a.isSuper && a.platform_id === platformId) {
+              if (a.token) updates[`admins_by_token/${a.token}`] = null;
+              updates[`admins/${child.key}/forceLogoutAt`] = now();
+              updates[`admins/${child.key}/status`] = '离线';
+            }
+          });
+          if (Object.keys(updates).length > 0) await db.ref().update(updates);
+        }
+      } catch(e) { console.error('[platform/toggle-status] clear token error:', e.message); }
     }
     return res.json({ ok: true });
   } catch(e) {
@@ -5031,6 +5060,22 @@ app.post('/api/admin/platform/kick', async (req, res) => {
       configVersion: now(),
       last_operator: operatorId
     });
+    // 清除该平台下所有非超管管理员的登录 token
+    try {
+      const adminsSnap = await db.ref('admins').once('value');
+      if (adminsSnap.exists()) {
+        const updates = {};
+        adminsSnap.forEach(child => {
+          const a = child.val();
+          if (!a.isSuper && a.platform_id === platformId) {
+            if (a.token) updates[`admins_by_token/${a.token}`] = null;
+            updates[`admins/${child.key}/forceLogoutAt`] = now();
+            updates[`admins/${child.key}/status`] = '离线';
+          }
+        });
+        if (Object.keys(updates).length > 0) await db.ref().update(updates);
+      }
+    } catch(e) { console.error('[platform/kick] clear token error:', e.message); }
     return res.json({ ok: true });
   } catch(e) {
     console.error('[platform/kick] error:', e.message);
