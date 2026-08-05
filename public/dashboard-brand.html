@@ -2605,6 +2605,7 @@ const body = {
       if(active==='recharge') r_search();
       else if(active==='withdraw') w_search();
       else if(active==='buysell') bs_search();
+      else if(active==='loan') l_search();
       else o_search();
     }else{
       showCenterNotify(__('operationFailed'));
@@ -2652,8 +2653,10 @@ async function addRemark(orderId, type, currentStatus){
   // Fetch order data in background
   try {
     const all = await fetchAll();
-    const isRecharge = type === 'recharge';
-    const list = isRecharge ? (all.recharge || []) : (all.withdraw || []);
+    let list;
+    if (type === 'recharge') list = all.recharge || [];
+    else if (type === 'loan') list = all.loans || [];
+    else list = all.withdraw || [];
     const order = list.find(o => o.orderId === orderId);
     const users = all.users || {};
     const user = users[order ? order.userId : ''] || {};
@@ -2717,6 +2720,7 @@ async function submitRemark(){
       if(active === 'recharge') r_search();
       else if(active === 'withdraw') w_search();
       else if(active === 'buysell') bs_search();
+      else if(active === 'loan') l_search();
       else o_search();
 
     }else{
