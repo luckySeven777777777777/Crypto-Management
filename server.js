@@ -5038,6 +5038,28 @@ app.post('/api/admin/platform/kick', async (req, res) => {
   }
 });
 
+// GET /api/admin/check-platform-update — 轮询配置版本变更
+app.get('/api/admin/check-platform-update', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer '))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    const adminToken = auth.slice(7);
+    if (!await isValidAdminToken(adminToken))
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const platformId = String(req.query.platformId || '').trim();
+    if (!platformId || !db) return res.json({ ok: true, configVersion: 0 });
+
+    const snap = await db.ref(`platforms/${platformId}/configVersion`).once('value');
+    const ver = snap.exists() ? (snap.val() || 0) : 0;
+    return res.json({ ok: true, configVersion: ver });
+  } catch(e) {
+    console.error('[check-platform-update] error:', e.message);
+    return res.json({ ok: true, configVersion: 0 });
+  }
+});
+
 /* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
