@@ -2104,6 +2104,15 @@ app.post('/api/order/loan', upload.fields([
       return res.status(400).json({ success: false, message: 'Missing fields' });
     }
 
+    // 标准化 userId：若格式不是 U..._... ，从 users 表查找正确格式
+    let normalizedUserId = userId;
+    if (!/^U\d+_\d+$/.test(userId) && userId !== 'test_user') {
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      const match = Object.keys(users).find(k => k.includes(userId));
+      if (match) normalizedUserId = match;
+    }
+
    const front = req.files?.front?.[0];
 const back  = req.files?.back?.[0];
 const hand  = req.files?.hand?.[0];
@@ -2132,7 +2141,7 @@ await sendLoanToTelegram(text, [front, back, hand]);
     clientIp = clientIp.replace(/^::ffff:/, '');
     await db.ref(`orders/loans/${orderId}`).set({
       orderId,
-      userId,
+      userId: normalizedUserId,
       amount: amtNum,
       dailyInterest: Number((amtNum * 0.0016).toFixed(4)),
       estimate: amtNum,
@@ -4814,13 +4823,34 @@ app.get('/api/loan/records', async (req, res) => {
 --------------------------------------------------------- */
 app.get('/api/order/loans/user/:userId', async (req, res) => {
   try {
-    const userId = req.params.userId || '';
-    if (!userId) return res.json({ success: true, orders: [] });
+    const userIdParam = req.params.userId || '';
+    if (!userIdParam) return res.json({ success: true, orders: [] });
     if (!db) return res.json({ success: true, orders: [] });
+
+    // 标准化查询：支持 U..._... 格式和纯数字格式互查
+    let userId = userIdParam;
+    let fallbackUserIds = [];
+    if (/^U\d+_\d+$/.test(userId)) {
+      // 提取纯数字部分作为 fallback
+      const m = userId.match(/^U(\d+)_/);
+      if (m) fallbackUserIds.push(m[1]);
+    } else if (/^\d+$/.test(userId)) {
+      // 纯数字ID，从 users 表查完整格式
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      const match = Object.keys(users).find(k => k.includes(userId));
+      if (match) {
+        fallbackUserIds.push(userId);
+        userId = match;
+      }
+    }
 
     const snap = await db.ref('orders/loans').once('value');
     const allLoans = snap.val() || {};
-    const loans = Object.values(allLoans).filter(o => o.userId === userId).map(o => ({
+    const loans = Object.values(allLoans).filter(o => {
+      if (o.userId === userId) return true;
+      return fallbackUserIds.some(fid => o.userId === fid || o.userId.includes(fid));
+    }).map(o => ({
       ...o,
       createdAt: o.timestamp || o.createdAt
     }));
