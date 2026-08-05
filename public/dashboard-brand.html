@@ -6185,7 +6185,10 @@ async function checkConfigUpdate() {
 function startConfigPolling() {
   if (_configPollTimer) clearInterval(_configPollTimer);
   _lastConfigVersion = 0;
-  _configPollTimer = setInterval(checkConfigUpdate, 5000);
+  _configPollTimer = setInterval(() => {
+    checkConfigUpdate();
+    checkPlatformConfigUpdate();
+  }, 5000);
 }
 
 // 检查是否被踢出
@@ -6220,12 +6223,37 @@ function clearAdminState() {
   localStorage.removeItem(ADMIN_SUPER_KEY);
   localStorage.removeItem(ADMIN_NAME_KEY);
   localStorage.removeItem(ADMIN_ID_KEY);
+  localStorage.removeItem(ADMIN_PLATFORM_KEY);
 }
 
 let _kickPollTimer = null;
 function startKickPolling() {
   if (_kickPollTimer) clearInterval(_kickPollTimer);
   _kickPollTimer = setInterval(checkKickStatus, 8000);
+}
+
+// 平台配置更新轮询
+let _lastPlatformConfigVersion = 0;
+async function checkPlatformConfigUpdate() {
+  const platformId = getAdminPlatform();
+  if (!platformId || platformId === 'default') return;
+  try {
+    const r = await fetch('/api/admin/check-platform-update?id=' + encodeURIComponent(platformId), {
+      headers: authHeaders()
+    });
+    const j = await r.json();
+    if (!j.ok) return;
+    const ver = j.configVersion || 0;
+    if (_lastPlatformConfigVersion === 0) {
+      _lastPlatformConfigVersion = ver;
+    } else if (ver > _lastPlatformConfigVersion) {
+      clearInterval(_configPollTimer);
+      _configPollTimer = null;
+      _lastPlatformConfigVersion = 0;
+      showCenterNotify('平台配置已更新，正在刷新...');
+      setTimeout(function(){ window.location.reload(); }, 1000);
+    }
+  } catch(e) {}
 }
 
 // 页面加载后启动轮询
