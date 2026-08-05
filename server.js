@@ -2976,8 +2976,8 @@ app.post('/api/admin/login', async (req, res) => {
       created: now()  // 保存 token 和创建时间
     });
 
-    // 更新状态为在线并记录最后登录时间
-    await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now() });
+    // 更新状态为在线并记录最后登录时间，清除踢出标记
+    await db.ref(`admins/${id}`).update({ status: '在线', lastLogin: now(), forceLogoutAt: null });
 
     return res.json({ ok: true, token, nickname: admin.nickname || admin.id, permissions: admin.permissions || {}, isSuper: !!admin.isSuper, platform_id: admin.platform_id || 'default' });  // 返回登录成功的 token 和权限
 
