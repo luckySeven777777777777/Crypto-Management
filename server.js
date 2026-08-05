@@ -2125,7 +2125,19 @@ const text = `🔥 <b>New Loan Application</b> 🔥
 // 发送到 Telegram 群
 await sendLoanToTelegram(text, [front, back, hand]);
 
-return res.json({ success: true, orderId: 'loan_' + Date.now() });
+    const orderId = genOrderId('LOAN');
+    const amtNum = Number(amount);
+    await db.ref(`orders/loans/${orderId}`).set({
+      userId,
+      amount: amtNum,
+      dailyInterest: Number((amtNum * 0.0016).toFixed(4)),
+      estimate: amtNum,
+      period: Number(period),
+      status: 'pending',
+      type: 'loan',
+      timestamp: now()
+    });
+    return res.json({ success: true, orderId });
 
 
   } catch (e) {
@@ -2218,17 +2230,19 @@ app.get('/api/transactions', async (req, res) => {
       console.error('[transactions] failed to get admin info:', e.message);
     }
 
-    const [rechargeSnap, withdrawSnap, buysellSnap, usersSnap] =
+    const [rechargeSnap, withdrawSnap, buysellSnap, loansSnap, usersSnap] =
       await Promise.all([
         db.ref('orders/recharge').once('value'),
         db.ref('orders/withdraw').once('value'),
         db.ref('orders/buysell').once('value'),
+        db.ref('orders/loans').once('value'),
         db.ref('users').once('value')
       ]);
 
     let rechargeList = sortByTimeDesc(Object.values(rechargeSnap.val() || {}));
     let withdrawList = sortByTimeDesc(Object.values(withdrawSnap.val() || {}));
     let buysellList  = sortByTimeDesc(Object.values(buysellSnap.val() || {}));
+    let loansList    = sortByTimeDesc(Object.values(loansSnap.val() || {}));
 
     // Platform filtering: non-super-admin only sees own platform orders
     if (!currentAdminIsSuper && currentAdminPlatform) {
@@ -2242,6 +2256,10 @@ app.get('/api/transactions', async (req, res) => {
           return pid === currentAdminPlatform;
         });
         buysellList = buysellList.filter(o => {
+          const pid = o.platform_id || 'default';
+          return pid === currentAdminPlatform;
+        });
+        loansList = loansList.filter(o => {
           const pid = o.platform_id || 'default';
           return pid === currentAdminPlatform;
         });
@@ -2265,6 +2283,10 @@ app.get('/api/transactions', async (req, res) => {
           const t = Number(o.timestamp || 0);
           return t >= currentAdminCreated;
         });
+        loansList = loansList.filter(o => {
+          const t = Number(o.timestamp || 0);
+          return t >= currentAdminCreated;
+        });
       } catch (e) {
         console.error('[transactions] created filter error:', e.message);
       }
@@ -2276,7 +2298,7 @@ app.get('/api/transactions', async (req, res) => {
       try {
         // Collect all user IDs from filtered orders
         const visibleUserIds = new Set();
-        [...rechargeList, ...withdrawList, ...buysellList].forEach(o => {
+        [...rechargeList, ...withdrawList, ...buysellList, ...loansList].forEach(o => {
           const uid = o.userId || o.user;
           if (uid) visibleUserIds.add(uid);
         });
@@ -2298,6 +2320,7 @@ app.get('/api/transactions', async (req, res) => {
       recharge: rechargeList,
       withdraw: withdrawList,
       buysell:  buysellList,
+      loans:    loansList,
       users: usersObj
     });
 
@@ -3105,6 +3128,22 @@ if (isApproved) {
       userId,
       balance: curBal,
       source: 'recharge_approved'
+    });
+  } else if (type === 'loan') {
+    curBal += amt;
+    await userRef.update({
+      balance: curBal,
+      creditLoan: amt,
+      lastUpdate: now(),
+      boost_last: now()
+    });
+
+    broadcastSSE({
+      type: 'balance',
+      userId,
+      balance: curBal,
+      creditLoan: amt,
+      source: 'loan_approved'
     });
   }
  }
@@ -4736,6 +4775,44 @@ app.get('/api/platform/by-domain', async (req, res) => {
   } catch(e) {
     console.error('[platform/by-domain] error:', e.message);
     return res.json({ success: true, platform_id: 'default', name: '默认平台' });
+  }
+});
+
+/* ---------------------------------------------------------
+   Loan Records Endpoint
+--------------------------------------------------------- */
+app.get('/api/loan/records', async (req, res) => {
+  try {
+    const userId = req.query.userId || '';
+    if (!userId) return res.json({ success: true, loans: [] });
+    if (!db) return res.json({ success: true, loans: [] });
+
+    const snap = await db.ref('orders/loans').once('value');
+    const allLoans = snap.val() || {};
+    const loans = Object.values(allLoans).filter(o => o.userId === userId);
+    return res.json({ success: true, loans });
+  } catch (e) {
+    console.error('[loan records error]', e);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/* ---------------------------------------------------------
+   Loan Records by UserId (param-based, for client compat)
+--------------------------------------------------------- */
+app.get('/api/order/loans/user/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId || '';
+    if (!userId) return res.json({ success: true, loans: [] });
+    if (!db) return res.json({ success: true, loans: [] });
+
+    const snap = await db.ref('orders/loans').once('value');
+    const allLoans = snap.val() || {};
+    const loans = Object.values(allLoans).filter(o => o.userId === userId);
+    return res.json({ success: true, loans });
+  } catch (e) {
+    console.error('[loan records error]', e);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
