@@ -2485,6 +2485,20 @@ app.get('/api/admin/list', async (req, res) => {
         }
       } catch(e) { console.error('[admin list] failed to load platforms:', e.message); }
 
+      // 预加载所有有效 token，用于校验“在线”状态是否真实有效
+      let activeTokenAdminIds = new Set();
+      try {
+        const tSnap = await db.ref('admins_by_token').once('value');
+        if (tSnap.exists()) {
+          tSnap.forEach(tChild => {
+            try {
+              const tVal = tChild.val();
+              if (tVal && tVal.id) activeTokenAdminIds.add(String(tVal.id));
+            } catch(e) {}
+          });
+        }
+      } catch(e) { console.error('[admin list] failed to load tokens:', e.message); }
+
       snap.forEach(child => {
         try {
           const a = child.val();
@@ -2501,13 +2515,18 @@ app.get('/api/admin/list', async (req, res) => {
           if (platformId === 'default' && !firebasePlatforms['default']) {
             platformName = 'Default';
           }
+          // 校验在线状态：status 为“在线”但 admins_by_token 中无对应 token → 离线
+          let adminStatus = a.status || '离线';
+          if (adminStatus === '在线' && !activeTokenAdminIds.has(String(a.id))) {
+            adminStatus = '离线';
+          }
           list.push({
             id: a.id,
             nickname: a.nickname || a.id,
             loginToken: a.loginToken || '',
             isSuper: !!a.isSuper,
             isActive: a.isActive !== false,
-            status: a.status || '离线',
+            status: adminStatus,
             permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
             createdBy: a.createdBy || 'system',
             created: a.created || 0,
