@@ -2415,7 +2415,8 @@ app.post('/api/admin/create', async (req, res) => {
       withdraw: req.body.withdraw === true || req.body.withdraw === 'true',
       buysell:  req.body.buysell  === true || req.body.buysell  === 'true',
       admin:    req.body.admin    === true || req.body.admin    === 'true',
-      balance_adjust: req.body.balance_adjust === true || req.body.balance_adjust === 'true'
+      balance_adjust: req.body.balance_adjust === true || req.body.balance_adjust === 'true',
+      loan:     req.body.loan     === true || req.body.loan     === 'true'
     };
 
     // 保存管理员信息到 Firebase 数据库
@@ -2597,7 +2598,7 @@ app.get('/api/admin/list', async (req, res) => {
             isSuper: !!a.isSuper,
             isActive: a.isActive !== false,
             status: a.status || '离线',
-            permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
+            permissions: a.permissions || { recharge: true, withdraw: true, buysell: true, loan: false },
             createdBy: a.createdBy || 'system',
             created: a.created || 0,
             lastLogin: a.lastLogin || 0,
@@ -2766,7 +2767,8 @@ app.post('/api/admin/update-permissions', async (req, res) => {
       withdraw: !!permissions.withdraw,
       buysell:  !!permissions.buysell,
       admin:    !!permissions.admin,
-      balance_adjust: !!permissions.balance_adjust
+      balance_adjust: !!permissions.balance_adjust,
+      loan:     !!permissions.loan
     });
     return res.json({ ok: true });
   } catch (e) {
