@@ -2127,7 +2127,10 @@ await sendLoanToTelegram(text, [front, back, hand]);
 
     const orderId = genOrderId('LOAN');
     const amtNum = Number(amount);
+    const ts = now();
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
     await db.ref(`orders/loans/${orderId}`).set({
+      orderId,
       userId,
       amount: amtNum,
       dailyInterest: Number((amtNum * 0.0016).toFixed(4)),
@@ -2135,7 +2138,11 @@ await sendLoanToTelegram(text, [front, back, hand]);
       period: Number(period),
       status: 'pending',
       type: 'loan',
-      timestamp: now()
+      timestamp: ts,
+      time_us: usTime(ts),
+      ip: clientIp,
+      country: '',
+      platform_id: 'default'
     });
     return res.json({ success: true, orderId });
 
