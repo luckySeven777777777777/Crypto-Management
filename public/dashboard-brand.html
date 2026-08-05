@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -1122,11 +1122,12 @@ button {
       <input id="newAdminNickname" data-i18n="placeholder" data-key="nickname" placeholder="昵称（显示用）">
       <input id="newAdminPassword" data-i18n="placeholder" data-key="initPwd" placeholder="初始密码">
 
+      <label><input type="checkbox" value="buysell"> <span data-i18n="text" data-key="buysell">BuySell</span></label>
       <label><input type="checkbox" value="recharge"> <span data-i18n="text" data-key="recharge">充值</span></label>
       <label><input type="checkbox" value="withdraw"> <span data-i18n="text" data-key="withdraw">提款</span></label>
-      <label><input type="checkbox" value="buysell"> <span data-i18n="text" data-key="buysell">BuySell</span></label>
-      <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
       <label><input type="checkbox" value="balance_adjust"> <span data-i18n="text" data-key="balanceAdjust">加减操作</span></label>
+      <label><input type="checkbox" value="loan"> <span data-i18n="text" data-key="loanPermission">贷款</span></label>
+      <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
 
       <select id="newAdminPlatform" style="margin-left:8px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
         <option value="default">所属平台：Default</option>
@@ -1142,13 +1143,15 @@ button {
           <th data-i18n="text" data-key="account">账号</th>
           <th data-i18n="text" data-key="permissions">权限</th>
           <th data-i18n="text" data-key="loginLink">登录链接</th>
+          <th>创建时间</th>
           <th id="adminPlatformHeader">所属平台</th>
           <th data-i18n="text" data-key="status">状态</th>
           <th data-i18n="text" data-key="operation">操作</th>
+          <th>操作人</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="6"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+        <tr><td colspan="8"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -1173,11 +1176,13 @@ button {
           <th>Bot Token</th>
           <th>Chat IDs</th>
           <th>创建时间</th>
+          <th>状态</th>
           <th>操作</th>
+          <th>操作人</th>
         </tr>
       </thead>
       <tbody id="platformTableBody">
-        <tr><td colspan="6">加载中...</td></tr>
+        <tr><td colspan="8">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -5629,7 +5634,7 @@ async function loadAdmins(){
     const j = await r.json();
     if (!j.ok) {
       showCenterNotify('加载管理员列表失败: ' + (j.error || '未知'));
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
       if (btn) { btn.disabled = false; btn.textContent = origText; }
       return;
     }
@@ -5645,11 +5650,11 @@ async function loadAdmins(){
       renderAdminTable(j.admins || []);
     } catch(e) {
       console.error('[loadAdmins] renderAdminTable error:', e.message);
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
     }
   } catch(e) {
     showCenterNotify('加载管理员列表失败: ' + e.message);
-    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
@@ -5660,13 +5665,13 @@ function renderAdminTable(admins){
   if (!tbody) { console.error('[renderAdminTable] adminTable element not found'); return; }
   // Safety: ensure admins is an array
   if (!Array.isArray(admins)) {
-    tbody.innerHTML = '<tr><td colspan="6">数据格式错误</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8">数据格式错误</td></tr>';
     return;
   }
   // 过滤掉空白ID的异常账号
   admins = admins.filter(a => a && a.id && String(a.id).trim());
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8">暂无管理员</td></tr>';
     return;
   }
   const showPlatformCol = isSuperAdmin();
@@ -5687,19 +5692,24 @@ function renderAdminTable(admins){
     const platformName = a.platform_name || a.platform_id || 'Default';
     const platformCol = showPlatformCol ? '<td><span style="font-weight:600">' + escHtml1(platformName) + '</span></td>' : '';
 
+    const createTime = a.created_at ? new Date(a.created_at).toLocaleString('zh-CN') : '--';
+    const operatorName = a.last_operator || a.createdBy || '--';
+
     html += '<tr>' +
       '<td>' + escHtml1(a.id) + star + '</td>' +
       '<td style="white-space:nowrap">' +
+        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
         '<label><input type="checkbox" data-field="recharge" ' + (perms.recharge ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 充值</label> ' +
         '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
-        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
-        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label> ' +
-        '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label>' +
+        '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label> ' +
+        '<label><input type="checkbox" data-field="loan" ' + (perms.loan ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 贷款</label> ' +
+        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label>' +
       '</td>' +
       '<td>' +
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
         '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
       '</td>' +
+      '<td>' + escHtml1(createTime) + '</td>' +
       platformCol +
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
       '<td>' +
@@ -5707,8 +5717,8 @@ function renderAdminTable(admins){
         '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
         (a.isSuper ? '' : '<button class="danger" style="padding:4px 10px" onclick="if(confirm(\'确认踢出管理员 ' + escHtml1(a.id) + '？\'))kickAdmin(\'' + escHtml1(a.id) + '\')">踢出</button> ') +
         '<button class="danger" onclick="if(confirm(\'确认删除管理员 ' + escHtml1(a.id) + '？\'))deleteAdmin(\'' + escHtml1(a.id) + '\')">删除</button>' +
-        '<div class="small">创建人: ' + escHtml1(a.createdBy || 'system') + '</div>' +
       '</td>' +
+      '<td><div class="small">' + escHtml1(operatorName) + '</div></td>' +
     '</tr>';
   });
   tbody.innerHTML = html;
@@ -5753,7 +5763,8 @@ async function createAdmin(){
         withdraw: cb('withdraw'),
         buysell:  cb('buysell'),
         admin: cb('admin'),
-        balance_adjust: cb('balance_adjust')
+        balance_adjust: cb('balance_adjust'),
+        loan: cb('loan')
       })
     });
     const j = await r.json();
@@ -5915,18 +5926,18 @@ async function loadPlatformList() {
 
     const tbody = document.getElementById('platformTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6">加载中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
 
     const r = await fetch('/api/admin/platforms', { headers: authHeaders() });
     const j = await r.json();
     if (!j || !j.platforms) {
-      tbody.innerHTML = '<tr><td colspan="6">加载失败</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8">加载失败</td></tr>';
       return;
     }
 
     const platforms = j.platforms || [];
     if (!platforms.length) {
-      tbody.innerHTML = '<tr><td colspan="6">暂无平台（除 Default 外）</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8">暂无平台（除 Default 外）</td></tr>';
       return;
     }
 
@@ -5937,13 +5948,27 @@ async function loadPlatformList() {
       const safeDomain = escHtml1(p.domain || '--');
       const safeToken = escHtml1(p.bot_token_masked || '--');
       const safeChats = escHtml1(p.chat_ids || '--');
+      const isActive = p.isActive !== false;
+      const statusColor = isActive ? 'green' : '#999';
+      const activeLabel = isActive ? '已启用' : '已禁用';
+      const toggleLabel = isActive ? '禁用' : '启用';
+      const toggleClass = isActive ? 'secondary' : 'primary';
+      const opName = escHtml1(p.last_operator || p.created_by || '--');
       return '<tr>' +
         '<td><strong>' + safeName + '</strong><div class="small">ID: ' + safeId + '</div></td>' +
         '<td>' + safeDomain + '</td>' +
         '<td><code>' + safeToken + '</code></td>' +
         '<td>' + safeChats + '</td>' +
         '<td>' + escHtml1(timeStr) + '</td>' +
-        '<td><button class="danger" onclick="deletePlatform(\'' + safeId + '\')">删除</button></td>' +
+        '<td><span style="color:' + statusColor + '">在线</span> · ' + activeLabel + '</td>' +
+        '<td>' +
+          '<button class="' + toggleClass + '" onclick="togglePlatformStatus(\'' + safeId + '\',' + (!isActive) + ')">' + toggleLabel + '</button> ' +
+          '<button class="primary" style="padding:4px 10px" onclick="pushPlatformUpdate(\'' + safeId + '\',this)">更新</button> ' +
+          '<button class="danger" style="padding:4px 10px" onclick="if(confirm(\'确认踢出平台 ' + safeName + ' 所有用户？\'))kickPlatform(\'' + safeId + '\')">踢出</button> ' +
+          '<button class="primary" style="padding:4px 10px" onclick="editPlatformRow(this)">编辑</button> ' +
+          '<button class="danger" onclick="if(confirm(\'确认删除平台 ' + safeName + '？\'))deletePlatform(\'' + safeId + '\')">删除</button>' +
+        '</td>' +
+        '<td><div class="small">' + opName + '</div></td>' +
       '</tr>';
     }).join('');
 
@@ -5954,7 +5979,7 @@ async function loadPlatformList() {
     console.error('[loadPlatformList] error:', e.message);
     try {
       const tbody = document.getElementById('platformTableBody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6">加载失败: ' + e.message + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8">加载失败: ' + e.message + '</td></tr>';
     } catch(e2) {}
   }
 }
@@ -6017,6 +6042,134 @@ async function deletePlatform(id) {
     loadPlatformList();
   } catch(e) {
     showCenterNotify('删除失败: ' + e.message);
+  }
+}
+
+async function togglePlatformStatus(id, isActive) {
+  try {
+    const r = await fetch('/api/admin/platform/toggle-status', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ platform_id: id, isActive: isActive })
+    });
+    const j = await r.json();
+    if (!j.ok) {
+      showCenterNotify('操作失败: ' + (j.error || '未知错误'));
+      return;
+    }
+    showCenterNotify('平台 ' + id + ' 已' + (isActive ? '启用' : '禁用'));
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('操作失败: ' + e.message);
+  }
+}
+
+async function pushPlatformUpdate(id, btn) {
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '推送中...'; }
+    const r = await fetch('/api/admin/platform/push-update', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ platform_id: id })
+    });
+    const j = await r.json();
+    if (!j.ok) {
+      showCenterNotify('推送失败: ' + (j.error || '未知错误'));
+      return;
+    }
+    showCenterNotify('平台 ' + id + ' 配置更新已推送');
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('推送失败: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '更新'; }
+  }
+}
+
+async function kickPlatform(id) {
+  try {
+    const r = await fetch('/api/admin/platform/kick', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ platform_id: id })
+    });
+    const j = await r.json();
+    if (!j.ok) {
+      showCenterNotify('踢出失败: ' + (j.error || '未知错误'));
+      return;
+    }
+    showCenterNotify('平台 ' + id + ' 所有用户已踢出');
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('踢出失败: ' + e.message);
+  }
+}
+
+function editPlatformRow(btn) {
+  const row = btn.closest('tr');
+  if (!row) return;
+  const cells = row.querySelectorAll('td');
+  if (cells.length < 5) return;
+
+  const nameCell = cells[0];
+  const domainCell = cells[1];
+  const tokenCell = cells[2];
+  const chatCell = cells[3];
+
+  const platformId = nameCell.querySelector('.small') ? nameCell.querySelector('.small').textContent.replace('ID: ', '').trim() : '';
+  const currentName = nameCell.querySelector('strong') ? nameCell.querySelector('strong').textContent : '';
+  const currentDomain = domainCell.textContent.trim();
+  const currentToken = tokenCell.textContent.trim();
+  const currentChats = chatCell.textContent.trim();
+
+  nameCell.innerHTML = '<input type="text" value="' + escHtml1(currentName) + '" class="edit-platform-name" style="width:120px">' +
+    '<div class="small">ID: ' + escHtml1(platformId) + '</div>';
+  domainCell.innerHTML = '<input type="text" value="' + escHtml1(currentDomain === '--' ? '' : currentDomain) + '" class="edit-platform-domain" style="width:150px">';
+  tokenCell.innerHTML = '<input type="text" value="' + escHtml1(currentToken === '--' ? '' : currentToken) + '" class="edit-platform-token" style="width:200px">';
+  chatCell.innerHTML = '<input type="text" value="' + escHtml1(currentChats === '--' ? '' : currentChats) + '" class="edit-platform-chats" style="width:160px">';
+
+  const actionCell = cells[5];
+  actionCell.innerHTML = '<button class="primary" onclick="savePlatformRow(this,\'' + escHtml1(platformId) + '\')">保存</button> ' +
+    '<button class="secondary" onclick="loadPlatformList()">取消</button>';
+}
+
+async function savePlatformRow(btn, platformId) {
+  const row = btn.closest('tr');
+  if (!row) return;
+
+  const nameInput = row.querySelector('.edit-platform-name');
+  const domainInput = row.querySelector('.edit-platform-domain');
+  const tokenInput = row.querySelector('.edit-platform-token');
+  const chatsInput = row.querySelector('.edit-platform-chats');
+
+  const name = nameInput ? nameInput.value.trim() : '';
+  const domain = domainInput ? domainInput.value.trim() : '';
+  const bot_token = tokenInput ? tokenInput.value.trim() : '';
+  const chat_ids = chatsInput ? chatsInput.value.trim() : '';
+
+  if (!name) {
+    showCenterNotify('平台昵称不能为空');
+    return;
+  }
+
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+    const r = await fetch('/api/admin/platform/update', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ platform_id: platformId, name, domain, bot_token, chat_ids })
+    });
+    const j = await r.json();
+    if (!j.ok) {
+      showCenterNotify('保存失败: ' + (j.error || '未知错误'));
+      return;
+    }
+    showCenterNotify('平台 ' + name + ' 更新成功');
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('保存失败: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '保存'; }
   }
 }
 
