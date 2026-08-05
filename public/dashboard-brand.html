@@ -1143,6 +1143,7 @@ button {
           <th data-i18n="text" data-key="account">账号</th>
           <th data-i18n="text" data-key="permissions">权限</th>
           <th data-i18n="text" data-key="loginLink">登录链接</th>
+          <th>创建时间</th>
           <th id="adminPlatformHeader">所属平台</th>
           <th data-i18n="text" data-key="status">状态</th>
           <th data-i18n="text" data-key="operation">操作</th>
@@ -1150,7 +1151,7 @@ button {
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="7"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+        <tr><td colspan="8"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -1176,12 +1177,13 @@ button {
           <th>Bot Token</th>
           <th>Chat IDs</th>
           <th>创建时间</th>
+          <th>状态</th>
           <th>操作</th>
           <th>操作人</th>
         </tr>
       </thead>
       <tbody id="platformTableBody">
-        <tr><td colspan="7">加载中...</td></tr>
+        <tr><td colspan="8">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -5634,7 +5636,7 @@ async function loadAdmins(){
     const j = await r.json();
     if (!j.ok) {
       showCenterNotify('加载管理员列表失败: ' + (j.error || '未知'));
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="7">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
       if (btn) { btn.disabled = false; btn.textContent = origText; }
       return;
     }
@@ -5650,11 +5652,11 @@ async function loadAdmins(){
       renderAdminTable(j.admins || []);
     } catch(e) {
       console.error('[loadAdmins] renderAdminTable error:', e.message);
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="7">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
     }
   } catch(e) {
     showCenterNotify('加载管理员列表失败: ' + e.message);
-    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="7">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
@@ -5665,17 +5667,23 @@ function renderAdminTable(admins){
   if (!tbody) { console.error('[renderAdminTable] adminTable element not found'); return; }
   // Safety: ensure admins is an array
   if (!Array.isArray(admins)) {
-    tbody.innerHTML = '<tr><td colspan="7">数据格式错误</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8">数据格式错误</td></tr>';
     return;
   }
   // 过滤掉空白ID的异常账号
   admins = admins.filter(a => a && a.id && String(a.id).trim());
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="7">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8">暂无管理员</td></tr>';
     return;
   }
   const showPlatformCol = isSuperAdmin();
   let html = '';
+  const platformDomainMap = {};
+  if (window._platforms) {
+    for (const [pid, domain] of Object.entries(window._platforms)) {
+      platformDomainMap[pid] = domain;
+    }
+  }
   // 非超级管理员只能看到自己和自己创建的下级账号
   if (!isSuperAdmin()) {
     const myId = getAdminId();
@@ -5688,7 +5696,12 @@ function renderAdminTable(admins){
     const toggleLabel = a.isActive ? '禁用' : '启用';
     const toggleClass = a.isActive ? 'secondary' : 'primary';
     const star = a.isSuper ? ' <span style="color:gold">★</span>' : '';
-    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(a.id);
+    let uniqueUrl;
+    if (a.platform_id && a.platform_id !== 'default' && platformDomainMap[a.platform_id]) {
+      uniqueUrl = 'https://' + platformDomainMap[a.platform_id] + '/dashboard-brand.html?login=' + encodeURIComponent(a.id);
+    } else {
+      uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(a.id);
+    }
     const platformName = a.platform_name || a.platform_id || 'Default';
     const platformCol = showPlatformCol ? '<td><span style="font-weight:600">' + escHtml1(platformName) + '</span></td>' : '';
 
@@ -5706,6 +5719,7 @@ function renderAdminTable(admins){
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
         '<br><button class="primary" style="padding:2px 6px;font-size:11px" onclick="copyLoginLink(\'' + escHtml1(uniqueUrl) + '\')">复制登录链接</button>' +
       '</td>' +
+      '<td>' + escHtml1(new Date(a.created).toLocaleString('zh-CN')) + '</td>' +
       platformCol +
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
       '<td>' +
@@ -5768,7 +5782,12 @@ async function createAdmin(){
     if (idEl) idEl.value = '';
     if (nickEl) nickEl.value = '';
     if (pwEl) pwEl.value = '';
-    const uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(id);
+    let uniqueUrl;
+    if (platformId && platformId !== 'default' && window._platforms && window._platforms[platformId]) {
+      uniqueUrl = 'https://' + window._platforms[platformId] + '/dashboard-brand.html?login=' + encodeURIComponent(id);
+    } else {
+      uniqueUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(id);
+    }
     showCenterNotify('创建成功！\n账号：' + id + '\n昵称：' + (nickname || id) + '\n初始密码：' + password + '\n专属登录链接：\n' + uniqueUrl);
     loadAdmins();
   } catch(e) {
@@ -5922,18 +5941,21 @@ async function loadPlatformList() {
 
     const tbody = document.getElementById('platformTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7">加载中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
 
     const r = await fetch('/api/admin/platforms', { headers: authHeaders() });
     const j = await r.json();
     if (!j || !j.platforms) {
-      tbody.innerHTML = '<tr><td colspan="7">加载失败</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8">加载失败</td></tr>';
       return;
     }
 
     const platforms = j.platforms || [];
+    // 存储平台域名映射供其他函数使用
+    window._platforms = {};
+    platforms.forEach(p => { window._platforms[p.id] = p.domain; });
     if (!platforms.length) {
-      tbody.innerHTML = '<tr><td colspan="7">暂无平台（除 Default 外）</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8">暂无平台（除 Default 外）</td></tr>';
       return;
     }
 
@@ -5953,6 +5975,7 @@ async function loadPlatformList() {
         '<td><code>' + safeToken + '</code></td>' +
         '<td>' + safeChats + '</td>' +
         '<td>' + escHtml1(timeStr) + '</td>' +
+        '<td><span style="color:' + (isActive ? 'green' : '#999') + '">' + (isActive ? '启用' : '禁用') + '</span></td>' +
         '<td>' +
           '<button class="' + toggleClass + '" onclick="togglePlatformStatus(\'' + safeId + '\',' + (!isActive) + ')">' + toggleLabel + '</button> ' +
           '<button class="primary" style="padding:4px 10px" onclick="pushPlatformUpdate(\'' + safeId + '\')">更新</button> ' +
@@ -5971,7 +5994,7 @@ async function loadPlatformList() {
     console.error('[loadPlatformList] error:', e.message);
     try {
       const tbody = document.getElementById('platformTableBody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="7">加载失败: ' + e.message + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8">加载失败: ' + e.message + '</td></tr>';
     } catch(e2) {}
   }
 }
@@ -6204,7 +6227,17 @@ async function checkKickStatus() {
       const kickedId = getAdminId();
       clearAdminState();
       showCenterNotify('您的账号已被管理员强制下线，请重新登录。');
-      setTimeout(function(){ location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId); }, 1500);
+      setTimeout(function(){
+        let redirectUrl = window.location.pathname + '?login=' + encodeURIComponent(kickedId);
+        const myPlatform = getAdminPlatform();
+        const domain = window._platforms && window._platforms[myPlatform];
+        if (myPlatform && myPlatform !== 'default' && domain) {
+          redirectUrl = 'https://' + domain + '/dashboard-brand.html?login=' + encodeURIComponent(kickedId);
+        } else {
+          redirectUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(kickedId);
+        }
+        location.href = redirectUrl;
+      }, 1500);
       return;
     }
     const data = await resp.json();
@@ -6212,7 +6245,17 @@ async function checkKickStatus() {
       const kickedId = getAdminId();
       clearAdminState();
       showCenterNotify('您的账号已被管理员强制下线，请重新登录。');
-      setTimeout(function(){ location.href = window.location.pathname + '?login=' + encodeURIComponent(kickedId); }, 1500);
+      setTimeout(function(){
+        let redirectUrl = window.location.pathname + '?login=' + encodeURIComponent(kickedId);
+        const myPlatform = getAdminPlatform();
+        const domain = window._platforms && window._platforms[myPlatform];
+        if (myPlatform && myPlatform !== 'default' && domain) {
+          redirectUrl = 'https://' + domain + '/dashboard-brand.html?login=' + encodeURIComponent(kickedId);
+        } else {
+          redirectUrl = window.location.origin + window.location.pathname + '?login=' + encodeURIComponent(kickedId);
+        }
+        location.href = redirectUrl;
+      }, 1500);
     }
   } catch(e) {}
 }
