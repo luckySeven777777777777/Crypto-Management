@@ -1146,10 +1146,11 @@ button {
           <th id="adminPlatformHeader">所属平台</th>
           <th data-i18n="text" data-key="status">状态</th>
           <th data-i18n="text" data-key="operation">操作</th>
+          <th>操作人</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="6"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+        <tr><td colspan="7"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -1175,10 +1176,11 @@ button {
           <th>Chat IDs</th>
           <th>创建时间</th>
           <th>操作</th>
+          <th>操作人</th>
         </tr>
       </thead>
       <tbody id="platformTableBody">
-        <tr><td colspan="6">加载中...</td></tr>
+        <tr><td colspan="7">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -5631,7 +5633,7 @@ async function loadAdmins(){
     const j = await r.json();
     if (!j.ok) {
       showCenterNotify('加载管理员列表失败: ' + (j.error || '未知'));
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="7">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
       if (btn) { btn.disabled = false; btn.textContent = origText; }
       return;
     }
@@ -5647,11 +5649,11 @@ async function loadAdmins(){
       renderAdminTable(j.admins || []);
     } catch(e) {
       console.error('[loadAdmins] renderAdminTable error:', e.message);
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="7">渲染失败: ' + e.message + '</td></tr>'; } catch(e2) {}
     }
   } catch(e) {
     showCenterNotify('加载管理员列表失败: ' + e.message);
-    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="6">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
+    try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="7">加载失败: ' + e.message + '</td></tr>'; } catch(e2) {}
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
@@ -5662,13 +5664,13 @@ function renderAdminTable(admins){
   if (!tbody) { console.error('[renderAdminTable] adminTable element not found'); return; }
   // Safety: ensure admins is an array
   if (!Array.isArray(admins)) {
-    tbody.innerHTML = '<tr><td colspan="6">数据格式错误</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7">数据格式错误</td></tr>';
     return;
   }
   // 过滤掉空白ID的异常账号
   admins = admins.filter(a => a && a.id && String(a.id).trim());
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="6">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7">暂无管理员</td></tr>';
     return;
   }
   const showPlatformCol = isSuperAdmin();
@@ -5692,12 +5694,12 @@ function renderAdminTable(admins){
     html += '<tr>' +
       '<td>' + escHtml1(a.id) + star + '</td>' +
       '<td style="white-space:nowrap">' +
+        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
         '<label><input type="checkbox" data-field="recharge" ' + (perms.recharge ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 充值</label> ' +
         '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
-        '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
-        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label> ' +
         '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label> ' +
-        '<label><input type="checkbox" data-field="loan" ' + (perms.loan ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 贷款</label>' +
+        '<label><input type="checkbox" data-field="loan" ' + (perms.loan ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 贷款</label> ' +
+        '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label>' +
       '</td>' +
       '<td>' +
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
@@ -5710,8 +5712,8 @@ function renderAdminTable(admins){
         '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
         (a.isSuper ? '' : '<button class="danger" style="padding:4px 10px" onclick="if(confirm(\'确认踢出管理员 ' + escHtml1(a.id) + '？\'))kickAdmin(\'' + escHtml1(a.id) + '\')">踢出</button> ') +
         '<button class="danger" onclick="if(confirm(\'确认删除管理员 ' + escHtml1(a.id) + '？\'))deleteAdmin(\'' + escHtml1(a.id) + '\')">删除</button>' +
-        '<div class="small">创建人: ' + escHtml1(a.createdBy || 'system') + '</div>' +
       '</td>' +
+      '<td>' + escHtml1(a.createdBy || 'system') + '</td>' +
     '</tr>';
   });
   tbody.innerHTML = html;
@@ -5919,18 +5921,18 @@ async function loadPlatformList() {
 
     const tbody = document.getElementById('platformTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6">加载中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7">加载中...</td></tr>';
 
     const r = await fetch('/api/admin/platforms', { headers: authHeaders() });
     const j = await r.json();
     if (!j || !j.platforms) {
-      tbody.innerHTML = '<tr><td colspan="6">加载失败</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7">加载失败</td></tr>';
       return;
     }
 
     const platforms = j.platforms || [];
     if (!platforms.length) {
-      tbody.innerHTML = '<tr><td colspan="6">暂无平台（除 Default 外）</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7">暂无平台（除 Default 外）</td></tr>';
       return;
     }
 
@@ -5941,13 +5943,23 @@ async function loadPlatformList() {
       const safeDomain = escHtml1(p.domain || '--');
       const safeToken = escHtml1(p.bot_token_masked || '--');
       const safeChats = escHtml1(p.chat_ids || '--');
+      const isActive = p.isActive !== false;
+      const toggleLabel = isActive ? '禁用' : '启用';
+      const toggleClass = isActive ? 'secondary' : 'primary';
       return '<tr>' +
         '<td><strong>' + safeName + '</strong><div class="small">ID: ' + safeId + '</div></td>' +
         '<td>' + safeDomain + '</td>' +
         '<td><code>' + safeToken + '</code></td>' +
         '<td>' + safeChats + '</td>' +
         '<td>' + escHtml1(timeStr) + '</td>' +
-        '<td><button class="danger" onclick="deletePlatform(\'' + safeId + '\')">删除</button></td>' +
+        '<td>' +
+          '<button class="' + toggleClass + '" onclick="togglePlatformStatus(\'' + safeId + '\',' + (!isActive) + ')">' + toggleLabel + '</button> ' +
+          '<button class="primary" style="padding:4px 10px" onclick="pushPlatformUpdate(\'' + safeId + '\')">更新</button> ' +
+          (p.id === 'default' ? '' : '<button class="danger" style="padding:4px 10px" onclick="if(confirm(\'确认踢出平台 ' + safeName + '？\'))kickPlatform(\'' + safeId + '\')">踢出</button> ') +
+          '<button class="primary" style="padding:4px 10px" onclick="editPlatform(\'' + safeId + '\')">编辑</button> ' +
+          '<button class="danger" onclick="if(confirm(\'确认删除平台 ' + safeName + '？\'))deletePlatform(\'' + safeId + '\')">删除</button>' +
+        '</td>' +
+        '<td>' + escHtml1(p.last_operated_by || p.created_by || 'system') + '</td>' +
       '</tr>';
     }).join('');
 
@@ -5958,7 +5970,7 @@ async function loadPlatformList() {
     console.error('[loadPlatformList] error:', e.message);
     try {
       const tbody = document.getElementById('platformTableBody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6">加载失败: ' + e.message + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7">加载失败: ' + e.message + '</td></tr>';
     } catch(e2) {}
   }
 }
@@ -6022,6 +6034,99 @@ async function deletePlatform(id) {
   } catch(e) {
     showCenterNotify('删除失败: ' + e.message);
   }
+}
+
+// 平台管理 - 切换启用/禁用状态
+async function togglePlatformStatus(id, isActive) {
+  try {
+    const r = await fetch('/api/admin/toggle-platform', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id, isActive })
+    });
+    const j = await r.json();
+    if (!j.ok) { showCenterNotify('操作失败: ' + (j.error || '未知')); return; }
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('操作失败: ' + e.message);
+  }
+}
+
+// 平台管理 - 推送配置更新
+async function pushPlatformUpdate(id) {
+  try {
+    const r = await fetch('/api/admin/push-platform-update', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (!j.ok) { showCenterNotify('更新失败: ' + (j.error || '未知')); return; }
+    showCenterNotify('平台 ' + id + ' 配置已更新');
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('更新失败: ' + e.message);
+  }
+}
+
+// 平台管理 - 踢出平台
+async function kickPlatform(id) {
+  try {
+    const r = await fetch('/api/admin/kick-platform', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (!j.ok) { showCenterNotify('踢出失败: ' + (j.error || '未知')); return; }
+    showCenterNotify('已踢出平台 ' + id);
+    loadPlatformList();
+  } catch(e) {
+    showCenterNotify('踢出失败: ' + e.message);
+  }
+}
+
+// 平台管理 - 编辑平台（弹出编辑框）
+function editPlatform(id) {
+  // 从当前列表中找到对应平台数据
+  const row = event.target.closest('tr');
+  if (!row) return;
+  const nameCell = row.cells[0];
+  const domainCell = row.cells[1];
+  const tokenCell = row.cells[2];
+  const chatCell = row.cells[3];
+
+  const currentName = (nameCell.querySelector('strong') ? nameCell.querySelector('strong').textContent : '') || '';
+  const currentId = (nameCell.querySelector('.small') ? nameCell.querySelector('.small').textContent.replace('ID: ', '') : '') || id;
+  const currentDomain = domainCell.textContent === '--' ? '' : domainCell.textContent;
+  const currentChats = chatCell.textContent === '--' ? '' : chatCell.textContent;
+
+  const newName = prompt('平台昵称:', currentName);
+  if (newName === null) return;
+  const newDomain = prompt('域名（可选）:', currentDomain);
+  if (newDomain === null) return;
+  const newToken = prompt('Bot Token（可选，留空不修改）:', '');
+  if (newToken === null) return;
+  const newChats = prompt('Chat IDs（逗号分隔，可选）:', currentChats);
+  if (newChats === null) return;
+
+  (async () => {
+    try {
+      const body = { id: currentId, name: newName.trim(), domain: newDomain.trim(), chat_ids: newChats.trim() };
+      if (newToken.trim()) body.bot_token = newToken.trim();
+      const r = await fetch('/api/admin/edit-platform', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body)
+      });
+      const j = await r.json();
+      if (!j.ok) { showCenterNotify('编辑失败: ' + (j.error || '未知')); return; }
+      showCenterNotify('平台 ' + id + ' 已更新');
+      loadPlatformList();
+    } catch(e) {
+      showCenterNotify('编辑失败: ' + e.message);
+    }
+  })();
 }
 
 // 每 5 秒检查是否有配置更新，如有则刷新页面
