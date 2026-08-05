@@ -1783,6 +1783,14 @@ button {
 
   // ===== 退出 =====
   function logout() {
+    // 通知服务端更新状态为离线
+    const token = localStorage.getItem('nexbit_admin_token');
+    if (token) {
+      fetch('/api/admin/logout', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+      }).catch(() => {});
+    }
     localStorage.removeItem('nexbit_admin_token');
     localStorage.removeItem('admin_user');
     const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
