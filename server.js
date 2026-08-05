@@ -2635,7 +2635,12 @@ app.post('/api/admin/toggle-status', async (req, res) => {
     if (!snap.exists())
       return res.status(404).json({ ok: false, error: 'admin not found' });
 
-    await db.ref(`admins/${id}`).update({ isActive });
+    // 禁用时同时标记强制下线时间，启用时清除标记
+    if (isActive) {
+      await db.ref(`admins/${id}`).update({ isActive, forceLogoutAt: null });
+    } else {
+      await db.ref(`admins/${id}`).update({ isActive, forceLogoutAt: now() });
+    }
     return res.json({ ok: true });
   } catch (e) {
     console.error('admin toggle-status error', e);
