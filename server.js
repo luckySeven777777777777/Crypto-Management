@@ -2646,6 +2646,26 @@ app.post('/api/admin/kick', async (req, res) => {
   }
 });
 
+// 管理员主动退出登录，更新状态为离线
+app.post('/api/admin/logout', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ ok: false });
+
+    const tokenSnap = await db.ref(`admins_by_token/${token}`).once('value');
+    if (!tokenSnap.exists()) return res.status(401).json({ ok: false });
+
+    const adminId = tokenSnap.val().id;
+    await db.ref(`admins/${adminId}`).update({ status: '离线' });
+    await db.ref(`admins_by_token/${token}`).remove();
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin logout error', e);
+    return res.status(500).json({ ok: false, error: 'internal server error' });
+  }
+});
+
 // 检查是否被踢出（客户端轮询用）
 app.get('/api/admin/check-kicked', async (req, res) => {
   try {
