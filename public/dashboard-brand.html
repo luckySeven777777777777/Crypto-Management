@@ -1164,7 +1164,8 @@ button {
       <input id="platformBotToken" placeholder="Bot Token（可选）" style="width:240px">
       <input id="platformChatIds" placeholder="Chat IDs（逗号分隔，可选）" style="width:240px">
       <input id="platformDomain" placeholder="前台域名，如 www.abc.com（可选）" style="width:240px">
-      <button class="primary" onclick="createPlatform()">创建平台</button>
+      <button class="primary" id="platformSubmitBtn" onclick="createPlatform()">创建平台</button>
+      <button class="secondary" id="platformCancelBtn" style="display:none" onclick="cancelEditPlatform()">取消</button>
     </div>
 
     <table class="table">
@@ -5990,6 +5991,24 @@ async function createPlatform() {
     const chat_ids = chatsEl ? chatsEl.value.trim() : '';
     const domain = domainEl ? domainEl.value.trim() : '';
 
+    // Edit mode
+    if (_editingPlatformId) {
+      const body = { id: _editingPlatformId, name, domain, chat_ids };
+      if (bot_token) body.bot_token = bot_token;
+      const r = await fetch('/api/admin/edit-platform', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body)
+      });
+      const j = await r.json();
+      if (!j.ok) { showCenterNotify('编辑失败: ' + (j.error || '未知')); return; }
+      showCenterNotify('平台 ' + _editingPlatformId + ' 已更新');
+      cancelEditPlatform();
+      loadPlatformList();
+      return;
+    }
+
+    // Create mode
     const r = await fetch('/api/admin/platforms', {
       method: 'POST',
       headers: authHeaders(),
@@ -6008,7 +6027,7 @@ async function createPlatform() {
     showCenterNotify('平台 "' + (j.platform && j.platform.name || name) + '" 创建成功');
     loadPlatformList();
   } catch(e) {
-    showCenterNotify('创建失败: ' + e.message);
+    showCenterNotify('操作失败: ' + e.message);
   }
 }
 
@@ -6087,8 +6106,9 @@ async function kickPlatform(id) {
 }
 
 // 平台管理 - 编辑平台（弹出编辑框）
+let _editingPlatformId = null;
+
 function editPlatform(id) {
-  // 从当前列表中找到对应平台数据
   const row = event.target.closest('tr');
   if (!row) return;
   const nameCell = row.cells[0];
@@ -6099,34 +6119,34 @@ function editPlatform(id) {
   const currentName = (nameCell.querySelector('strong') ? nameCell.querySelector('strong').textContent : '') || '';
   const currentId = (nameCell.querySelector('.small') ? nameCell.querySelector('.small').textContent.replace('ID: ', '') : '') || id;
   const currentDomain = domainCell.textContent === '--' ? '' : domainCell.textContent;
+  const currentToken = tokenCell.textContent === '--' ? '' : tokenCell.textContent;
   const currentChats = chatCell.textContent === '--' ? '' : chatCell.textContent;
 
-  const newName = prompt('平台昵称:', currentName);
-  if (newName === null) return;
-  const newDomain = prompt('域名（可选）:', currentDomain);
-  if (newDomain === null) return;
-  const newToken = prompt('Bot Token（可选，留空不修改）:', '');
-  if (newToken === null) return;
-  const newChats = prompt('Chat IDs（逗号分隔，可选）:', currentChats);
-  if (newChats === null) return;
+  // Populate form fields
+  document.getElementById('platformName').value = currentName;
+  document.getElementById('platformDomain').value = currentDomain;
+  document.getElementById('platformBotToken').value = currentToken;
+  document.getElementById('platformChatIds').value = currentChats;
 
-  (async () => {
-    try {
-      const body = { id: currentId, name: newName.trim(), domain: newDomain.trim(), chat_ids: newChats.trim() };
-      if (newToken.trim()) body.bot_token = newToken.trim();
-      const r = await fetch('/api/admin/edit-platform', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body)
-      });
-      const j = await r.json();
-      if (!j.ok) { showCenterNotify('编辑失败: ' + (j.error || '未知')); return; }
-      showCenterNotify('平台 ' + id + ' 已更新');
-      loadPlatformList();
-    } catch(e) {
-      showCenterNotify('编辑失败: ' + e.message);
-    }
-  })();
+  // Switch to edit mode
+  _editingPlatformId = currentId;
+  const btn = document.getElementById('platformSubmitBtn');
+  btn.textContent = '保存修改';
+  btn.className = 'warning';
+  document.getElementById('platformCancelBtn').style.display = '';
+  document.getElementById('platformName').focus();
+}
+
+function cancelEditPlatform() {
+  _editingPlatformId = null;
+  document.getElementById('platformName').value = '';
+  document.getElementById('platformDomain').value = '';
+  document.getElementById('platformBotToken').value = '';
+  document.getElementById('platformChatIds').value = '';
+  const btn = document.getElementById('platformSubmitBtn');
+  btn.textContent = '创建平台';
+  btn.className = 'primary';
+  document.getElementById('platformCancelBtn').style.display = 'none';
 }
 
 // 每 5 秒检查是否有配置更新，如有则刷新页面
