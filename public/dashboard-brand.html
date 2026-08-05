@@ -1127,6 +1127,7 @@ button {
       <label><input type="checkbox" value="buysell"> <span data-i18n="text" data-key="buysell">BuySell</span></label>
       <label><input type="checkbox" value="admin"> <span data-i18n="text" data-key="admin">Admin</span></label>
       <label><input type="checkbox" value="balance_adjust"> <span data-i18n="text" data-key="balanceAdjust">加减操作</span></label>
+      <label><input type="checkbox" value="loan"> <span data-i18n="text" data-key="loan">贷款</span></label>
 
       <select id="newAdminPlatform" style="margin-left:8px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
         <option value="default">所属平台：Default</option>
@@ -1600,7 +1601,7 @@ button {
       rejected:'已拒绝', pending:'待处理', buysellMgmt:'Buy/Sell 管理', rechargeMgmt:'充值管理', withdrawMgmt:'提款管理', loanMgmt:'贷款管理',
       memberMgmt:'会员管理', orderRecords:'订单记录', sysSettings:'系统设置', adminMgmt:'管理员账号管理',
       account:'管理员账号', nickname:'昵称（显示用）', initPwd:'初始密码', recharge:'充值', withdraw:'提款',
-      buysell:'BuySell', admin:'Admin', balanceAdjust:'加减操作', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
+      buysell:'BuySell', admin:'Admin', balanceAdjust:'加减操作', loan:'贷款', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
       permissions:'权限', loginLink:'登录链接', copyLink:'复制登录链接', status:'状态', online:'在线', offline:'离线',
       enabled:'已启用', disabled:'已禁用', enable:'启用', disable:'禁用', update:'更新', del:'删除', kick:'踢出', kickConfirm:'确认踢出管理员',
       creator:'创建人', orders:'订单/会员/钱包', time:'时间', userId:'用户ID', type:'类型', amount:'金额',
@@ -2319,7 +2320,7 @@ function filterHeaderNav(){
   try {
     if(isSuperAdmin()) return; // 超级管理员显示全部
     const perms = getAdminPerms();
-    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0)+(perms.admin?1:0);
+    const permCount = (perms.recharge?1:0)+(perms.withdraw?1:0)+(perms.buysell?1:0)+(perms.admin?1:0)+(perms.loan?1:0);
     const icons = document.querySelectorAll('.header-nav .icon[data-page]');
     if (!icons.length) return;
     if (!permCount) {
@@ -2337,6 +2338,7 @@ function filterHeaderNav(){
       if (page === 'buysell')  show = !!perms.buysell;
       if (page === 'recharge') show = !!perms.recharge;
       if (page === 'withdraw') show = !!perms.withdraw;
+      if (page === 'loan')     show = !!perms.loan;
       if (page === 'members')  show = !!perms.admin;
       if (page === 'orders')   show = permCount > 0;
       if (page === 'settings') show = !!perms.admin;
@@ -5694,7 +5696,8 @@ function renderAdminTable(admins){
         '<label><input type="checkbox" data-field="withdraw" ' + (perms.withdraw ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 提款</label> ' +
         '<label><input type="checkbox" data-field="buysell" '  + (perms.buysell  ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> BuySell</label> ' +
         '<label><input type="checkbox" data-field="admin" '    + (perms.admin    ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> Admin</label> ' +
-        '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label>' +
+        '<label><input type="checkbox" data-field="balance_adjust" ' + (perms.balance_adjust ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 加减操作</label> ' +
+        '<label><input type="checkbox" data-field="loan" ' + (perms.loan ? 'checked' : '') + ' onchange="updateAdminPermissions(\'' + escHtml1(a.id) + '\',event)"> 贷款</label>' +
       '</td>' +
       '<td>' +
         '<span class="small" style="word-break:break-all">' + escHtml1(uniqueUrl) + '</span>' +
@@ -5753,7 +5756,8 @@ async function createAdmin(){
         withdraw: cb('withdraw'),
         buysell:  cb('buysell'),
         admin: cb('admin'),
-        balance_adjust: cb('balance_adjust')
+        balance_adjust: cb('balance_adjust'),
+        loan: cb('loan')
       })
     });
     const j = await r.json();
@@ -5819,7 +5823,7 @@ async function kickAdmin(id){
 async function updateAdminPermissions(id, ev){
   const tr = ev.target.closest('tr');
   const cbs = tr.querySelectorAll('input[data-field]');
-  const perms = { recharge: false, withdraw: false, buysell: false, admin: false, balance_adjust: false };
+  const perms = { recharge: false, withdraw: false, buysell: false, admin: false, balance_adjust: false, loan: false };
   cbs.forEach(cb => {
     perms[cb.getAttribute('data-field')] = cb.checked;
   });
@@ -5875,7 +5879,7 @@ async function pushAdminUpdate(id, btn) {
   if (btn) {
     const tr = btn.closest('tr');
     const cbs = tr.querySelectorAll('input[data-field]');
-    const perms = { recharge: false, withdraw: false, buysell: false, admin: false };
+    const perms = { recharge: false, withdraw: false, buysell: false, admin: false, loan: false };
     cbs.forEach(cb => {
       perms[cb.getAttribute('data-field')] = cb.checked;
     });
