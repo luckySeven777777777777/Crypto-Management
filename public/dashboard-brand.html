@@ -751,8 +751,8 @@ button {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="12" y1="15" x2="12" y2="9"/><polyline points="9 12 12 9 15 12"/></svg>
       <span data-i18n="text" data-key="withdrawMgmt">提款</span>
     </div>
-    <div class="icon" data-page="loans" title="贷款管理">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="6" y1="10" x2="18" y2="10"/><line x1="6" y1="14" x2="14" y2="14"/></svg>
+    <div class="icon" data-page="loan" title="贷款管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="6" x2="12" y2="12"/><line x1="12" y1="12" x2="16" y2="14"/><polyline points="8 9 8 17 16 17"/></svg>
       <span data-i18n="text" data-key="loanMgmt">贷款</span>
     </div>
     <div class="icon" data-page="members" title="会员管理">
@@ -1007,6 +1007,44 @@ button {
       </table>
     </div>
 
+    <!-- Loan page -->
+    <div id="page-loan" class="container" style="display:none">
+      <div class="page-title">贷款管理</div>
+
+      <div class="filters">
+        <label>开始 <input type="date" id="l_start"></label>
+        <label>结束 <input type="date" id="l_end"></label>
+        <input id="l_wallet" placeholder="钱包地址 / 会员ID / 订单号" style="width:260px">
+        <select id="l_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <button class="primary" onclick="l_search()">搜索</button>
+  <button class="primary" onclick="downloadLoanRecords()">下载记录</button>
+  <button class="primary" onclick="showToday('l')">今日数据</button>
+<button class="primary view-yesterday-btn">查看昨日数据</button>
+<!-- 自动刷新设置 -->
+<select id="autoRefreshSelect_loan"style="
+  margin-left:8px;
+  background:transparent;
+  color:#1f2933;
+  border:1px solid #ccc;
+  padding:6px 10px;
+  border-radius:4px;
+">
+  <option value="0">自动刷新：关闭</option>
+  <option value="15">自动刷新：15 秒</option>
+  <option value="30">自动刷新：30 秒</option>
+  <option value="60">自动刷新：60 秒</option>
+</select>
+<button class="primary" onclick="l_search()" style="margin-left:8px;">
+  重置
+</button>
+      </div>
+
+      <table class="table">
+        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>币种</th><th>估算 USDT</th><th>Daily Interest</th><th>Days</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
+        <tbody id="l_table"><tr><td colspan="15" class="small">点击搜索加载数据</td></tr></tbody>
+      </table>
+    </div>
+
     <!-- Members page -->
     <div id="page-members" class="container" style="display:none">
       <div class="page-title">会员管理</div>
@@ -1030,23 +1068,6 @@ button {
 </tr>
 </thead>
         <tbody id="m_table"><tr><td colspan="10" class="small">暂无数据</td></tr></tbody>
-      </table>
-    </div>
-
-    <!-- Loans page -->
-    <div id="page-loans" class="container" style="display:none">
-      <div class="page-title">贷款管理</div>
-      <div class="filters">
-        <label>开始 <input type="date" id="l_start"></label>
-        <label>结束 <input type="date" id="l_end"></label>
-        <input id="l_q" placeholder="订单号 / 会员ID / 钱包地址" style="width:260px">
-        <select id="l_currency"><option value="">全部币种</option><option>USDT</option></select>
-        <select id="l_status"><option value="">全部状态</option><option value="processing">处理中</option><option value="success">成功</option><option value="failed">失败</option></select>
-        <button class="primary" onclick="loans_search()">搜索</button>
-      </div>
-      <table class="table">
-        <thead><tr><th>订单/会员/钱包</th><th>时间(US/Eastern)</th><th>用户ID</th><th>类型</th><th>币种</th><th>估算 USDT</th><th>Daily Interest</th><th>Days</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
-        <tbody id="loans_table"><tr><td colspan="14" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -1576,9 +1597,8 @@ button {
   const I18N = {
     zh: {
       dashboard:'控制台', todayRecharge:'今日充值', todayWithdraw:'今日提款', totalPnl:'总盈亏', riskAlerts:'风控报警',
-      rejected:'已拒绝', pending:'待处理', buysellMgmt:'Buy/Sell 管理', rechargeMgmt:'充值管理', withdrawMgmt:'提款管理',
+      rejected:'已拒绝', pending:'待处理', buysellMgmt:'Buy/Sell 管理', rechargeMgmt:'充值管理', withdrawMgmt:'提款管理', loanMgmt:'贷款管理',
       memberMgmt:'会员管理', orderRecords:'订单记录', sysSettings:'系统设置', adminMgmt:'管理员账号管理',
-      loanMgmt:'贷款管理',
       account:'管理员账号', nickname:'昵称（显示用）', initPwd:'初始密码', recharge:'充值', withdraw:'提款',
       buysell:'BuySell', admin:'Admin', balanceAdjust:'加减操作', createAdmin:'新增管理员', loading:'加载中...', noAdmins:'暂无管理员',
       permissions:'权限', loginLink:'登录链接', copyLink:'复制登录链接', status:'状态', online:'在线', offline:'离线',
@@ -1601,7 +1621,7 @@ button {
       google2fa:'Google 二级验证码（2FA）', genQr:'生成绑定', scanQr:'请使用 Google Authenticator 扫码',
       inputCode:'输入 6 位验证码', confirmBind:'确认绑定', genFailed:'生成2FA绑定失败',
       loadFailed:'加载失败', approveBtn:'通过', rejectBtn:'拒绝', lockBtn:'锁定', unlockBtn:'解锁',
-      remarkBtn:'备注', rechargeType:'充值', withdrawType:'提款',
+      remarkBtn:'备注', rechargeType:'充值', withdrawType:'提款', loanType:'贷款',
       lockedByOther:'正被其他业务员锁定，不能重复操作，请刷新重试', missingOrderId:'缺少订单ID',
       confirmAction:'确定对订单', actionLabel:'执行', enterRemark:'请输入备注内容（仅后台可见）：',
       remarkSaved:'备注已保存', operationFailed:'操作失败', serverError:'服务器错误',
@@ -1611,7 +1631,7 @@ button {
     en: {
       dashboard:'Dashboard', todayRecharge:'Today Recharge', todayWithdraw:'Today Withdraw', totalPnl:'Total P&L',
       riskAlerts:'Risk Alerts', rejected:'Rejected', pending:'Pending', buysellMgmt:'Buy/Sell Management',
-      rechargeMgmt:'Recharge Management', withdrawMgmt:'Withdraw Management', memberMgmt:'Member Management',
+      rechargeMgmt:'Recharge Management', withdrawMgmt:'Withdraw Management', loanMgmt:'Loan Management', memberMgmt:'Member Management',
       orderRecords:'Order Records', sysSettings:'Settings', adminMgmt:'Admin Account Management',
       account:'Admin Account', nickname:'Nickname', initPwd:'Initial Password', recharge:'Recharge', withdraw:'Withdraw',
       buysell:'BuySell', admin:'Admin', balanceAdjust:'Balance Adjust', createAdmin:'Create Admin', loading:'Loading...', noAdmins:'No admins',
@@ -1637,7 +1657,7 @@ button {
       scanQr:'Scan with Google Authenticator', inputCode:'Enter 6-digit code', confirmBind:'Confirm',
       genFailed:'2FA generation failed',
       loadFailed:'Load Failed', approveBtn:'Approve', rejectBtn:'Reject', lockBtn:'Lock', unlockBtn:'Unlock',
-      remarkBtn:'Remark', rechargeType:'Recharge', withdrawType:'Withdraw',
+      remarkBtn:'Remark', rechargeType:'Recharge', withdrawType:'Withdraw', loanType:'Loan',
       lockedByOther:'Locked by another agent. Please refresh and try again.', missingOrderId:'Missing order ID',
       confirmAction:'Confirm action on order', actionLabel:'Action', enterRemark:'Enter remark (admin only):',
       remarkSaved:'Remark saved', operationFailed:'Operation failed', serverError:'Server error',
@@ -1647,7 +1667,7 @@ button {
     th: {
       dashboard:'แดชบอร์ด', todayRecharge:'เติมเงินวันนี้', todayWithdraw:'ถอนเงินวันนี้', totalPnl:'กำไร/ขาดทุนรวม',
       riskAlerts:'แจ้งเตือนความเสี่ยง', rejected:'ปฏิเสธแล้ว', pending:'รอดำเนินการ', buysellMgmt:'จัดการ Buy/Sell',
-      rechargeMgmt:'จัดการเติมเงิน', withdrawMgmt:'จัดการถอนเงิน', memberMgmt:'จัดการสมาชิก',
+      rechargeMgmt:'จัดการเติมเงิน', withdrawMgmt:'จัดการถอนเงิน', loanMgmt:'จัดการสินเชื่อ', memberMgmt:'จัดการสมาชิก',
       orderRecords:'บันทึกคำสั่งซื้อ', sysSettings:'ตั้งค่าระบบ', adminMgmt:'จัดการบัญชีผู้ดูแล',
       account:'บัญชีผู้ดูแล', nickname:'ชื่อเล่น', initPwd:'รหัสผ่านเริ่มต้น', recharge:'เติมเงิน', withdraw:'ถอนเงิน',
       buysell:'BuySell', admin:'Admin', balanceAdjust:'ปรับยอด', createAdmin:'เพิ่มผู้ดูแล', loading:'กำลังโหลด...', noAdmins:'ไม่มีผู้ดูแล',
@@ -1673,7 +1693,7 @@ button {
       google2fa:'Google 2FA', genQr:'สร้าง QR', scanQr:'สแกนด้วย Google Authenticator',
       inputCode:'ใส่รหัส 6 หลัก', confirmBind:'ยืนยัน', genFailed:'สร้าง 2FA ไม่สำเร็จ',
       loadFailed:'โหลดล้มเหลว', approveBtn:'อนุมัติ', rejectBtn:'ปฏิเสธ', lockBtn:'ล็อก', unlockBtn:'ปลดล็อก',
-      remarkBtn:'หมายเหตุ', rechargeType:'เติมเงิน', withdrawType:'ถอนเงิน',
+      remarkBtn:'หมายเหตุ', rechargeType:'เติมเงิน', withdrawType:'ถอนเงิน', loanType:'สินเชื่อ',
       lockedByOther:'ถูกล็อกโดยเจ้าหน้าที่อื่น กรุณารีเฟรชแล้วลองใหม่', missingOrderId:'ไม่มีรหัสคำสั่งซื้อ',
       confirmAction:'ยืนยันการดำเนินการกับคำสั่งซื้อ', actionLabel:'ดำเนินการ', enterRemark:'กรอกหมายเหตุ (เฉพาะผู้ดูแล):',
       remarkSaved:'บันทึกหมายเหตุแล้ว', operationFailed:'การดำเนินการล้มเหลว', serverError:'ข้อผิดพลาดเซิร์ฟเวอร์',
@@ -1683,7 +1703,7 @@ button {
     vi: {
       dashboard:'Bảng điều khiển', todayRecharge:'Nạp hôm nay', todayWithdraw:'Rút hôm nay', totalPnl:'Tổng Lãi/Lỗ',
       riskAlerts:'Cảnh báo rủi ro', rejected:'Đã từ chối', pending:'Đang xử lý', buysellMgmt:'Quản lý Buy/Sell',
-      rechargeMgmt:'Quản lý nạp tiền', withdrawMgmt:'Quản lý rút tiền', memberMgmt:'Quản lý thành viên',
+      rechargeMgmt:'Quản lý nạp tiền', withdrawMgmt:'Quản lý rút tiền', loanMgmt:'Quản lý khoản vay', memberMgmt:'Quản lý thành viên',
       orderRecords:'Hồ sơ đơn hàng', sysSettings:'Cài đặt', adminMgmt:'Quản lý tài khoản admin',
       account:'Tài khoản admin', nickname:'Biệt danh', initPwd:'Mật khẩu ban đầu', recharge:'Nạp tiền', withdraw:'Rút tiền',
       buysell:'BuySell', admin:'Admin', balanceAdjust:'Điều chỉnh số dư', createAdmin:'Thêm admin', loading:'Đang tải...', noAdmins:'Không có admin',
@@ -1710,7 +1730,7 @@ button {
       google2fa:'Google 2FA', genQr:'Tạo QR', scanQr:'Quét bằng Google Authenticator',
       inputCode:'Nhập mã 6 chữ số', confirmBind:'Xác nhận', genFailed:'Tạo 2FA thất bại',
       loadFailed:'Tải thất bại', approveBtn:'Phê duyệt', rejectBtn:'Từ chối', lockBtn:'Khóa', unlockBtn:'Mở khóa',
-      remarkBtn:'Ghi chú', rechargeType:'Nạp tiền', withdrawType:'Rút tiền',
+      remarkBtn:'Ghi chú', rechargeType:'Nạp tiền', withdrawType:'Rút tiền', loanType:'Khoản vay',
       lockedByOther:'Bị khóa bởi nhân viên khác. Vui lòng làm mới và thử lại.', missingOrderId:'Thiếu mã đơn hàng',
       confirmAction:'Xác nhận thao tác với đơn hàng', actionLabel:'Thao tác', enterRemark:'Nhập ghi chú (chỉ admin):',
       remarkSaved:'Đã lưu ghi chú', operationFailed:'Thao tác thất bại', serverError:'Lỗi máy chủ',
@@ -2055,10 +2075,10 @@ $all(".header-nav .icon").forEach(ic=>{
     if(page === "dashboard") loadDashboard();
     if(page === "recharge") r_search();
     if(page === "withdraw") w_search();
+    if(page === "loan") l_search();
     if(page === "buysell") bs_search();
     if(page === "orders") o_search();
     if(page === "members") loadMembers();
-    if(page === "loans") loans_search();
     if(page === "settings") loadAdmins();
   });
 });
@@ -2317,7 +2337,6 @@ function filterHeaderNav(){
       if (page === 'buysell')  show = !!perms.buysell;
       if (page === 'recharge') show = !!perms.recharge;
       if (page === 'withdraw') show = !!perms.withdraw;
-      if (page === 'loans')    show = !!perms.withdraw;  // loans shares withdraw permission
       if (page === 'members')  show = !!perms.admin;
       if (page === 'orders')   show = permCount > 0;
       if (page === 'settings') show = !!perms.admin;
@@ -2586,7 +2605,6 @@ const body = {
       if(active==='recharge') r_search();
       else if(active==='withdraw') w_search();
       else if(active==='buysell') bs_search();
-      else if(active==='loans') loans_search();
       else o_search();
     }else{
       showCenterNotify(__('operationFailed'));
@@ -2634,20 +2652,17 @@ async function addRemark(orderId, type, currentStatus){
   // Fetch order data in background
   try {
     const all = await fetchAll();
-    let list;
-    if (type === 'recharge') list = all.recharge || [];
-    else if (type === 'withdraw') list = all.withdraw || [];
-    else if (type === 'loan') list = all.loans || [];
-    else list = all.withdraw || [];
+    const isRecharge = type === 'recharge';
+    const list = isRecharge ? (all.recharge || []) : (all.withdraw || []);
     const order = list.find(o => o.orderId === orderId);
     const users = all.users || {};
     const user = users[order ? order.userId : ''] || {};
 
     const tag = getMemberTag(user);
     const tagRemark = tag.remark || '--';
-    const coin = (order && (order.coin || order.currency)) ? String(order.coin || order.currency).toUpperCase() : '--';
+    const coin = (order && order.coin) ? String(order.coin).toUpperCase() : '--';
     const amount = order && order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
-    const estimate = order && order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : (order && order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--');
+    const estimate = order && order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
     document.getElementById('rm-orderId').innerText = orderId || '--';
     document.getElementById('rm-userId').innerText = (order && order.userId) || '--';
     document.getElementById('rm-level').innerText = tagRemark;
@@ -2702,7 +2717,6 @@ async function submitRemark(){
       if(active === 'recharge') r_search();
       else if(active === 'withdraw') w_search();
       else if(active === 'buysell') bs_search();
-      else if(active === 'loans') loans_search();
       else o_search();
 
     }else{
@@ -3047,6 +3061,33 @@ function renderWithdrawRow(o) {
   <td><button class="small-btn" onclick="openViewDetail('${o.orderId}','withdraw')">查看详情</button></td>
 </tr>`;
 }
+// ===== 贷款行 =====
+function renderLoanRow(o) {
+  const dailyInterest = o.dailyInterest != null ? (Number(o.dailyInterest) * 100).toFixed(4) + '%' : '--';
+  const days = o.period || o.days || '--';
+  return `
+<tr>
+  <td><input type="checkbox" class="batch-check" data-key="l" data-orderid="${o.orderId}" data-type="loan"></td>
+  <td>
+    <div class="order-id">${o.orderId || '--'}</div>
+  </td>
+  <td>${o.time_us || '--'}</td>
+  <td>
+    <span class="uid-clickable" onclick="openProfile('${o.userId || ''}')">${o.userId || '--'}</span>
+  </td>
+  <td>${__('loanType')}</td>
+  <td>${getCoinLogoHTML('USDT')} USDT</td>
+  <td>${o.estimate ?? o.amount ?? '--'}</td>
+  <td>${dailyInterest}</td>
+  <td>${days}</td>
+  <td>${renderIpWithCountry(o.ip, o.country)}</td>
+  <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
+  <td>${renderActionButtons(o.orderId,'loan', o.processed, o.status, o.lockedBy || '')}</td>
+  <td>${o.operatorNickname || '--'}</td>
+  <td>${o.note || '--'}</td>
+  <td><button class="small-btn" onclick="openViewDetail('${o.orderId}','loan')">查看详情</button></td>
+</tr>`;
+}
 /* -----------------------------
    Fetch single order for modal (server handles fetchOrder)
 ------------------------------ */
@@ -3081,8 +3122,9 @@ function closeViewDetail(){ document.getElementById('viewDetailModal').style.dis
 async function openViewDetail(orderId, type) {
   if (!orderId) return;
   const isRecharge = type === 'recharge';
-  const typeLabel = isRecharge ? '充值' : '提现';
-  const title = isRecharge ? '充值详情' : '提现详情';
+  const isLoan = type === 'loan';
+  const typeLabel = isRecharge ? '充值' : isLoan ? '贷款' : '提现';
+  const title = isRecharge ? '充值详情' : isLoan ? '贷款详情' : '提现详情';
 
   document.getElementById('detailTitle').textContent = title;
   document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#888">加载中...</div>';
@@ -3091,7 +3133,7 @@ async function openViewDetail(orderId, type) {
   try {
     // 从 fetchAll 全量数据中查找订单（server 端 /api/transactions 不支持 fetchOrder 参数）
     const all = await fetchAll();
-    const list = isRecharge ? (all.recharge || []) : (all.withdraw || []);
+    const list = isRecharge ? (all.recharge || []) : isLoan ? (all.loans || all.loan || []) : (all.withdraw || []);
     const order = list.find(o => o.orderId === orderId);
     if (!order) {
       document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#e60000">订单不存在或已删除</div>';
@@ -3114,9 +3156,11 @@ async function openViewDetail(orderId, type) {
     const tag = getMemberTag(user);
     const tagRemark = tag.remark || '--';
 
-    const coin = order.coin || '--';
+    const coin = order.coin || 'USDT';
     const amount = order.amount != null ? Number(order.amount).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
     const estimate = order.estimate != null ? Number(order.estimate).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
+    const dailyInterest = order.dailyInterest != null ? (Number(order.dailyInterest) * 100).toFixed(4) + '%' : '--';
+    const period = order.period || order.days || '--';
 
     const applyTime = order.time_us || '--';
     const opTime = order.opTime || order.time_us || '--';
@@ -3136,25 +3180,44 @@ async function openViewDetail(orderId, type) {
     left.push(`<div class="detail-row"><span class="label">会员层级：</span><span class="value">${tagRemark}</span></div>`);
     left.push('</div>');
 
-    left.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '金额信息</div>');
-    left.push(`<div class="detail-row"><span class="label">${typeLabel}金额：</span><span class="value">${amount} ${coin}</span></div>`);
-    left.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">${isRecharge ? estimate + " " + coin : "$" + estimate}</span></div>`);
-    left.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">${isRecharge ? estimate + " " + coin : "$" + estimate}</span></div>`);
-    left.push('</div>');
+    if (isLoan) {
+      left.push('<div class="detail-section"><div class="detail-section-title">贷款金额信息</div>');
+      left.push(`<div class="detail-row"><span class="label">贷款金额：</span><span class="value">${amount} ${coin}</span></div>`);
+      left.push(`<div class="detail-row"><span class="label">每日利息：</span><span class="value">${dailyInterest}</span></div>`);
+      left.push(`<div class="detail-row"><span class="label">还款周期：</span><span class="value">${period} 天</span></div>`);
+      left.push(`<div class="detail-row"><span class="label">估算 USDT：</span><span class="value">${estimate}</span></div>`);
+      left.push('</div>');
 
-    // 右列：账户信息 + 其他信息
-    right.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '账户信息</div>');
-    right.push(`<div class="detail-row"><span class="label">${typeLabel}方式：</span><span class="value">${walletAddr}</span></div>`);
-    right.push(`<div class="detail-row"><span class="label">钱包昵称：</span><span class="value">${isRecharge ? walletNickname : "虚拟货币"}</span></div>`);
-    right.push(`<div class="detail-row"><span class="label">手续费：</span><span class="value">0.00$</span></div>`);
-    right.push('</div>');
+      right.push('<div class="detail-section"><div class="detail-section-title">贷款账户信息</div>');
+      right.push(`<div class="detail-row"><span class="label">钱包地址：</span><span class="value">${walletAddr}</span></div>`);
+      right.push(`<div class="detail-row"><span class="label">IP：</span><span class="value">${order.ip || '--'}</span></div>`);
+      right.push(`<div class="detail-row"><span class="label">状态：</span><span class="value">${displayStatus(order.status)}</span></div>`);
+      right.push('</div>');
+    } else {
+      left.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '金额信息</div>');
+      left.push(`<div class="detail-row"><span class="label">${typeLabel}金额：</span><span class="value">${amount} ${coin}</span></div>`);
+      left.push(`<div class="detail-row"><span class="label">预计到账：</span><span class="value">${isRecharge ? estimate + " " + coin : "$" + estimate}</span></div>`);
+      left.push(`<div class="detail-row"><span class="label">实际到账：</span><span class="value">${isRecharge ? estimate + " " + coin : "$" + estimate}</span></div>`);
+      left.push('</div>');
+
+      right.push('<div class="detail-section"><div class="detail-section-title">' + typeLabel + '账户信息</div>');
+      right.push(`<div class="detail-row"><span class="label">${typeLabel}方式：</span><span class="value">${walletAddr}</span></div>`);
+      right.push(`<div class="detail-row"><span class="label">钱包昵称：</span><span class="value">${isRecharge ? walletNickname : "虚拟货币"}</span></div>`);
+      right.push(`<div class="detail-row"><span class="label">手续费：</span><span class="value">0.00$</span></div>`);
+      right.push('</div>');
+    }
 
     right.push('<div class="detail-section"><div class="detail-section-title">其他信息</div>');
     right.push(`<div class="detail-row"><span class="label">操作人：</span><span class="value">${operator}</span></div>`);
     right.push(`<div class="detail-row"><span class="label">申请时间：</span><span class="value">${applyTime}</span></div>`);
     right.push(`<div class="detail-row"><span class="label">操作时间：</span><span class="value">${opTime}</span></div>`);
-    right.push(`<div class="detail-row"><span class="label">充/提次数：</span><span class="value">充${rechargeCount}/提${withdrawCount}次</span></div>`);
-    right.push(`<div class="detail-row"><span class="label">累计充/提差额：</span><span class="value ${diff < 0 ? 'red' : ''}">${diff.toFixed(2)}</span></div>`);
+    if (isLoan) {
+      right.push(`<div class="detail-row"><span class="label">还款天数：</span><span class="value">${period}</span></div>`);
+      right.push(`<div class="detail-row"><span class="label">每日利息：</span><span class="value">${dailyInterest}</span></div>`);
+    } else {
+      right.push(`<div class="detail-row"><span class="label">充/提次数：</span><span class="value">充${rechargeCount}/提${withdrawCount}次</span></div>`);
+      right.push(`<div class="detail-row"><span class="label">累计充/提差额：</span><span class="value ${diff < 0 ? 'red' : ''}">${diff.toFixed(2)}</span></div>`);
+    }
     right.push(`<div class="detail-row"><span class="label">备注：</span><span class="value">${note}</span></div>`);
     right.push('</div>');
 
@@ -3334,9 +3397,6 @@ async function connectOrderSSE(){
           else if(active === 'buysell'){
             bs_search();
           }
-          else if(active === 'loans'){
-            loans_search();
-          }
           else if(active === 'dashboard'){
             // 🔥 核心修复：Dashboard 盈亏立刻刷新
             loadDashboard();
@@ -3391,6 +3451,7 @@ function showToday(type){
   if(type==='bs'){ document.getElementById('bs_start').value=today; document.getElementById('bs_end').value=today; bs_search(); }
   else if(type==='r'){ document.getElementById('r_start').value=today; document.getElementById('r_end').value=today; r_search(); }
   else if(type==='w'){ document.getElementById('w_start').value=today; document.getElementById('w_end').value=today; w_search(); }
+  else if(type==='l'){ document.getElementById('l_start').value=today; document.getElementById('l_end').value=today; l_search(); }
 }
 async function bs_search(){
   // ✅ 确保每次搜索时，页码从 1 开始
@@ -3616,70 +3677,44 @@ console.log('【提款支出】USDT:', summary.total.toFixed(2));
     window.withdrawLoss = 0; // 容错
   }
 }
-async function loans_search(){
+async function l_search(){
   const startVal = $('#l_start').value;
   const endVal = $('#l_end').value;
-  const qVal = $('#l_q').value;
-  const currencyVal = $('#l_currency').value;
+  const walletVal = $('#l_wallet').value;
   const statusVal = $('#l_status').value;
 
-  const tbody = $('#loans_table');
-  tbody.innerHTML = `<tr><td colspan="14">${__('loading')}</td></tr>`;
+  const tbody = $('#l_table');
+  tbody.innerHTML = `<tr><td colspan="15">${__('loading')}</td></tr>`;
 
   try{
     const all = await fetchAll();
-    let list = all.loans || [];
+    let list = all.loans || all.loan || [];
 
     list = applyFilters(list, {
       start: startVal,
       end: endVal,
-      q: qVal,
-      currency: currencyVal,
+      q: walletVal,
       status: statusVal
     });
 
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="14">${__('noRecords')}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="15">${__('noRecords')}</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = list.map(o => renderLoanRow(o)).join('');
+    pageState.l = pageState.l || 1;
+    const pageList = paginate(list, pageState.l);
+
+    tbody.innerHTML =
+      pageList.map(o => renderLoanRow(o)).join('') +
+      renderPager(list.length, pageState.l, 'l', 'l_search');
+
     postRenderDecorate();
+
   }catch(e){
     console.error(e);
-    tbody.innerHTML = `<tr><td colspan="14">${__('loadFailed')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="15">${__('loadFailed')}</td></tr>`;
   }
-}
-function renderLoanRow(o) {
-  const uid = o.userId || '--';
-  const wallet = o.wallet || '--';
-  const timeStr = o.timestamp ? new Date(o.timestamp).toLocaleString('zh-CN') : '--';
-  const amount = Number(o.amount || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2});
-  const dailyInterest = Number(o.dailyInterest || 0).toFixed(4);
-  const period = o.period || '--';
-  const status = o.status || 'pending';
-  const operator = o.operatorNickname || '--';
-  const note = o.note || '--';
-  const orderId = o.orderId || '--';
-  return `<tr>
-    <td><div class="order-id">${escHtml1(orderId)}</div></td>
-    <td>${timeStr}</td>
-    <td><span class="uid-clickable" onclick="openProfile('${escHtml1(uid)}')">${escHtml1(uid)}</span></td>
-    <td>贷款</td>
-    <td>💲 USDT</td>
-    <td>${amount}</td>
-    <td>${(Number(o.dailyInterest || 0) / Number(o.amount || 1) * 100).toFixed(2)}%</td>
-    <td>${period}</td>
-    <td>${renderIpWithCountry(o.ip, o.country)}</td>
-    <td><span class="badge" style="background:${(status==='success'||status==='approved')?'#00c851':(status==='failed'||status==='rejected')?'#ff4444':status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(status)}</span></td>
-    <td>${renderActionButtons(orderId, 'loan', o.processed, status, o.lockedBy || '')}</td>
-    <td>${escHtml1(operator)}</td>
-    <td>${escHtml1(note)}</td>
-    <td><span style="cursor:pointer;font-size:18px" onclick="showLoanDetail('${orderId}')">📋</span></td>
-  </tr>`;
-}
-function showLoanDetail(orderId) {
-  alert('Loan detail for: ' + orderId + '\n(Detail modal to be implemented)');
 }
 async function o_search(){
   const params = {};
@@ -4612,8 +4647,7 @@ async function loadMembers(resetPage = true){
     const allOrders = [
       ...(all.recharge || []),
       ...(all.withdraw || []),
-      ...(all.buysell  || []),
-      ...(all.loans    || [])
+      ...(all.buysell  || [])
     ];
 
     // 从提款订单中提取每个会员的钱包地址
@@ -5018,6 +5052,22 @@ function displayStatus(status){
   return records;
 }
 
+function downloadLoanRecords() {
+  const records = getTableRecords();
+  if (!records || records.length === 0) {
+    showCenterNotify("没有数据可供下载");
+    return;
+  }
+  const csvContent = "data:text/csv;charset=utf-8," + records.map(record => record.join(",")).join("\n");
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", "loan_records.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 // ===== 缅甸时间零点自动清零（今日充值 / 今日提款 / 🔥 待处理）=====
 function getMyanmarMidnight() {
   const now = new Date();
@@ -5132,8 +5182,6 @@ function schedulePageMidnightRefresh() {
     } else if (active === 'withdraw') {
       pageState.w = 1;
       if (typeof w_search === 'function') w_search();
-    } else if (active === 'loans') {
-      if (typeof loans_search === 'function') loans_search();
     }
     // 递归调度下一天
     schedulePageMidnightRefresh();
@@ -5281,6 +5329,10 @@ initAutoRefresh('autoRefreshSelect_draw', () => {
 
 initAutoRefresh('autoRefreshSelect_buysell', () => {
   if (typeof bs_search === 'function') bs_search();
+});
+
+initAutoRefresh('autoRefreshSelect_loan', () => {
+  if (typeof l_search === 'function') l_search();
 });
 /* ===============================
    查看昨日数据（统一修复版）
