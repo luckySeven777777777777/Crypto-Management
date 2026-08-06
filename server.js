@@ -3230,11 +3230,6 @@ const firstUpdateData = {
 };
 if (isLockAction) firstUpdateData.lockedBy = operatorNickname;
 
-const isWithdrawReject = (type === 'withdraw' && isRejected);
-if (!isWithdrawReject) {
-  await ref.update(firstUpdateData);
-}
-
 // 2️⃣ 统一计算状态
 const statusNorm = String(status || '').toLowerCase();
 
@@ -3258,6 +3253,11 @@ const isRejected = (
   statusNorm === '拒绝' ||
   statusNorm === '取消'
 );
+
+const isWithdrawReject = (type === 'withdraw' && isRejected);
+if (!isWithdrawReject) {
+  await ref.update(firstUpdateData);
+}
 
 if (isApproved) {
   if (type === 'recharge') {
