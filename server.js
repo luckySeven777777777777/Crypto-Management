@@ -98,6 +98,27 @@ function getPlatformConfig(name) {
     const withdrawChats = key === 'default'
       ? (process.env.WITHDRAW_TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean)
       : [];
+    // Trade-specific
+    const tradeToken = key === 'default'
+      ? (process.env.TRADE_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '')
+      : '';
+    const tradeChats = key === 'default'
+      ? (process.env.TRADE_TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean)
+      : [];
+    // PLAN-specific
+    const planToken = key === 'default'
+      ? (process.env.PLAN_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '')
+      : '';
+    const planChats = key === 'default'
+      ? (process.env.PLAN_TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean)
+      : [];
+    // Loan-specific
+    const loanToken = key === 'default'
+      ? (process.env.LOAN_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '')
+      : '';
+    const loanChats = key === 'default'
+      ? (process.env.LOAN_TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean)
+      : [];
 
     const config = {
       platform_id: key,
@@ -106,7 +127,13 @@ function getPlatformConfig(name) {
       recharge_bot_token: rechargeToken,
       recharge_chat_ids: rechargeChats,
       withdraw_bot_token: withdrawToken,
-      withdraw_chat_ids: withdrawChats
+      withdraw_chat_ids: withdrawChats,
+      trade_bot_token: tradeToken,
+      trade_chat_ids: tradeChats,
+      plan_bot_token: planToken,
+      plan_chat_ids: planChats,
+      loan_bot_token: loanToken,
+      loan_chat_ids: loanChats
     };
 
     // Also resolve a display name: look for PLATFORM_<NAME>_NAME or capitalize key
@@ -118,7 +145,7 @@ function getPlatformConfig(name) {
     return config;
   } catch (e) {
     console.error('[PLATFORM] getPlatformConfig error:', e.message);
-    return { platform_id: String(name || 'default'), bot_token: '', chat_ids: [], recharge_bot_token: '', recharge_chat_ids: [], withdraw_bot_token: '', withdraw_chat_ids: [], platform_name: String(name || 'Default') };
+    return { platform_id: String(name || 'default'), bot_token: '', chat_ids: [], recharge_bot_token: '', recharge_chat_ids: [], withdraw_bot_token: '', withdraw_chat_ids: [], trade_bot_token: '', trade_chat_ids: [], plan_bot_token: '', plan_chat_ids: [], loan_bot_token: '', loan_chat_ids: [], platform_name: String(name || 'Default') };
   }
 }
 
@@ -139,6 +166,12 @@ async function sendPlatformTelegram(platformId, message, photoData, type = '') {
           const fbRechargeChats = String(p.recharge_chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
           const fbWithdrawToken = String(p.withdraw_bot_token || '').trim();
           const fbWithdrawChats = String(p.withdraw_chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+          const fbTradeToken = String(p.trade_bot_token || '').trim();
+          const fbTradeChats = String(p.trade_chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+          const fbPlanToken = String(p.plan_bot_token || '').trim();
+          const fbPlanChats = String(p.plan_chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+          const fbLoanToken = String(p.loan_bot_token || '').trim();
+          const fbLoanChats = String(p.loan_chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
           if (fbToken && fbChats.length > 0) {
             cfg = {
               platform_id: platformId,
@@ -148,6 +181,12 @@ async function sendPlatformTelegram(platformId, message, photoData, type = '') {
               recharge_chat_ids: fbRechargeChats,
               withdraw_bot_token: fbWithdrawToken,
               withdraw_chat_ids: fbWithdrawChats,
+              trade_bot_token: fbTradeToken,
+              trade_chat_ids: fbTradeChats,
+              plan_bot_token: fbPlanToken,
+              plan_chat_ids: fbPlanChats,
+              loan_bot_token: fbLoanToken,
+              loan_chat_ids: fbLoanChats,
               platform_name: p.name || platformId
             };
             // 回写内存 cache，后续调用直接命中
@@ -169,6 +208,15 @@ async function sendPlatformTelegram(platformId, message, photoData, type = '') {
     } else if (type === 'withdraw') {
       activeToken = cfg.withdraw_bot_token || cfg.bot_token;
       activeChatIds = (cfg.withdraw_chat_ids && cfg.withdraw_chat_ids.length > 0) ? cfg.withdraw_chat_ids : cfg.chat_ids;
+    } else if (type === 'trade') {
+      activeToken = cfg.trade_bot_token || cfg.bot_token;
+      activeChatIds = (cfg.trade_chat_ids && cfg.trade_chat_ids.length > 0) ? cfg.trade_chat_ids : cfg.chat_ids;
+    } else if (type === 'plan') {
+      activeToken = cfg.plan_bot_token || cfg.bot_token;
+      activeChatIds = (cfg.plan_chat_ids && cfg.plan_chat_ids.length > 0) ? cfg.plan_chat_ids : cfg.chat_ids;
+    } else if (type === 'loan') {
+      activeToken = cfg.loan_bot_token || cfg.bot_token;
+      activeChatIds = (cfg.loan_chat_ids && cfg.loan_chat_ids.length > 0) ? cfg.loan_chat_ids : cfg.chat_ids;
     }
 
     if (!activeToken || activeChatIds.length === 0) {
@@ -2026,13 +2074,45 @@ app.post('/api/telegram/trade', upload.single('photo'), async (req, res) => {
     const text = String(req.body.text || '').slice(0, 4096);
     const platformId = (req.body.platform_id || 'default').toString().trim();
     const photoData = req.file ? { buffer: req.file.buffer, filename: req.file.originalname || 'proof.jpg' } : null;
-    await sendPlatformTelegram(platformId, text, photoData);
+    await sendPlatformTelegram(platformId, text, photoData, 'trade');
     return res.json({ ok:true });
   } catch (e) {
     console.error('[telegram notify trade error]', e.message);
     return res.status(500).json({ ok:false });
   }
 });
+/* ---------------------------------------------------------
+   Telegram PLAN notify endpoint
+--------------------------------------------------------- */
+app.post('/api/telegram/plan', upload.single('photo'), async (req, res) => {
+  try {
+    const text = String(req.body.text || '').slice(0, 4096);
+    const platformId = (req.body.platform_id || 'default').toString().trim();
+    const photoData = req.file ? { buffer: req.file.buffer, filename: req.file.originalname || 'proof.jpg' } : null;
+    await sendPlatformTelegram(platformId, text, photoData, 'plan');
+    return res.json({ ok:true });
+  } catch (e) {
+    console.error('[telegram notify plan error]', e.message);
+    return res.status(500).json({ ok:false });
+  }
+});
+
+/* ---------------------------------------------------------
+   Telegram LOAN notify endpoint
+--------------------------------------------------------- */
+app.post('/api/telegram/loan', upload.single('photo'), async (req, res) => {
+  try {
+    const text = String(req.body.text || '').slice(0, 4096);
+    const platformId = (req.body.platform_id || 'default').toString().trim();
+    const photoData = req.file ? { buffer: req.file.buffer, filename: req.file.originalname || 'proof.jpg' } : null;
+    await sendPlatformTelegram(platformId, text, photoData, 'loan');
+    return res.json({ ok:true });
+  } catch (e) {
+    console.error('[telegram notify loan error]', e.message);
+    return res.status(500).json({ ok:false });
+  }
+});
+
 /* ---------------------------------------------------------
    Loan order endpoint (ONLY notify Telegram)
 --------------------------------------------------------- */
@@ -3140,15 +3220,20 @@ if (isUnlockAction) {
 }
 
 // 1️⃣ 先更新状态（不 processed）
-const updateData = {
+// Build update data but defer write for withdraw rejection (merge into single write)
+const firstUpdateData = {
   status,
   note: note || null,
   frontNote: frontNote || null,
   updated: now(),
   operatorNickname
 };
-if (isLockAction) updateData.lockedBy = operatorNickname;
-await ref.update(updateData);
+if (isLockAction) firstUpdateData.lockedBy = operatorNickname;
+
+const isWithdrawReject = (type === 'withdraw' && isRejected);
+if (!isWithdrawReject) {
+  await ref.update(firstUpdateData);
+}
 
 // 2️⃣ 统一计算状态
 const statusNorm = String(status || '').toLowerCase();
@@ -3227,7 +3312,7 @@ if (
       boost_last: now()
     });
 
-    await ref.update({ refunded: true });
+    // refunded flag merged into final write below (single ref.update)
 
     broadcastSSE({
       type: 'balance',
@@ -3257,18 +3342,26 @@ else if (
     balance: curBal
   });
 }
-// ===== ✅【最终正确】统一写回最终状态 + processed =====
+// ===== 统一写回最终状态 + processed（提款拒绝合并 refunded/note 等字段）=====
 let finalStatus = null;
 
 if (isApproved) finalStatus = "success";
 if (isRejected) finalStatus = "rejected";
 
 if (finalStatus) {
-  await ref.update({
+  const orderUpdateObject = {
     status: finalStatus,
     processed: true,
     updated: now()
-  });
+  };
+  // For withdraw rejection, merge all deferred fields into single write
+  if (isWithdrawReject) {
+    orderUpdateObject.refunded = true;
+    orderUpdateObject.note = firstUpdateData.note;
+    orderUpdateObject.frontNote = firstUpdateData.frontNote;
+    orderUpdateObject.operatorNickname = firstUpdateData.operatorNickname;
+  }
+  await ref.update(orderUpdateObject);
 }
 
 // ===== 再广播订单更新（🔔 供通知铃铛系统消费） =====
@@ -4677,7 +4770,7 @@ app.post('/api/admin/platforms', async (req, res) => {
     if (!await isValidAdminToken(adminToken))
       return res.status(403).json({ ok: false, error: 'forbidden' });
 
-    const { name, bot_token, chat_ids, domain, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids } = req.body;
+    const { name, bot_token, chat_ids, domain, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids, trade_bot_token, trade_chat_ids, plan_bot_token, plan_chat_ids, loan_bot_token, loan_chat_ids } = req.body;
     if (!name || !String(name).trim())
       return res.status(400).json({ ok: false, error: '平台昵称不能为空' });
 
@@ -4702,6 +4795,12 @@ app.post('/api/admin/platforms', async (req, res) => {
       recharge_chat_ids: String(recharge_chat_ids || '').trim(),
       withdraw_bot_token: String(withdraw_bot_token || '').trim(),
       withdraw_chat_ids: String(withdraw_chat_ids || '').trim(),
+      trade_bot_token: String(trade_bot_token || '').trim(),
+      trade_chat_ids: String(trade_chat_ids || '').trim(),
+      plan_bot_token: String(plan_bot_token || '').trim(),
+      plan_chat_ids: String(plan_chat_ids || '').trim(),
+      loan_bot_token: String(loan_bot_token || '').trim(),
+      loan_chat_ids: String(loan_chat_ids || '').trim(),
       created_at: now(),
       created_by: createdBy,
       isActive: true
@@ -4718,6 +4817,12 @@ app.post('/api/admin/platforms', async (req, res) => {
       recharge_chat_ids: platformData.recharge_chat_ids.split(',').filter(Boolean),
       withdraw_bot_token: platformData.withdraw_bot_token,
       withdraw_chat_ids: platformData.withdraw_chat_ids.split(',').filter(Boolean),
+      trade_bot_token: platformData.trade_bot_token,
+      trade_chat_ids: platformData.trade_chat_ids.split(',').filter(Boolean),
+      plan_bot_token: platformData.plan_bot_token,
+      plan_chat_ids: platformData.plan_chat_ids.split(',').filter(Boolean),
+      loan_bot_token: platformData.loan_bot_token,
+      loan_chat_ids: platformData.loan_chat_ids.split(',').filter(Boolean),
       platform_name: platformName
     };
 
@@ -4771,6 +4876,30 @@ app.get('/api/admin/platforms', async (req, res) => {
           } else if (wRaw.length > 0) {
             withdrawMasked = '****';
           }
+          // 脱敏 trade_bot_token
+          let tradeMasked = '';
+          const tRaw = String(p.trade_bot_token || '');
+          if (tRaw.length > 10) {
+            tradeMasked = tRaw.slice(0, 6) + '****' + tRaw.slice(-4);
+          } else if (tRaw.length > 0) {
+            tradeMasked = '****';
+          }
+          // 脱敏 plan_bot_token
+          let planMasked = '';
+          const plRaw = String(p.plan_bot_token || '');
+          if (plRaw.length > 10) {
+            planMasked = plRaw.slice(0, 6) + '****' + plRaw.slice(-4);
+          } else if (plRaw.length > 0) {
+            planMasked = '****';
+          }
+          // 脱敏 loan_bot_token
+          let loanMasked = '';
+          const lRaw = String(p.loan_bot_token || '');
+          if (lRaw.length > 10) {
+            loanMasked = lRaw.slice(0, 6) + '****' + lRaw.slice(-4);
+          } else if (lRaw.length > 0) {
+            loanMasked = '****';
+          }
           platforms.push({
             id: pid,
             name: p.name || pid,
@@ -4781,6 +4910,12 @@ app.get('/api/admin/platforms', async (req, res) => {
             recharge_chat_ids: p.recharge_chat_ids || '',
             withdraw_bot_token_masked: withdrawMasked,
             withdraw_chat_ids: p.withdraw_chat_ids || '',
+            trade_bot_token_masked: tradeMasked,
+            trade_chat_ids: p.trade_chat_ids || '',
+            plan_bot_token_masked: planMasked,
+            plan_chat_ids: p.plan_chat_ids || '',
+            loan_bot_token_masked: loanMasked,
+            loan_chat_ids: p.loan_chat_ids || '',
             created_at: p.created_at || 0,
             created_by: p.created_by || 'system',
             isActive: p.isActive !== false,
@@ -4841,7 +4976,7 @@ app.post('/api/admin/platform/update', async (req, res) => {
     if (!await isValidAdminToken(adminToken))
       return res.status(403).json({ ok: false, error: 'forbidden' });
 
-    const { platformId, name, domain, bot_token, chat_ids, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids } = req.body;
+    const { platformId, name, domain, bot_token, chat_ids, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids, trade_bot_token, trade_chat_ids, plan_bot_token, plan_chat_ids, loan_bot_token, loan_chat_ids } = req.body;
     if (!platformId)
       return res.status(400).json({ ok: false, error: 'missing platformId' });
 
@@ -4867,6 +5002,12 @@ app.post('/api/admin/platform/update', async (req, res) => {
     if (recharge_chat_ids !== undefined) updates.recharge_chat_ids = String(recharge_chat_ids).trim();
     if (withdraw_bot_token !== undefined) updates.withdraw_bot_token = String(withdraw_bot_token).trim();
     if (withdraw_chat_ids !== undefined) updates.withdraw_chat_ids = String(withdraw_chat_ids).trim();
+    if (trade_bot_token !== undefined) updates.trade_bot_token = String(trade_bot_token).trim();
+    if (trade_chat_ids !== undefined) updates.trade_chat_ids = String(trade_chat_ids).trim();
+    if (plan_bot_token !== undefined) updates.plan_bot_token = String(plan_bot_token).trim();
+    if (plan_chat_ids !== undefined) updates.plan_chat_ids = String(plan_chat_ids).trim();
+    if (loan_bot_token !== undefined) updates.loan_bot_token = String(loan_bot_token).trim();
+    if (loan_chat_ids !== undefined) updates.loan_chat_ids = String(loan_chat_ids).trim();
 
     await db.ref(`platforms/${platformId}`).update(updates);
 
@@ -4883,6 +5024,12 @@ app.post('/api/admin/platform/update', async (req, res) => {
           recharge_chat_ids: (p.recharge_chat_ids || '').split(',').filter(Boolean),
           withdraw_bot_token: p.withdraw_bot_token || '',
           withdraw_chat_ids: (p.withdraw_chat_ids || '').split(',').filter(Boolean),
+          trade_bot_token: p.trade_bot_token || '',
+          trade_chat_ids: (p.trade_chat_ids || '').split(',').filter(Boolean),
+          plan_bot_token: p.plan_bot_token || '',
+          plan_chat_ids: (p.plan_chat_ids || '').split(',').filter(Boolean),
+          loan_bot_token: p.loan_bot_token || '',
+          loan_chat_ids: (p.loan_chat_ids || '').split(',').filter(Boolean),
           platform_name: p.name || platformId
         };
       }
