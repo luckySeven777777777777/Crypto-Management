@@ -725,6 +725,79 @@ button {
   background: #9933ff;
   color: #fff;
 }
+
+/* ===== Theme Switcher ===== */
+.theme-dropdown{position:relative;display:inline-flex;align-items:center}
+.theme-dropdown .theme-trigger{display:flex;align-items:center;gap:4px;padding:6px 10px;border-radius:8px;color:#fff;cursor:pointer;font-size:13px;font-weight:600;transition:background .2s;user-select:none}
+.theme-dropdown .theme-trigger:hover{background:rgba(255,255,255,0.15)}
+.theme-dropdown .theme-trigger svg{width:18px;height:18px}
+.theme-dropdown .theme-trigger svg.chevron{width:10px;height:10px;transition:transform .2s}
+.theme-dropdown.open .theme-trigger svg.chevron{transform:rotate(180deg)}
+.theme-dropdown .theme-menu{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:130px;overflow:hidden;z-index:2000;display:none;padding:4px 0}
+.theme-dropdown.open .theme-menu{display:block}
+.theme-dropdown .theme-menu .theme-opt{padding:9px 16px;cursor:pointer;font-size:13px;color:#333;display:flex;align-items:center;gap:8px;transition:background .15s;white-space:nowrap}
+.theme-dropdown .theme-menu .theme-opt:hover{background:#f0f4ff}
+.theme-dropdown .theme-menu .theme-opt.active{color:#1976d2;font-weight:600}
+.theme-dropdown .theme-menu .theme-opt .dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.theme-dropdown .theme-menu .theme-opt .dot.normal-dot{background:#1976d2;border:2px solid #1976d2}
+.theme-dropdown .theme-menu .theme-opt .dot.night-dot{background:#1a1a2e;border:2px solid #555}
+.theme-dropdown .theme-menu .theme-opt .dot.eyecare-dot{background:#f5ecd7;border:2px solid #8b7355}
+
+/* Night Mode */
+body[data-theme="night"]{--bg:#1a1a2e;--card:#16213e;--top-blue:#0f3460;--deep-blue:#0a1929}
+body[data-theme="night"] .top-header{background:linear-gradient(135deg,#0f3460,#0a1929)}
+body[data-theme="night"] .card{background:#1a2744;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+body[data-theme="night"] .container{background:#1a2744;box-shadow:0 6px 18px rgba(0,0,0,0.2)}
+body[data-theme="night"] .table{background:#16213e;box-shadow:0 1px 4px rgba(0,0,0,0.2)}
+body[data-theme="night"] .table thead{background:#0f3460}
+body[data-theme="night"] .table th{color:#b0b8c8;border-color:#2a3a5a}
+body[data-theme="night"] .table td{color:#d0d6e0;border-color:#2a3a5a}
+body[data-theme="night"] .page-title{color:#e0e6f0}
+body[data-theme="night"] input,body[data-theme="night"] select{background:#1a2744;color:#d0d6e0;border-color:#3a4a6a}
+body[data-theme="night"] button.primary{color:#5ba0f5;border-color:#5ba0f5}
+body[data-theme="night"] button.secondary{color:#aaa;border-color:#555}
+body[data-theme="night"] .modal .box{background:#1a2744}
+body[data-theme="night"] .modal .box,body[data-theme="night"] .modal label,body[data-theme="night"] .modal span,body[data-theme="night"] .modal h3,body[data-theme="night"] .modal h4{color:#d0d6e0}
+body[data-theme="night"] .freeze-modal-box{background:#1a2744}
+body[data-theme="night"] .freeze-modal-box h3,body[data-theme="night"] .freeze-modal-box label,body[data-theme="night"] .freeze-modal-box span{color:#d0d6e0}
+body[data-theme="night"] .admin-dropdown .admin-menu{background:#16213e;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+body[data-theme="night"] .admin-dropdown .admin-menu .menu-item{color:#d0d6e0}
+body[data-theme="night"] .admin-dropdown .admin-menu .menu-item:hover{background:#1f3054}
+body[data-theme="night"] .admin-dropdown .admin-menu .menu-divider{background:#2a3a5a}
+body[data-theme="night"] .admin-dropdown .admin-menu .lang-sub .lang-list{background:#16213e;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+body[data-theme="night"] .admin-dropdown .admin-menu .lang-list .lang-opt{color:#d0d6e0}
+body[data-theme="night"] .admin-dropdown .admin-menu .lang-list .lang-opt:hover{background:#1f3054}
+body[data-theme="night"] .theme-dropdown .theme-menu{background:#16213e;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+body[data-theme="night"] .theme-dropdown .theme-menu .theme-opt{color:#d0d6e0}
+body[data-theme="night"] .theme-dropdown .theme-menu .theme-opt:hover{background:#1f3054}
+
+/* Eye-Care Mode */
+body[data-theme="eyecare"]{--bg:#f5ecd7;--card:#faf3e0;--top-blue:#8b7355;--deep-blue:#5c4a3a}
+body[data-theme="eyecare"] .top-header{background:linear-gradient(135deg,#8b7355,#5c4a3a)}
+body[data-theme="eyecare"] .card{background:#faf3e0;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
+body[data-theme="eyecare"] .container{background:#faf3e0}
+body[data-theme="eyecare"] .table{background:#faf3e0}
+body[data-theme="eyecare"] .table thead{background:#e8dcc8}
+body[data-theme="eyecare"] .table th{color:#5c4a3a;border-color:#d4c8af}
+body[data-theme="eyecare"] .table td{color:#5c4a3a;border-color:#d4c8af}
+body[data-theme="eyecare"] .page-title{color:#4a3a2a}
+body[data-theme="eyecare"] input,body[data-theme="eyecare"] select{background:#faf3e0;color:#5c4a3a;border-color:#c4b89a}
+body[data-theme="eyecare"] button.primary{color:#8b7355;border-color:#8b7355}
+body[data-theme="eyecare"] button.secondary{color:#8b7355;border-color:#c4b89a}
+body[data-theme="eyecare"] .modal .box{background:#faf3e0}
+body[data-theme="eyecare"] .modal .box,body[data-theme="eyecare"] .modal label,body[data-theme="eyecare"] .modal span,body[data-theme="eyecare"] .modal h3,body[data-theme="eyecare"] .modal h4{color:#5c4a3a}
+body[data-theme="eyecare"] .freeze-modal-box{background:#faf3e0}
+body[data-theme="eyecare"] .freeze-modal-box h3,body[data-theme="eyecare"] .freeze-modal-box label,body[data-theme="eyecare"] .freeze-modal-box span{color:#5c4a3a}
+body[data-theme="eyecare"] .admin-dropdown .admin-menu{background:#faf3e0}
+body[data-theme="eyecare"] .admin-dropdown .admin-menu .menu-item{color:#5c4a3a}
+body[data-theme="eyecare"] .admin-dropdown .admin-menu .menu-item:hover{background:#efe4cc}
+body[data-theme="eyecare"] .admin-dropdown .admin-menu .menu-divider{background:#d4c8af}
+body[data-theme="eyecare"] .admin-dropdown .admin-menu .lang-sub .lang-list{background:#faf3e0}
+body[data-theme="eyecare"] .admin-dropdown .admin-menu .lang-list .lang-opt{color:#5c4a3a}
+body[data-theme="eyecare"] .admin-dropdown .admin-menu .lang-list .lang-opt:hover{background:#efe4cc}
+body[data-theme="eyecare"] .theme-dropdown .theme-menu{background:#faf3e0}
+body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt{color:#5c4a3a}
+body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{background:#efe4cc}
 </style>
 </head>
 
@@ -773,6 +846,17 @@ button {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="bell-badge" id="bellBadge">0</span>
     </span>
+    <div class="theme-dropdown" id="themeDropdown">
+      <div class="theme-trigger" onclick="toggleThemeMenu(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="theme-menu">
+        <div class="theme-opt active" data-theme="normal" onclick="setTheme('normal')"><span class="dot normal-dot"></span>正常模式</div>
+        <div class="theme-opt" data-theme="night" onclick="setTheme('night')"><span class="dot night-dot"></span>夜模式</div>
+        <div class="theme-opt" data-theme="eyecare" onclick="setTheme('eyecare')"><span class="dot eyecare-dot"></span>护眼模式</div>
+      </div>
+    </div>
     <div class="admin-dropdown" id="adminDropdown">
       <div class="admin-trigger" onclick="toggleAdminMenu()">
         <span id="adminUser">admin</span>
@@ -6420,6 +6504,13 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 
+
+<script>
+function toggleThemeMenu(e){e.stopPropagation();document.getElementById('themeDropdown').classList.toggle('open')}
+function setTheme(theme){document.body.setAttribute('data-theme',theme);localStorage.setItem('nexbit-theme',theme);document.querySelectorAll('#themeDropdown .theme-opt').forEach(function(o){o.classList.toggle('active',o.getAttribute('data-theme')===theme)});document.getElementById('themeDropdown').classList.remove('open')}
+(function(){var t=localStorage.getItem('nexbit-theme')||'normal';document.body.setAttribute('data-theme',t);document.querySelectorAll('#themeDropdown .theme-opt').forEach(function(o){o.classList.toggle('active',o.getAttribute('data-theme')===t)})})();
+document.addEventListener('click',function(e){var d=document.getElementById('themeDropdown');if(d&&!d.contains(e.target))d.classList.remove('open')});
+</script>
 
 </body>
 </html>
