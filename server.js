@@ -81,8 +81,8 @@ function getPlatformConfig(name) {
     const tokenEnv = `PLATFORM_${key.toUpperCase()}_BOT_TOKEN`;
     const chatIdsEnv = `PLATFORM_${key.toUpperCase()}_CHAT_IDS`;
 
-    const token = process.env[tokenEnv] || process.env.TELEGRAM_BOT_TOKEN || '';
-    const chatIds = (process.env[chatIdsEnv] || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean);
+    const token = process.env[tokenEnv] || (key === 'default' ? process.env.TELEGRAM_BOT_TOKEN || '' : '');
+    const chatIds = (process.env[chatIdsEnv] || (key === 'default' ? process.env.TELEGRAM_CHAT_IDS || '' : '')).split(',').filter(Boolean);
 
     const config = {
       platform_id: key,
