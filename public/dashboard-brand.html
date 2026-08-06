@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NEXBIT 管理后台 — 最终版</title>
+<title>管理后台 — 最终版</title>
 
 <style>
 
@@ -6167,7 +6167,7 @@ async function savePlatformRow(btn, platformId) {
     const r = await fetch('/api/admin/platform/update', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ platform_id: platformId, name, domain, bot_token, chat_ids })
+      body: JSON.stringify({ platformId: platformId, name, domain, bot_token, chat_ids })
     });
     const j = await r.json();
     if (!j.ok) {
