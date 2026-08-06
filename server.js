@@ -84,10 +84,29 @@ function getPlatformConfig(name) {
     const token = process.env[tokenEnv] || (key === 'default' ? process.env.TELEGRAM_BOT_TOKEN || '' : '');
     const chatIds = (process.env[chatIdsEnv] || (key === 'default' ? process.env.TELEGRAM_CHAT_IDS || '' : '')).split(',').filter(Boolean);
 
+    // Recharge-specific
+    const rechargeToken = key === 'default'
+      ? (process.env.RECHARGE_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '')
+      : '';
+    const rechargeChats = key === 'default'
+      ? (process.env.RECHARGE_TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean)
+      : [];
+    // Withdraw-specific
+    const withdrawToken = key === 'default'
+      ? (process.env.WITHDRAW_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '')
+      : '';
+    const withdrawChats = key === 'default'
+      ? (process.env.WITHDRAW_TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean)
+      : [];
+
     const config = {
       platform_id: key,
       bot_token: token,
-      chat_ids: chatIds
+      chat_ids: chatIds,
+      recharge_bot_token: rechargeToken,
+      recharge_chat_ids: rechargeChats,
+      withdraw_bot_token: withdrawToken,
+      withdraw_chat_ids: withdrawChats
     };
 
     // Also resolve a display name: look for PLATFORM_<NAME>_NAME or capitalize key
@@ -99,11 +118,11 @@ function getPlatformConfig(name) {
     return config;
   } catch (e) {
     console.error('[PLATFORM] getPlatformConfig error:', e.message);
-    return { platform_id: String(name || 'default'), bot_token: '', chat_ids: [], platform_name: String(name || 'Default') };
+    return { platform_id: String(name || 'default'), bot_token: '', chat_ids: [], recharge_bot_token: '', recharge_chat_ids: [], withdraw_bot_token: '', withdraw_chat_ids: [], platform_name: String(name || 'Default') };
   }
 }
 
-async function sendPlatformTelegram(platformId, message, photoData) {
+async function sendPlatformTelegram(platformId, message, photoData, type = '') {
   try {
     // 1. 先从内存 cache 查
     let cfg = getPlatformConfig(platformId);
@@ -116,11 +135,19 @@ async function sendPlatformTelegram(platformId, message, photoData) {
           const p = snap.val();
           const fbToken = String(p.bot_token || '').trim();
           const fbChats = String(p.chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+          const fbRechargeToken = String(p.recharge_bot_token || '').trim();
+          const fbRechargeChats = String(p.recharge_chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+          const fbWithdrawToken = String(p.withdraw_bot_token || '').trim();
+          const fbWithdrawChats = String(p.withdraw_chat_ids || '').split(',').map(s => s.trim()).filter(Boolean);
           if (fbToken && fbChats.length > 0) {
             cfg = {
               platform_id: platformId,
               bot_token: fbToken,
               chat_ids: fbChats,
+              recharge_bot_token: fbRechargeToken,
+              recharge_chat_ids: fbRechargeChats,
+              withdraw_bot_token: fbWithdrawToken,
+              withdraw_chat_ids: fbWithdrawChats,
               platform_name: p.name || platformId
             };
             // 回写内存 cache，后续调用直接命中
@@ -133,19 +160,30 @@ async function sendPlatformTelegram(platformId, message, photoData) {
       }
     }
 
-    if (!cfg.bot_token || cfg.chat_ids.length === 0) {
+    // Select type-specific or fallback token/chat_ids
+    let activeToken = cfg.bot_token;
+    let activeChatIds = cfg.chat_ids;
+    if (type === 'recharge') {
+      activeToken = cfg.recharge_bot_token || cfg.bot_token;
+      activeChatIds = (cfg.recharge_chat_ids && cfg.recharge_chat_ids.length > 0) ? cfg.recharge_chat_ids : cfg.chat_ids;
+    } else if (type === 'withdraw') {
+      activeToken = cfg.withdraw_bot_token || cfg.bot_token;
+      activeChatIds = (cfg.withdraw_chat_ids && cfg.withdraw_chat_ids.length > 0) ? cfg.withdraw_chat_ids : cfg.chat_ids;
+    }
+
+    if (!activeToken || activeChatIds.length === 0) {
       // 3. 最终 fallback 到 default
       if (platformId !== 'default') {
         console.log('[PLATFORM] No config for', platformId, 'falling back to default');
-        return sendPlatformTelegram('default', message, photoData);
+        return sendPlatformTelegram('default', message, photoData, type);
       }
       return;
     }
     const text = String(message || '').slice(0, 4096);
-    for (const chatId of cfg.chat_ids) {
+    for (const chatId of activeChatIds) {
       try {
         await axios.post(
-          `https://api.telegram.org/bot${cfg.bot_token}/sendMessage`,
+          `https://api.telegram.org/bot${activeToken}/sendMessage`,
           { chat_id: chatId, text, parse_mode: 'HTML' },
           { timeout: 10000 }
         );
@@ -161,7 +199,7 @@ async function sendPlatformTelegram(platformId, message, photoData) {
             filename: photoData.filename || 'proof.jpg'
           });
           await axios.post(
-            `https://api.telegram.org/bot${cfg.bot_token}/sendPhoto`,
+            `https://api.telegram.org/bot${activeToken}/sendPhoto`,
             fd,
             { headers: fd.getHeaders ? fd.getHeaders() : { 'Content-Type': 'multipart/form-data' }, timeout: 15000 }
           );
@@ -1867,7 +1905,7 @@ app.post('/api/telegram/recharge', upload.single('photo'), async (req, res) => {
     const text = String(req.body.text || '').slice(0, 4096);
     const platformId = (req.body.platform_id || 'default').toString().trim();
     const photoData = req.file ? { buffer: req.file.buffer, filename: req.file.originalname || 'proof.jpg' } : null;
-    await sendPlatformTelegram(platformId, text, photoData);
+    await sendPlatformTelegram(platformId, text, photoData, 'recharge');
     return res.json({ ok:true });
   } catch (e) {
     console.error('[telegram notify recharge error]', e.message);
@@ -1975,7 +2013,7 @@ app.post('/api/telegram/withdraw', upload.single('photo'), async (req, res) => {
     const text = String(req.body.text || '').slice(0, 4096);
     const platformId = (req.body.platform_id || 'default').toString().trim();
     const photoData = req.file ? { buffer: req.file.buffer, filename: req.file.originalname || 'proof.jpg' } : null;
-    await sendPlatformTelegram(platformId, text, photoData);
+    await sendPlatformTelegram(platformId, text, photoData, 'withdraw');
     return res.json({ ok:true });
   } catch (e) {
     console.error('[telegram notify withdraw error]', e.message);
@@ -4639,7 +4677,7 @@ app.post('/api/admin/platforms', async (req, res) => {
     if (!await isValidAdminToken(adminToken))
       return res.status(403).json({ ok: false, error: 'forbidden' });
 
-    const { name, bot_token, chat_ids, domain } = req.body;
+    const { name, bot_token, chat_ids, domain, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids } = req.body;
     if (!name || !String(name).trim())
       return res.status(400).json({ ok: false, error: '平台昵称不能为空' });
 
@@ -4660,6 +4698,10 @@ app.post('/api/admin/platforms', async (req, res) => {
       bot_token: String(bot_token || '').trim(),
       chat_ids: String(chat_ids || '').trim(),
       domain: String(domain || '').trim(),
+      recharge_bot_token: String(recharge_bot_token || '').trim(),
+      recharge_chat_ids: String(recharge_chat_ids || '').trim(),
+      withdraw_bot_token: String(withdraw_bot_token || '').trim(),
+      withdraw_chat_ids: String(withdraw_chat_ids || '').trim(),
       created_at: now(),
       created_by: createdBy,
       isActive: true
@@ -4672,6 +4714,10 @@ app.post('/api/admin/platforms', async (req, res) => {
       platform_id: id,
       bot_token: platformData.bot_token,
       chat_ids: platformData.chat_ids.split(',').filter(Boolean),
+      recharge_bot_token: platformData.recharge_bot_token,
+      recharge_chat_ids: platformData.recharge_chat_ids.split(',').filter(Boolean),
+      withdraw_bot_token: platformData.withdraw_bot_token,
+      withdraw_chat_ids: platformData.withdraw_chat_ids.split(',').filter(Boolean),
       platform_name: platformName
     };
 
@@ -4709,12 +4755,32 @@ app.get('/api/admin/platforms', async (req, res) => {
           } else if (raw.length > 0) {
             masked = '****';
           }
+          // 脱敏 recharge_bot_token
+          let rechargeMasked = '';
+          const rRaw = String(p.recharge_bot_token || '');
+          if (rRaw.length > 10) {
+            rechargeMasked = rRaw.slice(0, 6) + '****' + rRaw.slice(-4);
+          } else if (rRaw.length > 0) {
+            rechargeMasked = '****';
+          }
+          // 脱敏 withdraw_bot_token
+          let withdrawMasked = '';
+          const wRaw = String(p.withdraw_bot_token || '');
+          if (wRaw.length > 10) {
+            withdrawMasked = wRaw.slice(0, 6) + '****' + wRaw.slice(-4);
+          } else if (wRaw.length > 0) {
+            withdrawMasked = '****';
+          }
           platforms.push({
             id: pid,
             name: p.name || pid,
             domain: p.domain || '',
             bot_token_masked: masked,
             chat_ids: p.chat_ids || '',
+            recharge_bot_token_masked: rechargeMasked,
+            recharge_chat_ids: p.recharge_chat_ids || '',
+            withdraw_bot_token_masked: withdrawMasked,
+            withdraw_chat_ids: p.withdraw_chat_ids || '',
             created_at: p.created_at || 0,
             created_by: p.created_by || 'system',
             isActive: p.isActive !== false,
@@ -4775,7 +4841,7 @@ app.post('/api/admin/platform/update', async (req, res) => {
     if (!await isValidAdminToken(adminToken))
       return res.status(403).json({ ok: false, error: 'forbidden' });
 
-    const { platformId, name, domain, bot_token, chat_ids } = req.body;
+    const { platformId, name, domain, bot_token, chat_ids, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids } = req.body;
     if (!platformId)
       return res.status(400).json({ ok: false, error: 'missing platformId' });
 
@@ -4797,6 +4863,10 @@ app.post('/api/admin/platform/update', async (req, res) => {
     if (domain !== undefined) updates.domain = String(domain).trim();
     if (bot_token !== undefined) updates.bot_token = String(bot_token).trim();
     if (chat_ids !== undefined) updates.chat_ids = String(chat_ids).trim();
+    if (recharge_bot_token !== undefined) updates.recharge_bot_token = String(recharge_bot_token).trim();
+    if (recharge_chat_ids !== undefined) updates.recharge_chat_ids = String(recharge_chat_ids).trim();
+    if (withdraw_bot_token !== undefined) updates.withdraw_bot_token = String(withdraw_bot_token).trim();
+    if (withdraw_chat_ids !== undefined) updates.withdraw_chat_ids = String(withdraw_chat_ids).trim();
 
     await db.ref(`platforms/${platformId}`).update(updates);
 
@@ -4809,6 +4879,10 @@ app.post('/api/admin/platform/update', async (req, res) => {
           platform_id: platformId,
           bot_token: p.bot_token || '',
           chat_ids: (p.chat_ids || '').split(',').filter(Boolean),
+          recharge_bot_token: p.recharge_bot_token || '',
+          recharge_chat_ids: (p.recharge_chat_ids || '').split(',').filter(Boolean),
+          withdraw_bot_token: p.withdraw_bot_token || '',
+          withdraw_chat_ids: (p.withdraw_chat_ids || '').split(',').filter(Boolean),
           platform_name: p.name || platformId
         };
       }
