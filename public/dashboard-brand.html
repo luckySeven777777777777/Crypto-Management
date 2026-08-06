@@ -1162,13 +1162,17 @@ button {
 
     <div class="filters" style="margin-bottom:10px">
       <input id="platformName" placeholder="平台昵称（随意取，如 平台A / 小明平台）" style="width:240px">
-      <input id="platformBotToken" placeholder="Bot Token（可选）" style="width:240px">
-      <input id="platformChatIds" placeholder="Chat IDs（逗号分隔，可选）" style="width:240px">
       <input id="platformDomain" placeholder="前台域名，如 www.abc.com（可选）" style="width:240px">
       <input id="platformRechargeBotToken" placeholder="充 Bot Token（可选）" style="width:240px">
       <input id="platformRechargeChatIds" placeholder="充 Chat IDs（逗号分隔，可选）" style="width:240px">
       <input id="platformWithdrawBotToken" placeholder="提 Bot Token（可选）" style="width:240px">
       <input id="platformWithdrawChatIds" placeholder="提 Chat IDs（逗号分隔，可选）" style="width:240px">
+      <input id="platformTradeBotToken" placeholder="Trade Bot Token（可选）" style="width:240px">
+      <input id="platformTradeChatIds" placeholder="Trade Chat IDs（逗号分隔，可选）" style="width:240px">
+      <input id="platformPlanBotToken" placeholder="PLAN Bot Token（可选）" style="width:240px">
+      <input id="platformPlanChatIds" placeholder="PLAN Chat IDs（逗号分隔，可选）" style="width:240px">
+      <input id="platformLoanBotToken" placeholder="贷 Bot Token（可选）" style="width:240px">
+      <input id="platformLoanChatIds" placeholder="贷 Chat IDs（逗号分隔，可选）" style="width:240px">
       <button class="primary" onclick="createPlatform()">创建平台</button>
     </div>
 
@@ -1177,12 +1181,16 @@ button {
         <tr>
           <th>平台昵称</th>
           <th>域名</th>
-          <th>Bot Token</th>
-          <th>Chat IDs</th>
           <th>充Bot Token</th>
           <th>充Chat IDs</th>
           <th>提Bot Token</th>
           <th>提Chat IDs</th>
+          <th>Trade Bot Token</th>
+          <th>Trade Chat IDs</th>
+          <th>PLAN Bot Token</th>
+          <th>PLAN Chat IDs</th>
+          <th>贷Bot Token</th>
+          <th>贷Chat IDs</th>
           <th>创建时间</th>
           <th>状态</th>
           <th>操作</th>
@@ -1190,7 +1198,7 @@ button {
         </tr>
       </thead>
       <tbody id="platformTableBody">
-        <tr><td colspan="12">加载中...</td></tr>
+        <tr><td colspan="16">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -3747,7 +3755,7 @@ async function o_search(){
   if($('#o_end').value) params.end = $('#o_end').value;
   if($('#o_q').value) params.q = $('#o_q').value;
   if($('#o_type').value) params.type = $('#o_type').value;
-  const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="12">${__('loading')}</td></tr>`;
+  const tbody = $('#o_table'); tbody.innerHTML = `<tr><td colspan="11">${__('loading')}</td></tr>`;
   try{
     const all = await fetchAll(params);
     let rows = [
@@ -3777,7 +3785,7 @@ rows.sort((a, b) => {
 });
 
 if (!rows.length) {
-  tbody.innerHTML = `<tr><td colspan="12">${__('noRecords')}</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="11">${__('noRecords')}</td></tr>`;
   return;
 }
 
@@ -3818,7 +3826,7 @@ tbody.innerHTML =
   renderPager(rows.length, pageState.o, 'o', 'o_search');  // 渲染分页
 
 postRenderDecorate(); 
-  }catch(e){ tbody.innerHTML = `<tr><td colspan="12">${__('loadFailed')}</td></tr>`; }
+  }catch(e){ tbody.innerHTML = `<tr><td colspan="11">${__('loadFailed')}</td></tr>`; }
 }
 
 /* -----------------------------
@@ -5942,18 +5950,18 @@ async function loadPlatformList(admins) {
 
     const tbody = document.getElementById('platformTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="12">加载中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="16">加载中...</td></tr>';
 
     const r = await fetch('/api/admin/platforms', { headers: authHeaders() });
     const j = await r.json();
     if (!j || !j.platforms) {
-      tbody.innerHTML = '<tr><td colspan="12">加载失败</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="16">加载失败</td></tr>';
       return;
     }
 
     const platforms = j.platforms || [];
     if (!platforms.length) {
-      tbody.innerHTML = '<tr><td colspan="12">暂无平台（除 Default 外）</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="16">暂无平台（除 Default 外）</td></tr>';
       return;
     }
 
@@ -5962,12 +5970,16 @@ async function loadPlatformList(admins) {
       const safeName = escHtml1(p.name || p.id);
       const safeId = escHtml1(p.id);
       const safeDomain = escHtml1(p.domain || '--');
-      const safeToken = escHtml1(p.bot_token_masked || '--');
-      const safeChats = escHtml1(p.chat_ids || '--');
       const safeRechargeToken = escHtml1(p.recharge_bot_token_masked || '--');
       const safeRechargeChats = escHtml1(p.recharge_chat_ids || '--');
       const safeWithdrawToken = escHtml1(p.withdraw_bot_token_masked || '--');
       const safeWithdrawChats = escHtml1(p.withdraw_chat_ids || '--');
+      const safeTradeToken = escHtml1(p.trade_bot_token_masked || '--');
+      const safeTradeChats = escHtml1(p.trade_chat_ids || '--');
+      const safePlanToken = escHtml1(p.plan_bot_token_masked || '--');
+      const safePlanChats = escHtml1(p.plan_chat_ids || '--');
+      const safeLoanToken = escHtml1(p.loan_bot_token_masked || '--');
+      const safeLoanChats = escHtml1(p.loan_chat_ids || '--');
       const isActive = p.isActive !== false;
       const hasOnlineAdmin = admins && admins.some(a => a.platform_id === p.id && a.status === '在线');
       const onlineStatus = hasOnlineAdmin ? '在线' : '离线';
@@ -5979,12 +5991,16 @@ async function loadPlatformList(admins) {
       return '<tr>' +
         '<td><strong>' + safeName + '</strong><div class="small">ID: ' + safeId + '</div></td>' +
         '<td>' + safeDomain + '</td>' +
-        '<td><code>' + safeToken + '</code></td>' +
-        '<td>' + safeChats + '</td>' +
         '<td><code>' + safeRechargeToken + '</code></td>' +
         '<td>' + safeRechargeChats + '</td>' +
         '<td><code>' + safeWithdrawToken + '</code></td>' +
         '<td>' + safeWithdrawChats + '</td>' +
+        '<td><code>' + safeTradeToken + '</code></td>' +
+        '<td>' + safeTradeChats + '</td>' +
+        '<td><code>' + safePlanToken + '</code></td>' +
+        '<td>' + safePlanChats + '</td>' +
+        '<td><code>' + safeLoanToken + '</code></td>' +
+        '<td>' + safeLoanChats + '</td>' +
         '<td>' + escHtml1(timeStr) + '</td>' +
         '<td><span style="color:' + onlineColor + '">' + onlineStatus + '</span> · ' + activeLabel + '</td>' +
         '<td>' +
@@ -6005,7 +6021,7 @@ async function loadPlatformList(admins) {
     console.error('[loadPlatformList] error:', e.message);
     try {
       const tbody = document.getElementById('platformTableBody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="12">加载失败: ' + e.message + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="16">加载失败: ' + e.message + '</td></tr>';
     } catch(e2) {}
   }
 }
@@ -6013,30 +6029,38 @@ async function loadPlatformList(admins) {
 async function createPlatform() {
   try {
     const nameEl = document.getElementById('platformName');
-    const tokenEl = document.getElementById('platformBotToken');
-    const chatsEl = document.getElementById('platformChatIds');
     const domainEl = document.getElementById('platformDomain');
     const rechargeTokenEl = document.getElementById('platformRechargeBotToken');
     const rechargeChatsEl = document.getElementById('platformRechargeChatIds');
     const withdrawTokenEl = document.getElementById('platformWithdrawBotToken');
     const withdrawChatsEl = document.getElementById('platformWithdrawChatIds');
+    const tradeTokenEl = document.getElementById('platformTradeBotToken');
+    const tradeChatsEl = document.getElementById('platformTradeChatIds');
+    const planTokenEl = document.getElementById('platformPlanBotToken');
+    const planChatsEl = document.getElementById('platformPlanChatIds');
+    const loanTokenEl = document.getElementById('platformLoanBotToken');
+    const loanChatsEl = document.getElementById('platformLoanChatIds');
     const name = nameEl ? nameEl.value.trim() : '';
     if (!name) {
       showCenterNotify('请输入平台昵称');
       return;
     }
-    const bot_token = tokenEl ? tokenEl.value.trim() : '';
-    const chat_ids = chatsEl ? chatsEl.value.trim() : '';
     const domain = domainEl ? domainEl.value.trim() : '';
     const recharge_bot_token = rechargeTokenEl ? rechargeTokenEl.value.trim() : '';
     const recharge_chat_ids = rechargeChatsEl ? rechargeChatsEl.value.trim() : '';
     const withdraw_bot_token = withdrawTokenEl ? withdrawTokenEl.value.trim() : '';
     const withdraw_chat_ids = withdrawChatsEl ? withdrawChatsEl.value.trim() : '';
+    const trade_bot_token = tradeTokenEl ? tradeTokenEl.value.trim() : '';
+    const trade_chat_ids = tradeChatsEl ? tradeChatsEl.value.trim() : '';
+    const plan_bot_token = planTokenEl ? planTokenEl.value.trim() : '';
+    const plan_chat_ids = planChatsEl ? planChatsEl.value.trim() : '';
+    const loan_bot_token = loanTokenEl ? loanTokenEl.value.trim() : '';
+    const loan_chat_ids = loanChatsEl ? loanChatsEl.value.trim() : '';
 
     const r = await fetch('/api/admin/platforms', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ name, bot_token, chat_ids, domain, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids })
+      body: JSON.stringify({ name, domain, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids, trade_bot_token, trade_chat_ids, plan_bot_token, plan_chat_ids, loan_bot_token, loan_chat_ids })
     });
     const j = await r.json();
     if (!j.ok) {
@@ -6045,13 +6069,17 @@ async function createPlatform() {
     }
     // Clear inputs
     if (nameEl) nameEl.value = '';
-    if (tokenEl) tokenEl.value = '';
-    if (chatsEl) chatsEl.value = '';
     if (domainEl) domainEl.value = '';
     if (rechargeTokenEl) rechargeTokenEl.value = '';
     if (rechargeChatsEl) rechargeChatsEl.value = '';
     if (withdrawTokenEl) withdrawTokenEl.value = '';
     if (withdrawChatsEl) withdrawChatsEl.value = '';
+    if (tradeTokenEl) tradeTokenEl.value = '';
+    if (tradeChatsEl) tradeChatsEl.value = '';
+    if (planTokenEl) planTokenEl.value = '';
+    if (planChatsEl) planChatsEl.value = '';
+    if (loanTokenEl) loanTokenEl.value = '';
+    if (loanChatsEl) loanChatsEl.value = '';
     showCenterNotify('平台 "' + (j.platform && j.platform.name || name) + '" 创建成功');
     loadPlatformList();
   } catch(e) {
@@ -6147,38 +6175,50 @@ function editPlatformRow(btn) {
   const row = btn.closest('tr');
   if (!row) return;
   const cells = row.querySelectorAll('td');
-  if (cells.length < 8) return;
+  if (cells.length < 16) return;
 
   const nameCell = cells[0];
   const domainCell = cells[1];
-  const tokenCell = cells[2];
-  const chatCell = cells[3];
-  const rechargeTokenCell = cells[4];
-  const rechargeChatCell = cells[5];
-  const withdrawTokenCell = cells[6];
-  const withdrawChatCell = cells[7];
+  const rechargeTokenCell = cells[2];
+  const rechargeChatCell = cells[3];
+  const withdrawTokenCell = cells[4];
+  const withdrawChatCell = cells[5];
+  const tradeTokenCell = cells[6];
+  const tradeChatCell = cells[7];
+  const planTokenCell = cells[8];
+  const planChatCell = cells[9];
+  const loanTokenCell = cells[10];
+  const loanChatCell = cells[11];
 
   const platformId = nameCell.querySelector('.small') ? nameCell.querySelector('.small').textContent.replace('ID: ', '').trim() : '';
   const currentName = nameCell.querySelector('strong') ? nameCell.querySelector('strong').textContent : '';
   const currentDomain = domainCell.textContent.trim();
-  const currentToken = tokenCell.textContent.trim();
-  const currentChats = chatCell.textContent.trim();
   const currentRechargeToken = rechargeTokenCell.textContent.trim();
   const currentRechargeChats = rechargeChatCell.textContent.trim();
   const currentWithdrawToken = withdrawTokenCell.textContent.trim();
   const currentWithdrawChats = withdrawChatCell.textContent.trim();
+  const currentTradeToken = tradeTokenCell.textContent.trim();
+  const currentTradeChats = tradeChatCell.textContent.trim();
+  const currentPlanToken = planTokenCell.textContent.trim();
+  const currentPlanChats = planChatCell.textContent.trim();
+  const currentLoanToken = loanTokenCell.textContent.trim();
+  const currentLoanChats = loanChatCell.textContent.trim();
 
   nameCell.innerHTML = '<input type="text" value="' + escHtml1(currentName) + '" class="edit-platform-name" style="width:120px">' +
     '<div class="small">ID: ' + escHtml1(platformId) + '</div>';
   domainCell.innerHTML = '<input type="text" value="' + escHtml1(currentDomain === '--' ? '' : currentDomain) + '" class="edit-platform-domain" style="width:150px">';
-  tokenCell.innerHTML = '<input type="text" value="' + escHtml1(currentToken === '--' ? '' : currentToken) + '" class="edit-platform-token" style="width:200px">';
-  chatCell.innerHTML = '<input type="text" value="' + escHtml1(currentChats === '--' ? '' : currentChats) + '" class="edit-platform-chats" style="width:160px">';
   rechargeTokenCell.innerHTML = '<input type="text" value="' + escHtml1(currentRechargeToken === '--' ? '' : currentRechargeToken) + '" class="edit-platform-recharge-token" style="width:200px">';
   rechargeChatCell.innerHTML = '<input type="text" value="' + escHtml1(currentRechargeChats === '--' ? '' : currentRechargeChats) + '" class="edit-platform-recharge-chats" style="width:160px">';
   withdrawTokenCell.innerHTML = '<input type="text" value="' + escHtml1(currentWithdrawToken === '--' ? '' : currentWithdrawToken) + '" class="edit-platform-withdraw-token" style="width:200px">';
   withdrawChatCell.innerHTML = '<input type="text" value="' + escHtml1(currentWithdrawChats === '--' ? '' : currentWithdrawChats) + '" class="edit-platform-withdraw-chats" style="width:160px">';
+  tradeTokenCell.innerHTML = '<input type="text" value="' + escHtml1(currentTradeToken === '--' ? '' : currentTradeToken) + '" class="edit-platform-trade-token" style="width:200px">';
+  tradeChatCell.innerHTML = '<input type="text" value="' + escHtml1(currentTradeChats === '--' ? '' : currentTradeChats) + '" class="edit-platform-trade-chats" style="width:160px">';
+  planTokenCell.innerHTML = '<input type="text" value="' + escHtml1(currentPlanToken === '--' ? '' : currentPlanToken) + '" class="edit-platform-plan-token" style="width:200px">';
+  planChatCell.innerHTML = '<input type="text" value="' + escHtml1(currentPlanChats === '--' ? '' : currentPlanChats) + '" class="edit-platform-plan-chats" style="width:160px">';
+  loanTokenCell.innerHTML = '<input type="text" value="' + escHtml1(currentLoanToken === '--' ? '' : currentLoanToken) + '" class="edit-platform-loan-token" style="width:200px">';
+  loanChatCell.innerHTML = '<input type="text" value="' + escHtml1(currentLoanChats === '--' ? '' : currentLoanChats) + '" class="edit-platform-loan-chats" style="width:160px">';
 
-  const actionCell = cells[9];
+  const actionCell = cells[14];
   actionCell.innerHTML = '<button class="primary" onclick="savePlatformRow(this,\'' + escHtml1(platformId) + '\')">保存</button> ' +
     '<button class="secondary" onclick="loadPlatformList()">取消</button>';
 }
@@ -6189,21 +6229,29 @@ async function savePlatformRow(btn, platformId) {
 
   const nameInput = row.querySelector('.edit-platform-name');
   const domainInput = row.querySelector('.edit-platform-domain');
-  const tokenInput = row.querySelector('.edit-platform-token');
-  const chatsInput = row.querySelector('.edit-platform-chats');
   const rechargeTokenInput = row.querySelector('.edit-platform-recharge-token');
   const rechargeChatsInput = row.querySelector('.edit-platform-recharge-chats');
   const withdrawTokenInput = row.querySelector('.edit-platform-withdraw-token');
   const withdrawChatsInput = row.querySelector('.edit-platform-withdraw-chats');
+  const tradeTokenInput = row.querySelector('.edit-platform-trade-token');
+  const tradeChatsInput = row.querySelector('.edit-platform-trade-chats');
+  const planTokenInput = row.querySelector('.edit-platform-plan-token');
+  const planChatsInput = row.querySelector('.edit-platform-plan-chats');
+  const loanTokenInput = row.querySelector('.edit-platform-loan-token');
+  const loanChatsInput = row.querySelector('.edit-platform-loan-chats');
 
   const name = nameInput ? nameInput.value.trim() : '';
   const domain = domainInput ? domainInput.value.trim() : '';
-  const bot_token = tokenInput ? tokenInput.value.trim() : '';
-  const chat_ids = chatsInput ? chatsInput.value.trim() : '';
   const recharge_bot_token = rechargeTokenInput ? rechargeTokenInput.value.trim() : '';
   const recharge_chat_ids = rechargeChatsInput ? rechargeChatsInput.value.trim() : '';
   const withdraw_bot_token = withdrawTokenInput ? withdrawTokenInput.value.trim() : '';
   const withdraw_chat_ids = withdrawChatsInput ? withdrawChatsInput.value.trim() : '';
+  const trade_bot_token = tradeTokenInput ? tradeTokenInput.value.trim() : '';
+  const trade_chat_ids = tradeChatsInput ? tradeChatsInput.value.trim() : '';
+  const plan_bot_token = planTokenInput ? planTokenInput.value.trim() : '';
+  const plan_chat_ids = planChatsInput ? planChatsInput.value.trim() : '';
+  const loan_bot_token = loanTokenInput ? loanTokenInput.value.trim() : '';
+  const loan_chat_ids = loanChatsInput ? loanChatsInput.value.trim() : '';
 
   if (!name) {
     showCenterNotify('平台昵称不能为空');
@@ -6215,7 +6263,7 @@ async function savePlatformRow(btn, platformId) {
     const r = await fetch('/api/admin/platform/update', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ platformId: platformId, name, domain, bot_token, chat_ids, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids })
+      body: JSON.stringify({ platformId: platformId, name, domain, recharge_bot_token, recharge_chat_ids, withdraw_bot_token, withdraw_chat_ids, trade_bot_token, trade_chat_ids, plan_bot_token, plan_chat_ids, loan_bot_token, loan_chat_ids })
     });
     const j = await r.json();
     if (!j.ok) {
