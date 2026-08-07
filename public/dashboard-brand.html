@@ -2610,6 +2610,7 @@ async function submitAdminLogin(){
       // 登录成功后重置下级标记，恢复后台元素
       _isSubAdminLogin = false;
       sessionStorage.removeItem('is_sub_admin_login');
+      sessionStorage.removeItem('nexbit_sub_login_id');
       document.querySelector('.header-nav').style.display = '';
       document.querySelector('.top-header').style.display = '';
       document.body.style.background = '';
@@ -2652,6 +2653,7 @@ async function submitLogin2FA(){
       startConfigPolling();
       _isSubAdminLogin = false;
       sessionStorage.removeItem('is_sub_admin_login');
+      sessionStorage.removeItem('nexbit_sub_login_id');
       document.querySelector('.header-nav').style.display = '';
       document.querySelector('.top-header').style.display = '';
       document.body.style.background = '';
