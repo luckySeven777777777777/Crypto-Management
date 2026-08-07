@@ -4670,6 +4670,21 @@ async function openProfile(uid) {
     }
   } catch(e) { console.error('load member overview error', e); }
   
+  // 兜底：当 isAdmin=true 时确保编辑/冻结按钮可见（即使 API 失败 populateMemberOverview 未执行）
+  if (isAdmin) {
+    const fallbackBtns = document.querySelectorAll('#memberSection .edit-btn, #memberSection .primary-btn');
+    fallbackBtns.forEach(btn => {
+      if (btn.id === 'eb-m-status' || btn.id === 'eb-m-creditLoan' || btn.id === 'eb-m-todaySignIn' || 
+          btn.id === 'eb-m-memberTag' || btn.id === 'eb-m-withdrawPassword' ||
+          btn.id === 'eb-m-rechargeRecords' || btn.id === 'eb-m-withdrawRecords' ||
+          btn.id === 'eb-m-freezeBalance' || btn.id === 'eb-m-unfreezeBalance') {
+        btn.style.display = '';
+      }
+    });
+    const noteInput = document.getElementById('m-memberNote-input');
+    if (noteInput) { noteInput.style.display = 'block'; }
+  }
+  
   // 保存按钮仅 admin 可见
   const saveBtn = document.getElementById('profileSaveBtn');
   if (saveBtn) { saveBtn.style.display = isAdmin ? '' : 'none'; }
