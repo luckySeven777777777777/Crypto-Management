@@ -1236,12 +1236,13 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
           <th>创建时间</th>
           <th id="adminPlatformHeader">所属平台</th>
           <th data-i18n="text" data-key="status">状态</th>
+          <th>2FA</th>
           <th data-i18n="text" data-key="operation">操作</th>
           <th>操作人</th>
         </tr>
       </thead>
       <tbody id="adminTable">
-        <tr><td colspan="8"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
+        <tr><td colspan="9"><span data-i18n="text" data-key="loading">加载中...</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -5789,7 +5790,7 @@ async function loadAdmins(){
     const j = await r.json();
     if (!j.ok) {
       showCenterNotify('加载管理员列表失败: ' + (j.error || '未知'));
-      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="8">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
+      try { document.getElementById('adminTable').innerHTML = '<tr><td colspan="9">加载失败: ' + (j.error || '未知') + '</td></tr>'; } catch(e2) {}
       if (btn) { btn.disabled = false; btn.textContent = origText; }
       return;
     }
@@ -5820,7 +5821,7 @@ function renderAdminTable(admins){
   if (!tbody) { console.error('[renderAdminTable] adminTable element not found'); return; }
   // Safety: ensure admins is an array
   if (!Array.isArray(admins)) {
-    tbody.innerHTML = '<tr><td colspan="8">数据格式错误</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9">数据格式错误</td></tr>';
     return;
   }
   // 过滤掉空白ID的异常账号
@@ -5828,7 +5829,7 @@ function renderAdminTable(admins){
   // 过滤掉"发财"
   admins = admins.filter(a => String(a.id) !== '发财');
   if (!admins.length) {
-    tbody.innerHTML = '<tr><td colspan="8">暂无管理员</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9">暂无管理员</td></tr>';
     return;
   }
   const showPlatformCol = isSuperAdmin();
@@ -5869,6 +5870,7 @@ function renderAdminTable(admins){
       '<td>' + escHtml1(createTime) + '</td>' +
       platformCol +
       '<td><span style="color:' + statusColor + '">' + escHtml1(a.status) + '</span> · ' + activeLabel + '</td>' +
+      '<td>' + (a._2fa_bound ? '<span style="color:green">已绑定</span>' : '<span style="color:#999">未绑定</span>') + '</td>' +
       '<td>' +
         '<button class="' + toggleClass + '" onclick="toggleAdminStatus(\'' + escHtml1(a.id) + '\',' + (!a.isActive) + ')">' + toggleLabel + '</button> ' +
         '<button class="primary" style="padding:4px 10px" onclick="pushAdminUpdate(\'' + escHtml1(a.id) + '\',this)">更新</button> ' +
@@ -6249,7 +6251,7 @@ async function togglePlatformStatus(id, isActive) {
     const r = await fetch('/api/admin/platform/toggle-status', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ platform_id: id, isActive: isActive })
+      body: JSON.stringify({ platformId: id, isActive: isActive })
     });
     const j = await r.json();
     if (!j.ok) {
