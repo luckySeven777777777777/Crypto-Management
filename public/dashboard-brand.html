@@ -2052,6 +2052,10 @@ if (end && t && new Date(t) > new Date(end + 'T23:59:59')) return false;
       else if (fs === 'success' || fs === 'approved') {
         if (os !== 'success' && os !== 'approved') return false;
       }
+      // 'processing' / 'pending' 视为等价
+      else if (fs === 'processing' || fs === 'pending') {
+        if (os !== 'processing' && os !== 'pending') return false;
+      }
       // 其他状态精确匹配
       else if (os !== fs) {
         return false;
@@ -5036,7 +5040,7 @@ const rejectedToday = allTodayOrders.filter(o =>
   )
 );
 const pendingToday = allTodayOrders.filter(o =>
-  ['processing','pending','waiting','locked','审核中','open','new','submitted'].includes(
+  ['processing','pending'].includes(
     String(o.status).toLowerCase()
   )
 );
