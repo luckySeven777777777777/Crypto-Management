@@ -1912,7 +1912,11 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
       }).catch(() => {});
     }
     localStorage.removeItem('nexbit_admin_token');
-    localStorage.removeItem('admin_user');
+    localStorage.removeItem('nexbit_admin_perms');
+    localStorage.removeItem('nexbit_admin_super');
+    localStorage.removeItem('nexbit_admin_name');
+    localStorage.removeItem('nexbit_admin_id');
+    localStorage.removeItem('nexbit_admin_platform');
     const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
     if (subLoginId) {
       location.href = 'dashboard-brand.html?login=' + encodeURIComponent(subLoginId);
