@@ -5001,17 +5001,17 @@ async function loadDashboard(){
     const buysell  = all.buysell  || [];
     const loans    = all.loans    || [];
 
-    const rToday = recharge.filter(o => isSameDay(new Date(o.time_us), today));
-    const rYest  = recharge.filter(o => isSameDay(new Date(o.time_us), yesterday));
+    const rToday = recharge.filter(o => isSameDay(new Date(o.timestamp || o.time_us), today));
+    const rYest  = recharge.filter(o => isSameDay(new Date(o.timestamp || o.time_us), yesterday));
 
-    const wToday = withdraw.filter(o => isSameDay(new Date(o.time_us), today));
-    const wYest  = withdraw.filter(o => isSameDay(new Date(o.time_us), yesterday));
+    const wToday = withdraw.filter(o => isSameDay(new Date(o.timestamp || o.time_us), today));
+    const wYest  = withdraw.filter(o => isSameDay(new Date(o.timestamp || o.time_us), yesterday));
 
-    const bToday = buysell.filter(o => isSameDay(new Date(o.time_us), today));
-    const bYest  = buysell.filter(o => isSameDay(new Date(o.time_us), yesterday));
+    const bToday = buysell.filter(o => isSameDay(new Date(o.timestamp || o.time_us), today));
+    const bYest  = buysell.filter(o => isSameDay(new Date(o.timestamp || o.time_us), yesterday));
 
-    const lToday = loans.filter(o => isSameDay(new Date(o.time_us), today));
-    const lYest  = loans.filter(o => isSameDay(new Date(o.time_us), yesterday));
+    const lToday = loans.filter(o => isSameDay(new Date(o.timestamp || o.time_us), today));
+    const lYest  = loans.filter(o => isSameDay(new Date(o.timestamp || o.time_us), yesterday));
 
     const sumUSDT = arr =>
       arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
