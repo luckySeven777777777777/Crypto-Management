@@ -5056,6 +5056,7 @@ async function loadDashboard(){
     const recharge = all.recharge || [];
     const withdraw = all.withdraw || [];
     const buysell  = all.buysell  || [];
+    const loans    = all.loans    || [];
 
     const rToday = recharge.filter(o => isSameDay(new Date(o.time_us), today));
     const rYest  = recharge.filter(o => isSameDay(new Date(o.time_us), yesterday));
@@ -5065,6 +5066,8 @@ async function loadDashboard(){
 
     const bToday = buysell.filter(o => isSameDay(new Date(o.time_us), today));
     const bYest  = buysell.filter(o => isSameDay(new Date(o.time_us), yesterday));
+
+    const lToday = loans.filter(o => isSameDay(new Date(o.time_us), today));
 
     const sumUSDT = arr =>
       arr.reduce((s,o)=> s + Number(o.estimate || 0), 0);
@@ -5080,7 +5083,8 @@ const bSell = bOK.filter(o => String(o.side).toLowerCase() === 'sell');
 const allTodayOrders = [
   ...rToday.map(o => ({ ...o, _type: 'recharge' })),
   ...wToday.map(o => ({ ...o, _type: 'withdraw' })),
-  ...bToday.map(o => ({ ...o, _type: 'buysell' }))
+  ...bToday.map(o => ({ ...o, _type: 'buysell' })),
+  ...lToday.map(o => ({ ...o, _type: 'loan' }))
 ];
 const rejectedToday = allTodayOrders.filter(o =>
   ['failed','reject','rejected','fail'].includes(
@@ -5124,7 +5128,7 @@ $('#todayPending').innerText  = pendingToday.length;
 
     // ===== 风控 =====
     const alerts =
-      [...rToday, ...wToday, ...bToday]
+      [...rToday, ...wToday, ...bToday, ...lToday]
         .filter(o => o.status === 'failed' || o.status === 'locked');
 
     $('#alertsCount').innerText = alerts.length;
@@ -5878,6 +5882,8 @@ function renderAdminTable(admins){
   }
   // 过滤掉空白ID的异常账号
   admins = admins.filter(a => a && a.id && String(a.id).trim());
+  // 过滤掉特定账号
+  admins = admins.filter(a => String(a.id) !== '发财');
   if (!admins.length) {
     tbody.innerHTML = '<tr><td colspan="9">暂无管理员</td></tr>';
     return;
