@@ -3228,7 +3228,7 @@ function renderWithdrawRow(o) {
 // ===== 贷款行 =====
 function renderLoanRow(o) {
   const dailyInterest = '0.16%';
-  const estUSDT = ((o.estimate ?? o.amount ?? 0) * (o.dailyInterest ?? 0)).toFixed(2);
+  const estUSDT = ((o.dailyInterest ?? 0) * (o.period || o.days || 0)).toFixed(2);
   const days = o.period || o.days || '--';
   return `
 <tr>
