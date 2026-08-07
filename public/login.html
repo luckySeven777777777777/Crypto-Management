@@ -220,16 +220,16 @@
       if (data.ok && data.token) {
         hideError();
         localStorage.setItem('nexbit_admin_token', data.token);
-        localStorage.setItem('admin_user', data.nickname || tempAdminId);
-        localStorage.setItem('admin_id', tempAdminId);
+        localStorage.setItem('nexbit_admin_name', data.nickname || tempAdminId);
+        localStorage.setItem('nexbit_admin_id', tempAdminId);
         if (data.permissions) {
-          localStorage.setItem('admin_perms', JSON.stringify(data.permissions));
+          localStorage.setItem('nexbit_admin_perms', JSON.stringify(data.permissions));
         }
         if (data.isSuper) {
-          localStorage.setItem('admin_is_super', '1');
+          localStorage.setItem('nexbit_admin_super', '1');
         }
         if (data.platform_id) {
-          localStorage.setItem('admin_platform_id', data.platform_id);
+          localStorage.setItem('nexbit_admin_platform', data.platform_id);
         }
         location.href = 'dashboard-brand.html';
       } else {
@@ -278,16 +278,16 @@
         // 未绑定2FA：直接登录
         hideError();
         localStorage.setItem('nexbit_admin_token', data.token);
-        localStorage.setItem('admin_user', data.nickname || username);
-        localStorage.setItem('admin_id', username);
+        localStorage.setItem('nexbit_admin_name', data.nickname || username);
+        localStorage.setItem('nexbit_admin_id', username);
         if (data.permissions) {
-          localStorage.setItem('admin_perms', JSON.stringify(data.permissions));
+          localStorage.setItem('nexbit_admin_perms', JSON.stringify(data.permissions));
         }
         if (data.isSuper) {
-          localStorage.setItem('admin_is_super', '1');
+          localStorage.setItem('nexbit_admin_super', '1');
         }
         if (data.platform_id) {
-          localStorage.setItem('admin_platform_id', data.platform_id);
+          localStorage.setItem('nexbit_admin_platform', data.platform_id);
         }
         location.href = 'dashboard-brand.html';
       } else {
