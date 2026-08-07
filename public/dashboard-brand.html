@@ -1943,7 +1943,7 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
 
       const response = await fetch('/api/admin/generate-2fa', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ adminId })
       });
       const data = await response.json();
