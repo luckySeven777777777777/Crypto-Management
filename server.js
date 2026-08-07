@@ -3155,6 +3155,14 @@ app.post('/api/admin/login', async (req, res) => {
   }
 });
 
+// [临时] 清除2FA状态
+app.post('/api/admin/clear-2fa-temp', async (req, res) => {
+  const { adminId } = req.body;
+  if (!adminId) return res.status(400).json({ ok: false });
+  await db.ref(`admins/${adminId}`).update({ _2fa_bound: null, _2fa_secret: null, '2fa_pending_secret': null });
+  return res.json({ ok: true });
+});
+
 // 登录2FA验证
 app.post('/api/admin/login-2fa', async (req, res) => {
   try {
