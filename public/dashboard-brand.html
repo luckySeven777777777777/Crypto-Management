@@ -1904,8 +1904,13 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
     }
     localStorage.removeItem('nexbit_admin_token');
     localStorage.removeItem('admin_user');
+    const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
     sessionStorage.removeItem('nexbit_sub_login_id');
-    location.href = 'login.html';
+    if (subLoginId) {
+      location.href = 'dashboard-brand.html?login=' + subLoginId;
+    } else {
+      location.href = 'login.html';
+    }
   }
 
   // ===== 居中通知（替换 alert） =====
@@ -6671,6 +6676,16 @@ document.addEventListener('click',function(e){var d=document.getElementById('the
     }
   });
   observer.observe(c, { attributes: true, attributeFilter: ['style'] });
+
+  // 初始化时检查 canvas 是否已显示（处理 ensureLoggedIn 先于脚本执行的情况）
+  if (c.style.display === 'block') {
+    resize();
+    initParticles();
+    if (!animId) updateAndDraw();
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseleave', onMouseLeave);
+    window.addEventListener('resize', resize);
+  }
 
   function onMouseMove(e) { mouseX = e.clientX; mouseY = e.clientY; }
   function onMouseLeave() { mouseX = -9999; mouseY = -9999; }
