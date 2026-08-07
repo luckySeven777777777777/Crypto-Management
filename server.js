@@ -281,7 +281,16 @@ app.post('/api/admin/generate-2fa', async (req, res) => {
       return res.status(403).json({ ok: false, message: '未授权' });
   } catch(e) { return res.status(403).json({ ok: false, message: '身份验证失败' }); }
 
-  const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
+  let label = '管理后台';
+  try {
+    const snap = await db.ref(`admins/${adminId}`).once('value');
+    if (snap.exists()) {
+      const adminData = snap.val();
+      const nickname = adminData.nickname || '';
+      if (nickname) label = `管理后台-${nickname}`;
+    }
+  } catch(e) { console.error('[generate-2fa] fetch nickname error:', e.message); }
+  const secret = speakeasy.generateSecret({ name: label });
 
   qrcode.toDataURL(secret.otpauth_url, async function (err, qr_code) {
     if (err) return res.status(500).json({ ok: false, message: '二维码生成失败' });
