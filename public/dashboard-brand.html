@@ -5709,11 +5709,14 @@ function resetWithdrawPage() {
   })();
 
   // 检查 URL 中的 login 参数：清除旧登录态，触发下级登录样式
-  let _isSubAdminLogin = sessionStorage.getItem('is_sub_admin_login') === '1';
+  let _isSubAdminLogin = false;
   (function prefillLoginFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const loginId = params.get('login');
-    if (!loginId) return;
+    if (!loginId) {
+      sessionStorage.removeItem('is_sub_admin_login');
+      return;
+    }
 
     _isSubAdminLogin = true;
     sessionStorage.setItem('is_sub_admin_login', '1');
