@@ -2086,7 +2086,7 @@ function paginate(list, page){
 
 function renderPager(total, page, key, onChange){
   const pages = Math.ceil(total / PAGE_SIZE);
-  const colspan = key==='bs'?12:key==='r'||key==='w'?14:12;
+  const colspan = key==='bs'?12:key==='r'||key==='w'?14:key==='l'?16:12;
 
   const batchBar = (key==='bs'||key==='r'||key==='w') ? `
     <div style="margin-top:6px;display:flex;gap:12px;align-items:center;border-top:1px solid #e0e0e0;padding-top:8px">
@@ -3877,7 +3877,7 @@ async function l_search(){
 
   }catch(e){
     console.error(e);
-    tbody.innerHTML = `<tr><td colspan="15">${__('loadFailed')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="16">${__('loadFailed')}</td></tr>`;
   }
 }
 async function o_search(){
