@@ -6271,7 +6271,7 @@ async function pushPlatformUpdate(id, btn) {
     const r = await fetch('/api/admin/platform/push-update', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ platform_id: id })
+      body: JSON.stringify({ platformId: id })
     });
     const j = await r.json();
     if (!j.ok) {
@@ -6292,7 +6292,7 @@ async function kickPlatform(id) {
     const r = await fetch('/api/admin/platform/kick', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ platform_id: id })
+      body: JSON.stringify({ platformId: id })
     });
     const j = await r.json();
     if (!j.ok) {
