@@ -271,71 +271,48 @@ process.on('uncaughtException', (err) => {
 // 生成 2FA 密钥和二维码
 app.post('/api/admin/generate-2fa', async (req, res) => {
   const { adminId } = req.body;
+  if (!adminId) return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
 
-  if (!adminId) {
-    return res.status(400).json({ ok: false, message: '管理员账号不能为空' });
-  }
-
+  // 验证身份
   try {
-    // 查询管理员昵称
-    let nickname = '';
-    const adminSnap = await db.ref(`admins/${adminId}`).once('value');
-    if (adminSnap.exists()) {
-      nickname = adminSnap.val().nickname || '';
-    }
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!token || !await isValidAdminToken(token))
+      return res.status(403).json({ ok: false, message: '未授权' });
+  } catch(e) { return res.status(403).json({ ok: false, message: '身份验证失败' }); }
 
-    const name = nickname ? `管理后台-${nickname}` : '管理后台';
-    const secret = speakeasy.generateSecret({ name });
+  const secret = speakeasy.generateSecret({ name: `NEXBIT 管理后台 - ${adminId}` });
 
-    // 写入待验证密钥
-    await db.ref(`admins/${adminId}/2fa_pending_secret`).set(secret.base32);
+  qrcode.toDataURL(secret.otpauth_url, async function (err, qr_code) {
+    if (err) return res.status(500).json({ ok: false, message: '二维码生成失败' });
 
-    qrcode.toDataURL(secret.otpauth_url, function (err, qr_code) {
-      if (err) {
-        return res.status(500).json({ ok: false, message: '二维码生成失败' });
-      }
-      res.json({
-        ok: true,
-        qr_code: qr_code,
-        secret: secret.base32
-      });
-    });
-  } catch (e) {
-    console.error('generate-2fa error', e);
-    return res.status(500).json({ ok: false, message: '服务器错误' });
-  }
+    // 暂存待验证密钥
+    try { await db.ref(`admins/${adminId}/2fa_pending_secret`).set(secret.base32); } catch(e) {}
+
+    res.json({ ok: true, qr_code: qr_code, secret: secret.base32 });
+  });
 });
 
-// 验证 2FA 验证码
+// 验证并绑定 2FA
 app.post('/api/admin/verify-2fa', async (req, res) => {
   const { adminId, code } = req.body;
-
-  if (!adminId || !code) {
-    return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
-  }
+  if (!adminId || !code) return res.status(400).json({ ok: false, message: '管理员账号和验证码不能为空' });
 
   try {
-    const secretSnap = await db.ref(`admins/${adminId}/2fa_pending_secret`).once('value');
-    if (!secretSnap.exists()) {
-      return res.status(400).json({ ok: false, message: '请先生成2FA密钥' });
-    }
+    // 从数据库读取待验证的 2FA 密钥
+    const pendingSnap = await db.ref(`admins/${adminId}/2fa_pending_secret`).once('value');
+    if (!pendingSnap.exists()) return res.status(400).json({ ok: false, message: '未找到待验证的2FA密钥，请重新生成' });
 
-    const secret = secretSnap.val();
-    const verified = speakeasy.totp.verify({
-      secret: secret,
-      encoding: 'base32',
-      token: code
-    });
+    const secret = pendingSnap.val();
+    const verified = speakeasy.totp.verify({ secret, encoding: 'base32', token: code });
+    if (!verified) return res.status(400).json({ ok: false, message: '验证码错误' });
 
-    if (verified) {
-      await db.ref(`admins/${adminId}/_2fa_secret`).set(secret);
-      await db.ref(`admins/${adminId}/_2fa_bound`).set(true);
-      await db.ref(`admins/${adminId}/2fa_pending_secret`).remove();
-      return res.json({ ok: true, message: '2FA绑定成功' });
-    } else {
-      return res.status(400).json({ ok: false, message: '验证码错误' });
-    }
-  } catch (e) {
+    // 绑定成功：写入正式密钥并标记已绑定
+    await db.ref(`admins/${adminId}`).update({ _2fa_secret: secret, _2fa_bound: true });
+    // 删除暂存密钥
+    await db.ref(`admins/${adminId}/2fa_pending_secret`).remove();
+    return res.json({ ok: true, message: '2FA 绑定成功' });
+  } catch(e) {
     console.error('verify-2fa error', e);
     return res.status(500).json({ ok: false, message: '服务器错误' });
   }
@@ -2662,6 +2639,7 @@ app.get('/api/admin/list', async (req, res) => {
             loginToken: a.loginToken || '',
             isSuper: !!a.isSuper,
             isActive: a.isActive !== false,
+            _2fa_bound: !!a._2fa_bound,
             status: adminStatus,
             permissions: a.permissions || { recharge: true, withdraw: true, buysell: true },
             createdBy: a.createdBy || 'system',
@@ -2669,8 +2647,7 @@ app.get('/api/admin/list', async (req, res) => {
             lastLogin: a.lastLogin || 0,
             last_operator: a.last_operator || a.createdBy || 'system',
             platform_id: platformId,
-            platform_name: platformName,
-            _2fa_bound: !!a._2fa_bound
+            platform_name: platformName
           });
         } catch (e) {
           console.error('[admin list] skipped one entry due to:', e.message);
@@ -3133,8 +3110,8 @@ app.post('/api/admin/login', async (req, res) => {
     if (admin.isActive === false)
       return res.status(403).json({ ok: false, error: '账号已被禁用，请联系超级管理员' });
 
-    // 检查是否已绑定2FA
-    if (admin._2fa_bound === true) {
+    // 检查 2FA：已绑定则要求验证
+    if (admin._2fa_bound) {
       return res.json({ ok: true, require2FA: true, adminId: id });
     }
 
@@ -3154,61 +3131,30 @@ app.post('/api/admin/login', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'internal server error' });
   }
 });
-
-// [临时] 清除2FA状态
-app.post('/api/admin/clear-2fa-temp', async (req, res) => {
-  const { adminId } = req.body;
-  if (!adminId) return res.status(400).json({ ok: false });
-  await db.ref(`admins/${adminId}`).update({ _2fa_bound: null, _2fa_secret: null, '2fa_pending_secret': null });
-  return res.json({ ok: true });
-});
-
-// 登录2FA验证
+/* ---------------------------------------------------------
+   Admin: 2FA 登录验证
+--------------------------------------------------------- */
 app.post('/api/admin/login-2fa', async (req, res) => {
   try {
     const { adminId, code } = req.body;
-    if (!adminId || !code)
-      return res.status(400).json({ ok: false, error: 'missing adminId/code' });
+    if (!adminId || !code) return res.status(400).json({ ok: false, error: 'missing adminId/code' });
 
-    const secretSnap = await db.ref(`admins/${adminId}/_2fa_secret`).once('value');
-    if (!secretSnap.exists())
-      return res.status(400).json({ ok: false, error: '2FA未绑定' });
+    const snap = await db.ref(`admins/${adminId}`).once('value');
+    if (!snap.exists()) return res.status(404).json({ ok: false, error: 'admin not found' });
 
-    const verified = speakeasy.totp.verify({
-      secret: secretSnap.val(),
-      encoding: 'base32',
-      token: code
-    });
+    const admin = snap.val();
+    if (!admin._2fa_secret) return res.status(400).json({ ok: false, error: '该账号未绑定2FA' });
 
-    if (!verified)
-      return res.status(400).json({ ok: false, error: '验证码错误' });
+    const verified = speakeasy.totp.verify({ secret: admin._2fa_secret, encoding: 'base32', token: code });
+    if (!verified) return res.status(401).json({ ok: false, error: '验证码错误' });
 
-    const adminSnap = await db.ref(`admins/${adminId}`).once('value');
-    if (!adminSnap.exists())
-      return res.status(404).json({ ok: false, error: 'admin not found' });
-
-    const admin = adminSnap.val();
     const token = uuidv4();
-    await db.ref(`admins_by_token/${token}`).set({
-      id: adminId,
-      created: now()
-    });
+    await db.ref(`admins_by_token/${token}`).set({ id: adminId, created: now() });
     await db.ref(`admins/${adminId}`).update({ status: '在线', lastLogin: now() });
 
-    return res.json({
-      ok: true,
-      token,
-      nickname: admin.nickname || admin.id,
-      permissions: admin.permissions || {},
-      isSuper: !!admin.isSuper,
-      platform_id: admin.platform_id || 'default'
-    });
-  } catch (e) {
-    console.error('login-2fa error', e);
-    return res.status(500).json({ ok: false, error: 'internal server error' });
-  }
+    return res.json({ ok: true, token, nickname: admin.nickname || admin.id, permissions: admin.permissions || {}, isSuper: !!admin.isSuper, platform_id: admin.platform_id || 'default' });
+  } catch (e) { console.error(e); return res.status(500).json({ ok: false, error: 'internal server error' }); }
 });
-
 /* ---------------------------------------------------------
    Admin: approve/decline transactions (idempotent)
    - prevents double-processing by checking 'processed' flag
