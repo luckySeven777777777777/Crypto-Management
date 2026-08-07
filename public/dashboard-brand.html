@@ -2498,15 +2498,17 @@ async function ensureLoggedIn(){
   const loginModal = document.getElementById('adminLoginModal');
 
   if (_isSubAdminLogin) {
-    // 下级专属登录：不透明背景、Login 标题、隐藏后台元素 + 粒子背景
+    // 下级专属登录：粒子背景 + 隐藏所有后台元素
     document.getElementById('bgCanvas').style.display = 'block';
     loginModal.style.background = 'transparent';
     document.getElementById('loginModalTitle').innerText = 'Login';
     document.getElementById('loginModalHint').style.display = 'none';
     const sidebar = document.querySelector('.header-nav');
     const header = document.querySelector('.top-header');
+    const mainEl = document.querySelector('.main');
     if (sidebar) sidebar.style.display = 'none';
     if (header) header.style.display = 'none';
+    if (mainEl) mainEl.style.display = 'none';
     document.body.style.background = '#1a1a2e';
     // 强制清空浏览器自动填充的账号密码
     setTimeout(() => {
@@ -2536,8 +2538,10 @@ function closeAdminLogin(){
   // 管理员模式：恢复后台元素
   const sidebar = document.querySelector('.header-nav');
   const header = document.querySelector('.top-header');
+  const mainEl = document.querySelector('.main');
   if (sidebar) sidebar.style.display = '';
   if (header) header.style.display = '';
+  if (mainEl) mainEl.style.display = '';
   document.body.style.background = '';
 }
 async function submitAdminLogin(){
