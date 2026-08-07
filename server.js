@@ -281,7 +281,7 @@ app.post('/api/admin/generate-2fa', async (req, res) => {
     let nickname = '';
     const adminSnap = await db.ref(`admins/${adminId}`).once('value');
     if (adminSnap.exists()) {
-      nickname = adminSnap.val().nickname || '';
+      nickname = adminSnap.val().nickname || adminId;
     }
 
     const name = nickname ? `管理后台-${nickname}` : '管理后台';
