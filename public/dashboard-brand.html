@@ -1464,6 +1464,7 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
         <input id="login2FACode" placeholder="输入6位验证码" style="flex:1;padding:8px" />
         <button onclick="submitLogin2FA()" class="primary">验证登录</button>
       </div>
+      <button onclick="backToPasswordStep()" style="width:100%;margin-top:8px;padding:6px;background:#999;color:#fff;border:none;border-radius:4px;cursor:pointer">返回上一步</button>
     </div>
     <div id="loginModalHint" style="margin-top:8px;font-size:12px;color:#666">提示：管理员可以通过后端 /api/admin/create 创建新账号。</div>
   </div>
@@ -2552,6 +2553,14 @@ async function ensureLoggedIn(){
   }
 
   loginModal.style.display = 'flex';
+  document.getElementById('login2FABox').style.display = 'none';
+  document.getElementById('loginBtnRow').style.display = '';
+  document.getElementById('adminName').disabled = false;
+  document.getElementById('adminPassword').disabled = false;
+  document.getElementById('captchaAnswer').disabled = false;
+  document.getElementById('login2FACode').value = '';
+  _tempAdminId = '';
+  _tempToken = '';
   refreshCaptcha();
   return false;
 }
@@ -2559,6 +2568,12 @@ function closeAdminLogin(){
   document.getElementById('adminLoginModal').style.display = 'none';
   document.getElementById('login2FABox').style.display = 'none';
   document.getElementById('loginBtnRow').style.display = '';
+  document.getElementById('adminName').disabled = false;
+  document.getElementById('adminPassword').disabled = false;
+  document.getElementById('captchaAnswer').disabled = false;
+  document.getElementById('login2FACode').value = '';
+  _tempAdminId = '';
+  _tempToken = '';
   // 下级登录模式：不恢复后台，保持隐藏
   if (_isSubAdminLogin) return;
   // 管理员模式：恢复后台元素
@@ -2643,6 +2658,17 @@ async function submitLogin2FA() {
   }
 }
 
+function backToPasswordStep() {
+  _tempAdminId = '';
+  _tempToken = '';
+  document.getElementById('adminName').disabled = false;
+  document.getElementById('adminPassword').disabled = false;
+  document.getElementById('captchaAnswer').disabled = false;
+  document.getElementById('loginBtnRow').style.display = '';
+  document.getElementById('login2FABox').style.display = 'none';
+  document.getElementById('login2FACode').value = '';
+}
+
 async function submitAdminLogin(){
   const id = document.getElementById('adminName').value.trim();
   const pw = document.getElementById('adminPassword').value;
@@ -2660,8 +2686,12 @@ async function submitAdminLogin(){
     if (j.require2FA) {
       _tempAdminId = j.adminId;
       _tempToken = j.tempToken;
+      document.getElementById('adminName').disabled = true;
+      document.getElementById('adminPassword').disabled = true;
+      document.getElementById('captchaAnswer').disabled = true;
       document.getElementById('loginBtnRow').style.display = 'none';
       document.getElementById('login2FABox').style.display = 'block';
+      document.getElementById('login2FACode').focus();
       refreshCaptcha();
       return;
     }
