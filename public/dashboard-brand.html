@@ -1130,8 +1130,8 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
       </div>
 
       <table class="table">
-        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>币种</th><th>估算 USDT</th><th>Daily Interest</th><th>Days</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
-        <tbody id="l_table"><tr><td colspan="15" class="small">点击搜索加载数据</td></tr></tbody>
+        <thead><tr><th></th><th>订单/会员/钱包</th><th>时间</th><th>用户ID</th><th>类型</th><th>币种</th><th>Loan Amount</th><th>Daily Interest</th><th>估计USDT</th><th>Days</th><th>IP</th><th>状态</th><th>操作</th><th>操作人</th><th>备注</th><th>详情</th></tr></thead>
+        <tbody id="l_table"><tr><td colspan="16" class="small">点击搜索加载数据</td></tr></tbody>
       </table>
     </div>
 
@@ -3227,7 +3227,8 @@ function renderWithdrawRow(o) {
 }
 // ===== 贷款行 =====
 function renderLoanRow(o) {
-  const dailyInterest = o.dailyInterest != null ? (Number(o.dailyInterest) * 100).toFixed(4) + '%' : '--';
+  const dailyInterest = '0.16%';
+  const estUSDT = ((o.estimate ?? o.amount ?? 0) * (o.dailyInterest ?? 0)).toFixed(2);
   const days = o.period || o.days || '--';
   return `
 <tr>
@@ -3243,6 +3244,7 @@ function renderLoanRow(o) {
   <td>${getCoinLogoHTML('USDT')} USDT</td>
   <td>${o.estimate ?? o.amount ?? '--'}</td>
   <td>${dailyInterest}</td>
+  <td>${estUSDT}</td>
   <td>${days}</td>
   <td>${renderIpWithCountry(o.ip, o.country)}</td>
   <td><span class="badge" style="background:${(o.status==='success'||o.status==='approved')?'#00c851':(o.status==='failed'||o.status==='rejected')?'#ff4444':o.status==='locked'?'#ffbb33':'#1976d2'};color:#fff">${displayStatus(o.status)}</span></td>
@@ -3848,7 +3850,7 @@ async function l_search(){
   const statusVal = $('#l_status').value;
 
   const tbody = $('#l_table');
-  tbody.innerHTML = `<tr><td colspan="15">${__('loading')}</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="16">${__('loading')}</td></tr>`;
 
   try{
     const all = await fetchAll();
@@ -3862,7 +3864,7 @@ async function l_search(){
     });
 
     if(!list.length){
-      tbody.innerHTML = `<tr><td colspan="15">${__('noRecords')}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="16">${__('noRecords')}</td></tr>`;
       return;
     }
 
