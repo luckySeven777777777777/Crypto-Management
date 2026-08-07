@@ -54,10 +54,6 @@
       margin-bottom: 18px;
       font-size: 14px;
     }
-    input:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
     input::placeholder { color: #666; }
     button {
       width: 100%;
@@ -71,10 +67,6 @@
       cursor: pointer;
     }
     button:hover { opacity: 0.9; }
-    button.secondary {
-      background: #444;
-      margin-top: 8px;
-    }
     .error {
       margin-top: 12px;
       font-size: 13px;
@@ -88,18 +80,6 @@
       text-align: center;
       color: #777;
     }
-    .twofa-hint {
-      font-size: 12px;
-      color: #999;
-      margin-bottom: 8px;
-      text-align: center;
-    }
-    #twoFABox {
-      display: none;
-    }
-    #twoFABox input {
-      margin-bottom: 12px;
-    }
   </style>
 </head>
 <body>
@@ -107,150 +87,39 @@
     <div class="logo">NEXBIT ADMIN</div>
     <div class="sub">Management Control Panel</div>
 
-    <label>用户名</label>
-    <input id="username" placeholder="Admin / Agent" />
+```
+<label>用户名</label>
+<input id="username" placeholder="Admin / Agent" />
 
-    <label>密码</label>
-    <input id="password" type="password" placeholder="••••••••" />
+<label>密码</label>
+<input id="password" type="password" placeholder="••••••••" />
 
-    <div id="captchaBox" style="margin-bottom:18px;">
-      <label style="display:flex; justify-content:space-between; align-items:center;">
-        <span>验证码</span>
-        <span id="captchaQuestion" style="cursor:pointer; color:#64b5f6; font-size:13px;" onclick="refreshCaptcha()">点击刷新</span>
-      </label>
-      <input id="captchaAnswer" placeholder="输入计算结果" style="margin-bottom:0;" />
-    </div>
+<div id="twofaBox" style="display:none;margin-bottom:16px">
+    <div style="font-size:12px;color:#ffbb33;margin-bottom:6px">该账号已绑定Google验证器，请输入6位验证码</div>
+    <input id="twofaCode" placeholder="6位验证码" style="margin-bottom:10px" />
+    <button id="twofaBtn" style="background:linear-gradient(135deg, #f59e0b, #d97706)">验证登录</button>
+  </div>
 
-    <div id="twoFABox">
-      <div class="twofa-hint">该账号已绑定Google验证器，请输入6位验证码</div>
-      <input id="twoFACode" placeholder="输入6位验证码" maxlength="6" />
-      <button id="twoFABtn" onclick="submitLogin2FA()">验证登录</button>
-      <button class="secondary" onclick="backToPasswordStep()">返回上一步</button>
-    </div>
+<button id="loginBtn">登录</button>
 
-    <button id="loginBtn">登录</button>
+<div id="error" class="error">登录失败</div>
 
-    <div id="error" class="error">登录失败</div>
+<div class="footer">© NEXBIT System</div>
+```
 
-    <div class="footer">© NEXBIT System</div>
   </div>
 
 <script>
-  let captchaId = null;
-  let tempAdminId = null;
-  let tempToken = null;
-
-  async function refreshCaptcha() {
-    const el = document.getElementById('captchaQuestion');
-    el.innerText = '加载中...';
-    try {
-      const res = await fetch('/api/admin/captcha');
-      const data = await res.json();
-      if (data.ok) {
-        captchaId = data.id;
-        el.innerText = data.question;
-      } else {
-        el.innerText = '刷新失败，点击重试';
-      }
-    } catch (e) {
-      el.innerText = '刷新失败，点击重试';
-    }
-  }
-
-  refreshCaptcha();
-
-  function showError(msg) {
-    const err = document.getElementById('error');
-    err.innerText = msg;
-    err.style.display = 'block';
-  }
-
-  function hideError() {
-    document.getElementById('error').style.display = 'none';
-  }
-
-  // 进入2FA步骤：禁用密码区，显示2FA输入框
-  function enter2FAStep(adminId, token) {
-    tempAdminId = adminId;
-    tempToken = token;
-    hideError();
-    document.getElementById('username').disabled = true;
-    document.getElementById('password').disabled = true;
-    document.getElementById('captchaAnswer').disabled = true;
-    document.getElementById('captchaBox').style.display = 'none';
-    document.getElementById('loginBtn').style.display = 'none';
-    document.getElementById('twoFABox').style.display = 'block';
-    document.getElementById('twoFACode').focus();
-  }
-
-  // 返回密码步骤
-  function backToPasswordStep() {
-    tempAdminId = null;
-    tempToken = null;
-    hideError();
-    document.getElementById('username').disabled = false;
-    document.getElementById('password').disabled = false;
-    document.getElementById('captchaAnswer').disabled = false;
-    document.getElementById('captchaBox').style.display = '';
-    document.getElementById('loginBtn').style.display = '';
-    document.getElementById('twoFABox').style.display = 'none';
-    document.getElementById('twoFACode').value = '';
-  }
-
-  // 提交2FA验证
-  async function submitLogin2FA() {
-    const code = document.getElementById('twoFACode').value.trim();
-    if (!code) {
-      showError('请输入2FA验证码');
-      return;
-    }
-    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
-      showError('请输入6位数字验证码');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/admin/login-2fa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: tempAdminId, tempToken, code })
-      });
-      const data = await res.json();
-
-      if (data.ok && data.token) {
-        hideError();
-        localStorage.setItem('nexbit_admin_token', data.token);
-        localStorage.setItem('nexbit_admin_name', data.nickname || tempAdminId);
-        localStorage.setItem('nexbit_admin_id', tempAdminId);
-        if (data.permissions) {
-          localStorage.setItem('nexbit_admin_perms', JSON.stringify(data.permissions));
-        }
-        if (data.isSuper) {
-          localStorage.setItem('nexbit_admin_super', '1');
-        }
-        if (data.platform_id) {
-          localStorage.setItem('nexbit_admin_platform', data.platform_id);
-        }
-        location.href = 'dashboard-brand.html';
-      } else {
-        showError(data.error || '2FA验证失败');
-      }
-    } catch (e) {
-      showError('服务器连接失败');
-    }
-  }
+  let _2faAdminId = '';
 
   document.getElementById('loginBtn').onclick = async () => {
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value.trim();
-    const captchaAnswer = document.getElementById('captchaAnswer').value.trim();
+    const err = document.getElementById('error');
 
     if (!username || !password) {
-      showError('请输入用户名和密码');
-      return;
-    }
-    if (!captchaAnswer) {
-      showError('请输入验证码答案');
+      err.innerText = '请输入用户名和密码';
+      err.style.display = 'block';
       return;
     }
 
@@ -258,56 +127,65 @@
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: username,
-          password,
-          captchaId,
-          captchaAnswer
-        })
+        body: JSON.stringify({ id: username, password })
       });
 
       const data = await res.json();
 
-      if (data.ok) {
-        // 已绑定2FA：在同一页面完成2FA验证
-        if (data.require2FA) {
-          enter2FAStep(data.adminId, data.tempToken);
-          return;
-        }
-
-        // 未绑定2FA：直接登录
-        hideError();
+      if (data.ok && data.token) {
         localStorage.setItem('nexbit_admin_token', data.token);
         localStorage.setItem('nexbit_admin_name', data.nickname || username);
         localStorage.setItem('nexbit_admin_id', username);
-        if (data.permissions) {
-          localStorage.setItem('nexbit_admin_perms', JSON.stringify(data.permissions));
-        }
-        if (data.isSuper) {
-          localStorage.setItem('nexbit_admin_super', '1');
-        }
-        if (data.platform_id) {
-          localStorage.setItem('nexbit_admin_platform', data.platform_id);
-        }
+        if (data.permissions) localStorage.setItem('nexbit_admin_perms', JSON.stringify(data.permissions));
+        localStorage.setItem('nexbit_admin_super', data.isSuper ? '1' : '0');
+        if (data.platform_id) localStorage.setItem('nexbit_admin_platform', data.platform_id);
         location.href = 'dashboard-brand.html';
+      } else if (data.ok && data.require2FA) {
+        _2faAdminId = data.adminId;
+        document.getElementById('username').disabled = true;
+        document.getElementById('password').disabled = true;
+        document.getElementById('loginBtn').style.display = 'none';
+        document.getElementById('twofaBox').style.display = 'block';
+        err.style.display = 'none';
       } else {
-        if (data.error && data.error.includes('验证码')) {
-          refreshCaptcha();
-          document.getElementById('captchaAnswer').value = '';
-        }
-        showError(data.error || '登录失败');
+        err.innerText = data.error || '登录失败';
+        err.style.display = 'block';
       }
     } catch (e) {
-      showError('服务器连接失败');
+      err.innerText = '服务器连接失败';
+      err.style.display = 'block';
     }
   };
 
-  // 支持回车键提交2FA
-  document.getElementById('twoFACode').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      submitLogin2FA();
+  document.getElementById('twofaBtn').onclick = async () => {
+    const code = document.getElementById('twofaCode').value.trim();
+    const err = document.getElementById('error');
+    if (!code) { err.innerText = '请输入验证码'; err.style.display = 'block'; return; }
+
+    try {
+      const res = await fetch('/api/admin/login-2fa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: _2faAdminId, code })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        localStorage.setItem('nexbit_admin_token', data.token);
+        localStorage.setItem('nexbit_admin_name', data.nickname || _2faAdminId);
+        localStorage.setItem('nexbit_admin_id', _2faAdminId);
+        if (data.permissions) localStorage.setItem('nexbit_admin_perms', JSON.stringify(data.permissions));
+        localStorage.setItem('nexbit_admin_super', data.isSuper ? '1' : '0');
+        if (data.platform_id) localStorage.setItem('nexbit_admin_platform', data.platform_id);
+        location.href = 'dashboard-brand.html';
+      } else {
+        err.innerText = data.error || '验证码错误';
+        err.style.display = 'block';
+      }
+    } catch (e) {
+      err.innerText = '服务器连接失败';
+      err.style.display = 'block';
     }
-  });
+  };
 </script>
 
 </body>
