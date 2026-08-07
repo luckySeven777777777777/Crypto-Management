@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NEXBIT 管理后台登录</title>
+  <title>管理后台登录</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -94,6 +94,14 @@
 <label>密码</label>
 <input id="password" type="password" placeholder="••••••••" />
 
+<div id="captchaBox" style="margin-bottom:18px;">
+  <label style="display:flex; justify-content:space-between; align-items:center;">
+    <span>验证码</span>
+    <span id="captchaQuestion" style="cursor:pointer; color:#64b5f6; font-size:13px;" onclick="refreshCaptcha()">点击刷新</span>
+  </label>
+  <input id="captchaAnswer" placeholder="输入计算结果" style="margin-bottom:0;" />
+</div>
+
 <button id="loginBtn">登录</button>
 
 <div id="error" class="error">登录失败</div>
@@ -104,9 +112,31 @@
   </div>
 
 <script>
+  let captchaId = null;
+
+  async function refreshCaptcha() {
+    const el = document.getElementById('captchaQuestion');
+    el.innerText = '加载中...';
+    try {
+      const res = await fetch('/api/admin/captcha');
+      const data = await res.json();
+      if (data.ok) {
+        captchaId = data.id;
+        el.innerText = data.question;
+      } else {
+        el.innerText = '刷新失败，点击重试';
+      }
+    } catch (e) {
+      el.innerText = '刷新失败，点击重试';
+    }
+  }
+
+  refreshCaptcha();
+
   document.getElementById('loginBtn').onclick = async () => {
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value.trim();
+    const captchaAnswer = document.getElementById('captchaAnswer').value.trim();
     const err = document.getElementById('error');
 
     if (!username || !password) {
@@ -114,29 +144,45 @@
       err.style.display = 'block';
       return;
     }
+    if (!captchaAnswer) {
+      err.innerText = '请输入验证码答案';
+      err.style.display = 'block';
+      return;
+    }
 
     try {
       const res = await fetch('/api/admin/login', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-  id: username,
-  password
-})
-
-});
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: username,
+          password,
+          captchaId,
+          captchaAnswer
+        })
+      });
 
       const data = await res.json();
 
-     if (data.ok) {
-  // ✅ 写入 token
-  localStorage.setItem('nexbit_admin_token', data.token);
-  localStorage.setItem('admin_user', data.user || username);
-
-  // ✅ 跳转后台
-  location.href = 'dashboard-brand.html';
-} else {
-
+      if (data.ok) {
+        // ✅ 已绑定2FA
+        if (data.require2FA) {
+          err.style.display = 'none';
+          // 交给 dashboard-brand.html 的2FA流程处理
+          localStorage.setItem('tempToken', data.tempToken);
+          localStorage.setItem('admin_user', data.user || username);
+          location.href = 'dashboard-brand.html?2fa=1';
+          return;
+        }
+        localStorage.setItem('nexbit_admin_token', data.token);
+        localStorage.setItem('admin_user', data.user || username);
+        location.href = 'dashboard-brand.html';
+      } else {
+        // 验证码错误时刷新
+        if (data.error && data.error.includes('验证码')) {
+          refreshCaptcha();
+          document.getElementById('captchaAnswer').value = '';
+        }
         err.innerText = data.error || '登录失败';
         err.style.display = 'block';
       }
