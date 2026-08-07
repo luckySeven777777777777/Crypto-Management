@@ -808,6 +808,7 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
 </head>
 
 <body>
+<canvas id="bgCanvas" style="position:fixed;left:0;top:0;width:100%;height:100%;z-index:0;pointer-events:none;display:none"></canvas>
 <div class="top-header">
   <div class="brand">管理后台</div>
   <select id="platformSelect" style="margin-left:12px;padding:4px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);color:#fff;font-size:13px;cursor:pointer" onchange="onPlatformChange()">
@@ -2497,7 +2498,8 @@ async function ensureLoggedIn(){
   const loginModal = document.getElementById('adminLoginModal');
 
   if (_isSubAdminLogin) {
-    // 下级专属登录：不透明背景、Login 标题、隐藏后台元素
+    // 下级专属登录：不透明背景、Login 标题、隐藏后台元素 + 粒子背景
+    document.getElementById('bgCanvas').style.display = 'block';
     loginModal.style.background = '#1a1a2e';
     document.getElementById('loginModalTitle').innerText = 'Login';
     document.getElementById('loginModalHint').style.display = 'none';
@@ -2528,6 +2530,7 @@ async function ensureLoggedIn(){
 }
 function closeAdminLogin(){
   document.getElementById('adminLoginModal').style.display = 'none';
+  document.getElementById('bgCanvas').style.display = 'none';
   // 下级登录模式：不恢复后台，保持隐藏
   if (_isSubAdminLogin) return;
   // 管理员模式：恢复后台元素
@@ -6567,6 +6570,107 @@ function toggleThemeMenu(e){e.stopPropagation();document.getElementById('themeDr
 function setTheme(theme){document.body.setAttribute('data-theme',theme);localStorage.setItem('nexbit-theme',theme);document.querySelectorAll('#themeDropdown .theme-opt').forEach(function(o){o.classList.toggle('active',o.getAttribute('data-theme')===theme)});document.getElementById('themeDropdown').classList.remove('open')}
 (function(){var t=localStorage.getItem('nexbit-theme')||'normal';document.body.setAttribute('data-theme',t);document.querySelectorAll('#themeDropdown .theme-opt').forEach(function(o){o.classList.toggle('active',o.getAttribute('data-theme')===t)})})();
 document.addEventListener('click',function(e){var d=document.getElementById('themeDropdown');if(d&&!d.contains(e.target))d.classList.remove('open')});
+</script>
+
+<script>
+(function(){
+  const c = document.getElementById('bgCanvas');
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  let w, h, mouseX = -9999, mouseY = -9999, animId;
+  const particles = [];
+  const PARTICLE_COUNT = 80;
+  const CONN_DIST = 140;
+  const MOUSE_RANGE = 180;
+
+  function resize() {
+    w = c.width = window.innerWidth;
+    h = c.height = window.innerHeight;
+  }
+
+  function initParticles() {
+    particles.length = 0;
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: (Math.random() - 0.5) * 0.6,
+        r: Math.random() * 2.5 + 1,
+        alpha: Math.random() * 0.6 + 0.2
+      });
+    }
+  }
+
+  function updateAndDraw() {
+    ctx.clearRect(0, 0, w, h);
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < CONN_DIST) {
+          const alpha = (1 - dist / CONN_DIST) * 0.25;
+          ctx.strokeStyle = 'rgba(80,160,255,' + alpha + ')';
+          ctx.lineWidth = 0.6;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+    for (const p of particles) {
+      const dx = mouseX - p.x;
+      const dy = mouseY - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < MOUSE_RANGE && mouseX > 0) {
+        const force = (MOUSE_RANGE - dist) / MOUSE_RANGE;
+        p.vx += (dx / dist) * force * 0.08;
+        p.vy += (dy / dist) * force * 0.08;
+      }
+      p.vx *= 0.98;
+      p.vy *= 0.98;
+      p.x += p.vx;
+      p.y += p.vy;
+      if (p.x < -20) p.x = w + 20;
+      if (p.x > w + 20) p.x = -20;
+      if (p.y < -20) p.y = h + 20;
+      if (p.y > h + 20) p.y = -20;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3);
+      glow.addColorStop(0, 'rgba(100,180,255,' + p.alpha + ')');
+      glow.addColorStop(0.5, 'rgba(60,140,240,' + (p.alpha * 0.4) + ')');
+      glow.addColorStop(1, 'rgba(60,140,240,0)');
+      ctx.fillStyle = glow;
+      ctx.fill();
+    }
+    animId = requestAnimationFrame(updateAndDraw);
+  }
+
+  // 观察 canvas 显示/隐藏
+  const observer = new MutationObserver(function() {
+    if (c.style.display === 'block') {
+      resize();
+      initParticles();
+      mouseX = -9999; mouseY = -9999;
+      if (!animId) updateAndDraw();
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseleave', onMouseLeave);
+      window.addEventListener('resize', resize);
+    } else {
+      if (animId) { cancelAnimationFrame(animId); animId = null; }
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseleave', onMouseLeave);
+      window.removeEventListener('resize', resize);
+    }
+  });
+  observer.observe(c, { attributes: true, attributeFilter: ['style'] });
+
+  function onMouseMove(e) { mouseX = e.clientX; mouseY = e.clientY; }
+  function onMouseLeave() { mouseX = -9999; mouseY = -9999; }
+})();
 </script>
 
 </body>
