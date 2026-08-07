@@ -100,10 +100,10 @@ function getPlatformConfig(name) {
       : [];
     // Trade-specific
     const tradeToken = key === 'default'
-      ? (process.env.TRADE_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '')
+      ? (process.env.TRADE_TELEGRAM_BOT_TOKEN || process.env.TRADE_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '')
       : '';
     const tradeChats = key === 'default'
-      ? (process.env.TRADE_TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean)
+      ? (process.env.TRADE_TELEGRAM_CHAT_IDS || process.env.TRADE_CHAT_IDS || process.env.TELEGRAM_CHAT_IDS || '').split(',').filter(Boolean)
       : [];
     // PLAN-specific
     const planToken = key === 'default'
