@@ -1921,6 +1921,9 @@ if (/[?&]login=/.test(window.location.search) || sessionStorage.getItem('nexbit_
     sessionStorage.removeItem('nexbit_sub_login_id');
     if (subLoginId) {
       location.href = 'dashboard-brand.html?login=' + subLoginId;
+    } else if (!isSuperAdmin()) {
+      const fallbackId = getAdminId();
+      location.href = fallbackId ? 'dashboard-brand.html?login=' + fallbackId : 'login.html';
     } else {
       location.href = 'login.html';
     }
@@ -2506,6 +2509,9 @@ function restoreLoginState(){
     currentPlatform = getAdminPlatform();
     setPlatformSelectState();
   } catch(e) { console.error('[restoreLoginState] platform init error:', e.message); }
+  // 启动配置更新轮询与被踢检测（刷新后恢复时也必须启动）
+  startConfigPolling();
+  startKickPolling();
 }
 
 async function ensureLoggedIn(){
