@@ -91,7 +91,7 @@
 <body>
   <canvas id="bgCanvas"></canvas>
   <div class="login-box">
-    <div class="logo">NEXBIT ADMIN</div>
+    <div class="logo">X-WALLET ADMIN</div>
     <div class="sub">Management Control Panel</div>
 
 ```
@@ -108,7 +108,7 @@
 
 <div id="error" class="error">登录失败</div>
 
-<div class="footer">© NEXBIT System</div>
+<div class="footer">© X-WALLET SYSTEM</div>
 ```
 
   </div>
@@ -116,7 +116,7 @@
 <script>
   let loginAdminId = null;
 
-  document.getElementById('loginBtn').onclick = async () => {
+  const doLogin = async () => {
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value.trim();
     const twofaCode = document.getElementById('twofaCode').value.trim();
@@ -189,6 +189,11 @@
       err.style.display = 'block';
     }
   };
+
+  document.getElementById('loginBtn').onclick = doLogin;
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
 </script>
 
 <script>
