@@ -2358,7 +2358,8 @@ function syncPlatformDropdown(admins) {
       });
     }
     // Rebuild options
-    const currentVal = sel.value || currentPlatform;
+    // currentPlatform 由 finishAdminLogin 正确设置，优先使用；sel.value 可能残留 HTML 默认 default
+    const currentVal = currentPlatform || sel.value;
     sel.innerHTML = '';
     platforms.forEach((name, id) => {
       const opt = document.createElement('option');
@@ -2426,7 +2427,7 @@ async function syncTopPlatformDropdown() {
     if (myPlatform && !platforms.has(myPlatform)) {
       platforms.set(myPlatform, myPlatform);
     }
-    const currentVal = sel.value || currentPlatform;
+    const currentVal = currentPlatform || sel.value;
     sel.innerHTML = '';
     platforms.forEach((name, id) => {
       const opt = document.createElement('option');
@@ -5791,8 +5792,15 @@ function resetWithdrawPage() {
   (function prefillLoginFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const loginId = params.get('login');
-    // URL 无参数时，检查 sessionStorage 残留（刷新场景）
     const savedLoginId = sessionStorage.getItem('nexbit_sub_login_id');
+
+    // 已持有有效 token 且非首次 ?login= 进入 → reload 场景，保留登录态不干预
+    const hasToken = !!localStorage.getItem('nexbit_admin_token');
+    if (hasToken && !loginId) {
+      sessionStorage.removeItem('is_sub_admin_login');
+      return;
+    }
+
     if (!loginId && !savedLoginId) {
       sessionStorage.removeItem('is_sub_admin_login');
       return;
@@ -5804,13 +5812,15 @@ function resetWithdrawPage() {
       sessionStorage.setItem('nexbit_sub_login_id', loginId);
     }
 
-    // 清除已有的登录态，确保显示登录页面
-    try {
-      localStorage.removeItem('nexbit_admin_token');
-      localStorage.removeItem('nexbit_admin_perms');
-      localStorage.removeItem('nexbit_admin_super');
-      localStorage.removeItem('nexbit_admin_name');
-    } catch(e) {}
+    // 仅在首次 ?login= 进入时清除已有登录态；reload 时不碰 token
+    if (loginId) {
+      try {
+        localStorage.removeItem('nexbit_admin_token');
+        localStorage.removeItem('nexbit_admin_perms');
+        localStorage.removeItem('nexbit_admin_super');
+        localStorage.removeItem('nexbit_admin_name');
+      } catch(e) {}
+    }
 
     // 清除 URL 参数（仅当 URL 上有参数时才清理）
     if (loginId && window.history && window.history.replaceState) {
