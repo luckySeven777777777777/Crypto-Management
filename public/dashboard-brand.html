@@ -1444,16 +1444,19 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
 
 <!-- Admin Login Modal -->
 <div id="adminLoginModal" class="admin-login-modal" onclick="closeAdminLogin()">
-  <div class="box" onclick="event.stopPropagation()">
-    <div id="loginModalTitle" style="font-weight:700;margin-bottom:8px">管理员登录</div>
+  <div class="box" id="loginModalBox" onclick="event.stopPropagation()">
+    <div id="loginModalTitle" style="font-weight:700;margin-bottom:4px">管理员登录</div>
+    <div id="loginModalSub" style="text-align:center;font-size:13px;color:#9aa4ad;margin-bottom:20px;display:none">Management Control Panel</div>
     <div style="margin-bottom:8px">
+      <div id="adminNameLabel" style="font-size:13px;color:#cfd8dc;margin-bottom:4px;display:none">Username</div>
       <input id="adminName" placeholder="管理员ID" style="width:100%;margin-bottom:8px;padding:8px" />
+      <div id="adminPasswordLabel" style="font-size:13px;color:#cfd8dc;margin-bottom:4px;display:none">Password</div>
       <input id="adminPassword" type="password" placeholder="密码" style="width:100%;padding:8px" />
     </div>
     <div id="login2FABox" style="display:none;margin-bottom:8px">
       <input id="admin2FACode" placeholder="6位验证码" style="width:100%;padding:8px" />
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
+    <div id="loginBtnRow" style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="submitAdminLogin()" class="primary">登录</button>
       <button onclick="closeAdminLogin()">取消</button>
     </div>
@@ -2507,7 +2510,20 @@ async function ensureLoggedIn(){
     document.getElementById('bgCanvas').style.display = 'block';
     loginModal.style.background = 'transparent';
     document.getElementById('loginModalTitle').innerText = 'Login';
+    document.getElementById('loginModalSub').style.display = 'block';
     document.getElementById('loginModalHint').style.display = 'none';
+    // 输入框标签
+    document.getElementById('adminNameLabel').style.display = 'block';
+    document.getElementById('adminPasswordLabel').style.display = 'block';
+    // 登录框白色全透明
+    const box = document.getElementById('loginModalBox');
+    box.style.background = 'transparent';
+    box.style.color = '#fff';
+    // 按钮上下排列
+    const btnRow = document.getElementById('loginBtnRow');
+    btnRow.style.flexDirection = 'column';
+    btnRow.style.gap = '8px';
+    btnRow.style.justifyContent = 'stretch';
     const sidebar = document.querySelector('.header-nav');
     const header = document.querySelector('.top-header');
     const mainEl = document.querySelector('.main');
@@ -2524,7 +2540,17 @@ async function ensureLoggedIn(){
     // 管理员登录：恢复默认样式
     loginModal.style.background = 'rgba(0,0,0,0.6)';
     document.getElementById('loginModalTitle').innerText = '管理员登录';
+    document.getElementById('loginModalSub').style.display = 'none';
     document.getElementById('loginModalHint').style.display = '';
+    document.getElementById('adminNameLabel').style.display = 'none';
+    document.getElementById('adminPasswordLabel').style.display = 'none';
+    const box = document.getElementById('loginModalBox');
+    box.style.background = '#fff';
+    box.style.color = '#111';
+    const btnRow = document.getElementById('loginBtnRow');
+    btnRow.style.flexDirection = 'row';
+    btnRow.style.gap = '8px';
+    btnRow.style.justifyContent = 'flex-end';
     const sidebar = document.querySelector('.header-nav');
     const header = document.querySelector('.top-header');
     if (sidebar) sidebar.style.display = '';
@@ -2536,10 +2562,10 @@ async function ensureLoggedIn(){
   return false;
 }
 function closeAdminLogin(){
+  // 下级登录模式：点击背景不允许关闭，必须登录成功
+  if (_isSubAdminLogin) return;
   document.getElementById('adminLoginModal').style.display = 'none';
   document.getElementById('bgCanvas').style.display = 'none';
-  // 下级登录模式：不恢复后台，保持隐藏
-  if (_isSubAdminLogin) return;
   // 管理员模式：恢复后台元素
   const sidebar = document.querySelector('.header-nav');
   const header = document.querySelector('.top-header');
