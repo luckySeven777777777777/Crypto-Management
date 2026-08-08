@@ -817,7 +817,7 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
 <body>
 <script>
 (function(){
-  if (/[?&]login=/.test(window.location.search) || sessionStorage.getItem('nexbit_sub_login_id')) {
+  if (/[?&]login=/.test(window.location.search) || (sessionStorage.getItem('nexbit_sub_login_id') && !localStorage.getItem('nexbit_admin_token'))) {
     document.body.style.display = 'none';
   }
 })();
