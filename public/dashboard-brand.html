@@ -6576,18 +6576,28 @@ async function checkKickStatus() {
     });
     if (!resp.ok) {
       // token 已失效（被踢出后从 DB 删除），强制登出
+      const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
       clearAdminState();
       sessionStorage.removeItem('nexbit_sub_login_id');
       showCenterNotify('您的账号已被管理员强制下线，请重新登录。');
-      setTimeout(function(){ location.href = 'login.html'; }, 1500);
+      if (subLoginId) {
+        setTimeout(function(){ location.href = 'dashboard-brand.html?login=' + subLoginId; }, 1500);
+      } else {
+        setTimeout(function(){ location.href = 'login.html'; }, 1500);
+      }
       return;
     }
     const data = await resp.json();
     if (data.kicked) {
+      const subLoginId = sessionStorage.getItem('nexbit_sub_login_id');
       clearAdminState();
       sessionStorage.removeItem('nexbit_sub_login_id');
       showCenterNotify('您的账号已被管理员强制下线，请重新登录。');
-      setTimeout(function(){ location.href = 'login.html'; }, 1500);
+      if (subLoginId) {
+        setTimeout(function(){ location.href = 'dashboard-brand.html?login=' + subLoginId; }, 1500);
+      } else {
+        setTimeout(function(){ location.href = 'login.html'; }, 1500);
+      }
     }
   } catch(e) {}
 }
