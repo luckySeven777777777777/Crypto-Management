@@ -805,6 +805,13 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu{background:#faf3e0}
 body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt{color:#5c4a3a}
 body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{background:#efe4cc}
 </style>
+<script>
+(function(){
+  if (/[?&]login=/.test(window.location.search)) {
+    document.write('<style id="sub-login-shield">.header-nav,.top-header,.main{display:none!important}body{background:#1a1a2e!important}</style>');
+  }
+})();
+</script>
 </head>
 
 <body>
@@ -2694,6 +2701,8 @@ function finalizeLogin(perms, isSuper, id, nickname) {
   startConfigPolling();
   _isSubAdminLogin = false;
   sessionStorage.removeItem('is_sub_admin_login');
+  var shield = document.getElementById('sub-login-shield');
+  if (shield) shield.remove();
   document.querySelector('.header-nav').style.display = '';
   document.querySelector('.top-header').style.display = '';
   document.body.style.background = '';
