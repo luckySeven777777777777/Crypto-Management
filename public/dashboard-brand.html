@@ -805,19 +805,9 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu{background:#faf3e0}
 body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt{color:#5c4a3a}
 body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{background:#efe4cc}
 </style>
-<script>
-(function(){
-  if (/[?&]login=/.test(window.location.search)) {
-    document.write('<style id="sub-login-shield">.header-nav,.top-header,.main{display:none!important}body{background:#1a1a2e!important}</style>');
-  }
-})();
-</script>
 </head>
 
 <body>
-<script>
-if (/[?&]login=/.test(window.location.search) || sessionStorage.getItem('nexbit_sub_login_id')) document.body.style.display='none';
-</script>
 <canvas id="bgCanvas" style="position:fixed;left:0;top:0;width:100%;height:100%;z-index:1399;pointer-events:none;display:none"></canvas>
 <div class="top-header">
   <div class="brand">管理后台</div>
@@ -1921,9 +1911,6 @@ if (/[?&]login=/.test(window.location.search) || sessionStorage.getItem('nexbit_
     sessionStorage.removeItem('nexbit_sub_login_id');
     if (subLoginId) {
       location.href = 'dashboard-brand.html?login=' + subLoginId;
-    } else if (!isSuperAdmin()) {
-      const fallbackId = getAdminId();
-      location.href = fallbackId ? 'dashboard-brand.html?login=' + fallbackId : 'login.html';
     } else {
       location.href = 'login.html';
     }
@@ -2509,9 +2496,6 @@ function restoreLoginState(){
     currentPlatform = getAdminPlatform();
     setPlatformSelectState();
   } catch(e) { console.error('[restoreLoginState] platform init error:', e.message); }
-  // 启动配置更新轮询与被踢检测（刷新后恢复时也必须启动）
-  startConfigPolling();
-  startKickPolling();
 }
 
 async function ensureLoggedIn(){
@@ -2600,7 +2584,6 @@ async function ensureLoggedIn(){
     document.body.style.background = '';
   }
 
-  document.body.style.display = '';
   loginModal.style.display = 'flex';
   return false;
 }
@@ -2711,8 +2694,6 @@ function finalizeLogin(perms, isSuper, id, nickname) {
   startConfigPolling();
   _isSubAdminLogin = false;
   sessionStorage.removeItem('is_sub_admin_login');
-  var shield = document.getElementById('sub-login-shield');
-  if (shield) shield.remove();
   document.querySelector('.header-nav').style.display = '';
   document.querySelector('.top-header').style.display = '';
   document.body.style.background = '';
@@ -5784,18 +5765,14 @@ function resetWithdrawPage() {
   (function prefillLoginFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const loginId = params.get('login');
-    // URL 无参数时，检查 sessionStorage 残留（刷新场景）
-    const savedLoginId = sessionStorage.getItem('nexbit_sub_login_id');
-    if (!loginId && !savedLoginId) {
+    if (!loginId) {
       sessionStorage.removeItem('is_sub_admin_login');
       return;
     }
 
     _isSubAdminLogin = true;
     sessionStorage.setItem('is_sub_admin_login', '1');
-    if (loginId) {
-      sessionStorage.setItem('nexbit_sub_login_id', loginId);
-    }
+    sessionStorage.setItem('nexbit_sub_login_id', loginId);
 
     // 清除已有的登录态，确保显示登录页面
     try {
@@ -5805,8 +5782,8 @@ function resetWithdrawPage() {
       localStorage.removeItem('nexbit_admin_name');
     } catch(e) {}
 
-    // 清除 URL 参数（仅当 URL 上有参数时才清理）
-    if (loginId && window.history && window.history.replaceState) {
+    // 清除 URL 参数
+    if (window.history && window.history.replaceState) {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
     }
