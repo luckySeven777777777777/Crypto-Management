@@ -2510,11 +2510,24 @@ async function ensureLoggedIn(){
     document.getElementById('bgCanvas').style.display = 'block';
     loginModal.style.background = 'transparent';
     document.getElementById('loginModalTitle').innerText = 'Login';
+    document.getElementById('loginModalTitle').style.textAlign = 'center';
     document.getElementById('loginModalSub').style.display = 'block';
     document.getElementById('loginModalHint').style.display = 'none';
     // 输入框标签
     document.getElementById('adminNameLabel').style.display = 'block';
     document.getElementById('adminPasswordLabel').style.display = 'block';
+    // 输入框样式统一（匹配主登录页深色输入框）
+    ['adminName','adminPassword','admin2FACode'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.background = '#111';
+      el.style.color = '#fff';
+      el.style.border = 'none';
+      el.style.outline = 'none';
+      el.style.borderRadius = '8px';
+      el.style.padding = '12px';
+      el.style.fontSize = '14px';
+    });
     // 登录框白色全透明
     const box = document.getElementById('loginModalBox');
     box.style.background = 'transparent';
@@ -2540,10 +2553,23 @@ async function ensureLoggedIn(){
     // 管理员登录：恢复默认样式
     loginModal.style.background = 'rgba(0,0,0,0.6)';
     document.getElementById('loginModalTitle').innerText = '管理员登录';
+    document.getElementById('loginModalTitle').style.textAlign = '';
     document.getElementById('loginModalSub').style.display = 'none';
     document.getElementById('loginModalHint').style.display = '';
     document.getElementById('adminNameLabel').style.display = 'none';
     document.getElementById('adminPasswordLabel').style.display = 'none';
+    // 输入框恢复默认
+    ['adminName','adminPassword','admin2FACode'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.background = '';
+      el.style.color = '';
+      el.style.border = '';
+      el.style.outline = '';
+      el.style.borderRadius = '';
+      el.style.padding = '';
+      el.style.fontSize = '';
+    });
     const box = document.getElementById('loginModalBox');
     box.style.background = '#fff';
     box.style.color = '#111';
