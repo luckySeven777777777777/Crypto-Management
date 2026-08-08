@@ -805,9 +805,23 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu{background:#faf3e0}
 body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt{color:#5c4a3a}
 body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{background:#efe4cc}
 </style>
+<script>
+(function(){
+  if (/[?&]login=/.test(window.location.search)) {
+    document.write('<style id="sub-login-shield">.header-nav,.top-header,.main{display:none!important}</style>');
+  }
+})();
+</script>
 </head>
 
 <body>
+<script>
+(function(){
+  if (/[?&]login=/.test(window.location.search) || sessionStorage.getItem('nexbit_sub_login_id')) {
+    document.body.style.display = 'none';
+  }
+})();
+</script>
 <canvas id="bgCanvas" style="position:fixed;left:0;top:0;width:100%;height:100%;z-index:1399;pointer-events:none;display:none"></canvas>
 <div class="top-header">
   <div class="brand">管理后台</div>
@@ -2391,6 +2405,7 @@ async function syncTopPlatformDropdown() {
   try {
     const sel = document.getElementById('platformSelect');
     if (!sel) return;
+    const myPlatform = getAdminPlatform();
     const platforms = new Map();
     platforms.set('default', 'Default');
     // Fetch from public API
@@ -2407,6 +2422,10 @@ async function syncTopPlatformDropdown() {
         });
       }
     } catch(e) { console.error('[platform] syncTopPlatformDropdown fetch error:', e.message); }
+    // 确保当前管理员的平台始终在列表中
+    if (myPlatform && !platforms.has(myPlatform)) {
+      platforms.set(myPlatform, myPlatform);
+    }
     const currentVal = sel.value || currentPlatform;
     sel.innerHTML = '';
     platforms.forEach((name, id) => {
@@ -2415,7 +2434,10 @@ async function syncTopPlatformDropdown() {
       opt.textContent = name;
       sel.appendChild(opt);
     });
-    if (platforms.has(currentVal)) {
+    // 优先恢复管理员的实际平台
+    if (platforms.has(myPlatform)) {
+      sel.value = myPlatform;
+    } else if (platforms.has(currentVal)) {
       sel.value = currentVal;
     } else if (platforms.has('default')) {
       sel.value = 'default';
@@ -2506,7 +2528,8 @@ async function ensureLoggedIn(){
   const loginModal = document.getElementById('adminLoginModal');
 
   if (_isSubAdminLogin) {
-    // 下级专属登录：粒子背景 + 隐藏所有后台元素
+    // 下级专属登录：恢复 body 显示，隐藏所有后台元素
+    document.body.style.display = '';
     document.getElementById('bgCanvas').style.display = 'block';
     loginModal.style.background = 'transparent';
     document.getElementById('loginModalTitle').innerText = 'Login';
@@ -2694,6 +2717,9 @@ function finalizeLogin(perms, isSuper, id, nickname) {
   startConfigPolling();
   _isSubAdminLogin = false;
   sessionStorage.removeItem('is_sub_admin_login');
+  var shield = document.getElementById('sub-login-shield');
+  if (shield) shield.remove();
+  document.body.style.display = '';
   document.querySelector('.header-nav').style.display = '';
   document.querySelector('.top-header').style.display = '';
   document.body.style.background = '';
@@ -5765,14 +5791,18 @@ function resetWithdrawPage() {
   (function prefillLoginFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const loginId = params.get('login');
-    if (!loginId) {
+    // URL 无参数时，检查 sessionStorage 残留（刷新场景）
+    const savedLoginId = sessionStorage.getItem('nexbit_sub_login_id');
+    if (!loginId && !savedLoginId) {
       sessionStorage.removeItem('is_sub_admin_login');
       return;
     }
 
     _isSubAdminLogin = true;
     sessionStorage.setItem('is_sub_admin_login', '1');
-    sessionStorage.setItem('nexbit_sub_login_id', loginId);
+    if (loginId) {
+      sessionStorage.setItem('nexbit_sub_login_id', loginId);
+    }
 
     // 清除已有的登录态，确保显示登录页面
     try {
@@ -5782,8 +5812,8 @@ function resetWithdrawPage() {
       localStorage.removeItem('nexbit_admin_name');
     } catch(e) {}
 
-    // 清除 URL 参数
-    if (window.history && window.history.replaceState) {
+    // 清除 URL 参数（仅当 URL 上有参数时才清理）
+    if (loginId && window.history && window.history.replaceState) {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
     }
