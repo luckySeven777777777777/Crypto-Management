@@ -815,6 +815,9 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
 </head>
 
 <body>
+<script>
+if (/[?&]login=/.test(window.location.search)) document.body.style.display='none';
+</script>
 <canvas id="bgCanvas" style="position:fixed;left:0;top:0;width:100%;height:100%;z-index:1399;pointer-events:none;display:none"></canvas>
 <div class="top-header">
   <div class="brand">管理后台</div>
@@ -2591,6 +2594,7 @@ async function ensureLoggedIn(){
     document.body.style.background = '';
   }
 
+  document.body.style.display = '';
   loginModal.style.display = 'flex';
   return false;
 }
