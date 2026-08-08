@@ -816,7 +816,7 @@ body[data-theme="eyecare"] .theme-dropdown .theme-menu .theme-opt:hover{backgrou
 
 <body>
 <script>
-if (/[?&]login=/.test(window.location.search)) document.body.style.display='none';
+if (/[?&]login=/.test(window.location.search) || sessionStorage.getItem('nexbit_sub_login_id')) document.body.style.display='none';
 </script>
 <canvas id="bgCanvas" style="position:fixed;left:0;top:0;width:100%;height:100%;z-index:1399;pointer-events:none;display:none"></canvas>
 <div class="top-header">
@@ -5778,14 +5778,18 @@ function resetWithdrawPage() {
   (function prefillLoginFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const loginId = params.get('login');
-    if (!loginId) {
+    // URL 无参数时，检查 sessionStorage 残留（刷新场景）
+    const savedLoginId = sessionStorage.getItem('nexbit_sub_login_id');
+    if (!loginId && !savedLoginId) {
       sessionStorage.removeItem('is_sub_admin_login');
       return;
     }
 
     _isSubAdminLogin = true;
     sessionStorage.setItem('is_sub_admin_login', '1');
-    sessionStorage.setItem('nexbit_sub_login_id', loginId);
+    if (loginId) {
+      sessionStorage.setItem('nexbit_sub_login_id', loginId);
+    }
 
     // 清除已有的登录态，确保显示登录页面
     try {
@@ -5795,8 +5799,8 @@ function resetWithdrawPage() {
       localStorage.removeItem('nexbit_admin_name');
     } catch(e) {}
 
-    // 清除 URL 参数
-    if (window.history && window.history.replaceState) {
+    // 清除 URL 参数（仅当 URL 上有参数时才清理）
+    if (loginId && window.history && window.history.replaceState) {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
     }
