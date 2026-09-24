@@ -1327,6 +1327,80 @@ app.post('/wallet/:uid/credit', async (req, res) => {
 });
 
 /* ---------------------------------------------------------
+   Welcome Bonus claim (新人奖金 → 持久化累加到余额，防重复领取)
+--------------------------------------------------------- */
+app.post('/wallet/:uid/bonus', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+    const uid = String(req.params.uid || '').trim();
+    const amount = Number(req.body.amount || 0);
+    const reason = String(req.body.reason || 'welcome_bonus');
+
+    if (!isSafeUid(uid))
+      return res.status(400).json({ ok:false, error:'invalid uid' });
+
+    if (!isFinite(amount) || amount <= 0)
+      return res.status(400).json({ ok:false, error:'invalid amount' });
+
+    await ensureUserExists(uid);
+
+    const userRef = db.ref(`users/${uid}`);
+    const snap = await userRef.once('value');
+
+    // 防重复领取：bonus.claimed === true 时直接返回当前余额，不再累加
+    const existingBonus = snap.exists() ? (snap.val().bonus || null) : null;
+    if (existingBonus && existingBonus.claimed === true) {
+      const curBal = snap.exists() ? safeNumber(snap.val().balance, 0) : 0;
+      return res.json({
+        ok: false,
+        error: 'already-claimed',
+        balance: curBal,
+        bonus: existingBonus
+      });
+    }
+
+    const curBal = snap.exists()
+      ? safeNumber(snap.val().balance, 0)
+      : 0;
+
+    const newBal = curBal + amount;
+
+    await userRef.update({
+      balance: newBal,
+      lastUpdate: now(),
+      boost_last: now(),
+      bonus: {
+        claimed: true,
+        amount: amount,
+        time: now(),
+        type: 'welcome'
+      }
+    });
+
+    // 🔔 关键：推送 SSE，前端钱包立即同步
+    try {
+      broadcastSSE({
+        type: 'balance',
+        userId: uid,
+        balance: newBal,
+        source: reason
+      });
+    } catch(e){}
+
+    return res.json({
+      ok: true,
+      balance: newBal,
+      bonus: { claimed: true, amount: amount, time: now() }
+    });
+
+  } catch (e) {
+    console.error('/wallet/:uid/bonus error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/* ---------------------------------------------------------
    Wallet internal deduct (PLAN / TRADE 用)
 --------------------------------------------------------- */
 app.post('/wallet/:uid/deduct', async (req, res) => {
