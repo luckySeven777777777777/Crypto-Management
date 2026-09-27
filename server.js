@@ -977,7 +977,10 @@ app.post('/api/user/settings', async (req, res) => {
 
     const { withdrawPassword, approvedWallets } = req.body;
     const updates = {};
-    if (withdrawPassword !== undefined) updates['withdrawPassword'] = withdrawPassword;
+    if (withdrawPassword !== undefined) {
+      updates['withdrawPassword'] = withdrawPassword;
+      updates['withdrawPasswordUpdatedAt'] = Date.now();
+    }
     if (approvedWallets !== undefined) updates['approvedWallets'] = approvedWallets;
 
     if (Object.keys(updates).length > 0) {
@@ -2215,23 +2218,32 @@ app.post('/api/order/loan', upload.fields([
 ]), async (req, res) => {
   try {
     const {
-      userId,
+      userId: bodyUserId,
       amount,
       period
     } = req.body;
+
+    // 优先使用 X-User-Id 请求头（与充值/提款一致），body 中的 userId 作为兜底
+    const userId = req.headers['x-user-id'] || req.headers['x-userid'] || bodyUserId;
 
     if (!userId || !amount || !period) {
       return res.status(400).json({ success: false, message: 'Missing fields' });
     }
 
-    // 标准化 userId：若格式不是 U..._... ，从 users 表查找正确格式
+    // 标准化 userId：格式非 U..._... 时，先从 users 表反查；反查不到且带指纹时用指纹解析（避免落 test_user）
     let normalizedUserId = userId;
-    if (!/^U\d+_\d+$/.test(userId) && userId !== 'test_user') {
+    if (!/^U\d+_\d+$/.test(userId)) {
       const usersSnap = await db.ref('users').once('value');
       const users = usersSnap.val() || {};
       const match = Object.keys(users).find(k => k.includes(userId));
-      if (match) normalizedUserId = match;
+      if (match) {
+        normalizedUserId = match;
+      } else if (req.body.fp) {
+        const fpSnap = await db.ref(`fingerprints/${String(req.body.fp).trim()}`).once('value');
+        if (fpSnap.exists() && fpSnap.val().uid) normalizedUserId = fpSnap.val().uid;
+      }
     }
+    await ensureUserExists(normalizedUserId);
 
    const front = req.files?.front?.[0];
 const back  = req.files?.back?.[0];
@@ -3141,8 +3153,11 @@ app.post('/api/admin/reset-withdraw-password', async (req, res) => {
       return res.status(404).json({ success: false, error: '未找到匹配的用户，请检查输入的订单号/用户ID/钱包地址是否正确' });
     }
 
-    // 更新提款密码
-    await db.ref(`users/${targetUid}/settings/withdrawPassword`).set(newWithdrawPwd);
+    // 更新提款密码（同时写更新时间戳，前端按时间戳方向同步，避免本地旧密码覆盖新密码）
+    await db.ref(`users/${targetUid}/settings`).update({
+      withdrawPassword: newWithdrawPwd,
+      withdrawPasswordUpdatedAt: Date.now()
+    });
 
     return res.json({
       success: true,
