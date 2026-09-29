@@ -1135,6 +1135,37 @@ app.post('/api/order/swap', async (req, res) => {
   }
 });
 
+// Swap 订单列表接口（只读，返回 orders/swap 下全部订单，按时间倒序）
+app.get('/api/orders/swap', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ ok: false, error: 'Database not connected' });
+
+    const swapRef = db.ref('orders/swap');
+    const snap = await swapRef.once('value');
+    let list = [];
+    if (snap.exists()) {
+      const val = snap.val();
+      if (Array.isArray(val)) {
+        list = val.filter(Boolean);
+      } else if (val && typeof val === 'object') {
+        // orders/swap 为对象结构（key = orderId），兼容转换为数组
+        list = Object.keys(val).map(k => val[k]).filter(Boolean);
+      }
+    }
+    // 按时间倒序（timestamp 毫秒或 time_us ISO 字符串兜底）
+    list.sort((a, b) => {
+      const ta = Number(a.timestamp || (a.time_us ? Date.parse(a.time_us) : 0)) || 0;
+      const tb = Number(b.timestamp || (b.time_us ? Date.parse(b.time_us) : 0)) || 0;
+      return tb - ta;
+    });
+
+    return res.json({ ok: true, swap: list, count: list.length });
+  } catch (e) {
+    console.error('/api/orders/swap error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
   try {
