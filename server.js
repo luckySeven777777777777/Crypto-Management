@@ -5479,6 +5479,103 @@ app.get('/api/order/loans/user/:userId', async (req, res) => {
 });
 
 /* ---------------------------------------------------------
+   VIP state persistence (纯新增，不改动任何现有功能)
+   - GET  /wallet/:uid/vip  → 读取用户 VIP 领取状态（claimedLevel / claimedList / 统计项）
+   - POST /wallet/:uid/vip  → 保存用户 VIP 领取状态（只增不减、幂等合并）
+   与前端 VIP_TIERS 同款规则计算统计项，保证 Claim 后主余额与统计区永久保留
+--------------------------------------------------------- */
+app.get('/wallet/:uid/vip', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+    const uid = String(req.params.uid || '').trim();
+    if (!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+
+    const snap = await db.ref(`users/${uid}/vipState`).once('value');
+    const s = snap.exists() ? snap.val() : null;
+
+    return res.json({
+      ok: true,
+      vip: s || { claimedLevel: 0, claimedList: [], claimedAmount: 0, totalRebate: 0, rebateRate: 10 }
+    });
+  } catch (e) {
+    console.error('/wallet/:uid/vip GET error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+app.post('/wallet/:uid/vip', async (req, res) => {
+  try {
+    if (!db) return res.json({ ok:false, error:'no-db' });
+
+    const uid = String(req.params.uid || '').trim();
+    if (!isSafeUid(uid)) return res.status(400).json({ ok:false, error:'invalid uid' });
+
+    const claimedLevel = Math.max(0, Math.min(10, Math.floor(Number(req.body.claimedLevel) || 0)));
+    let claimedList = Array.isArray(req.body.claimedList) ? req.body.claimedList : [];
+    claimedList = claimedList
+      .map(function(l){ return Math.floor(Number(l)); })
+      .filter(function(l){ return Number.isFinite(l) && l >= 1 && l <= 10; })
+      .filter(function(v,i,a){ return a.indexOf(v) === i; })
+      .sort(function(a,b){ return a-b; });
+
+    await ensureUserExists(uid);
+    const userRef = db.ref(`users/${uid}`);
+
+    // 与后端已有 claim 状态合并（只增不减，防丢）
+    const oldSnap = await userRef.child('vipState').once('value');
+    let oldClaimedLevel = 0, oldClaimedList = [];
+    if (oldSnap.exists()) {
+      const old = oldSnap.val() || {};
+      oldClaimedLevel = Math.max(0, Math.floor(Number(old.claimedLevel) || 0));
+      if (Array.isArray(old.claimedList)) {
+        oldClaimedList = old.claimedList
+          .map(function(l){ return Math.floor(Number(l)); })
+          .filter(function(l){ return Number.isFinite(l) && l >= 1 && l <= 10; });
+      }
+    }
+    const finalLevel = Math.max(oldClaimedLevel, claimedLevel);
+    const finalList = Array.from(new Set(oldClaimedList.concat(claimedList)))
+      .filter(function(l){ return l >= 1 && l <= 10; })
+      .sort(function(a,b){ return a-b; });
+
+    // 与前端 VIP_TIERS 同款规则计算统计项（后端冗余落库）
+    const vipTiers = [
+      { level:1,  deposit:500,    reward:50    },
+      { level:2,  deposit:1000,   reward:100   },
+      { level:3,  deposit:3000,   reward:300   },
+      { level:4,  deposit:5000,   reward:500   },
+      { level:5,  deposit:10000,  reward:1000  },
+      { level:6,  deposit:30000,  reward:3000  },
+      { level:7,  deposit:50000,  reward:5000  },
+      { level:8,  deposit:100000, reward:10000 },
+      { level:9,  deposit:300000, reward:30000 },
+      { level:10, deposit:500000, reward:50000 }
+    ];
+    let claimedAmount = 0;
+    for (const t of vipTiers) {
+      if (finalList.indexOf(t.level) !== -1 || finalLevel >= t.level) claimedAmount += t.reward;
+    }
+
+    const vipState = {
+      claimedLevel: finalLevel,
+      claimedList: finalList,
+      claimedAmount: claimedAmount,
+      totalRebate: claimedAmount,
+      rebateRate: 10,
+      updatedAt: now()
+    };
+
+    await userRef.child('vipState').set(vipState);
+
+    return res.json({ ok:true, vip: vipState });
+  } catch (e) {
+    console.error('/wallet/:uid/vip POST error', e);
+    return res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/* ---------------------------------------------------------
    Start server
 --------------------------------------------------------- */
 
