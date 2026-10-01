@@ -1166,6 +1166,54 @@ app.get('/api/orders/swap', async (req, res) => {
   }
 });
 
+// 普通用户订单接口（只读，按 userId 过滤返回该用户五类订单：recharge/withdraw/buysell/loans/swap，无需 admin 鉴权）
+// 支持 query userId 或请求头 X-User-Id（与前端充值/提款提交通道一致）
+app.get('/api/user/orders', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ ok: false, error: 'Database not connected' });
+
+    const uid = String(req.query.userId || req.headers['x-user-id'] || '').trim();
+    if (!uid) return res.status(400).json({ ok: false, error: 'missing userId' });
+    if (!isSafeUid(uid)) return res.status(400).json({ ok: false, error: 'invalid uid' });
+
+    const match = (o) => o && (String(o.userId) === String(uid) || String(o.user) === String(uid));
+
+    const [rechargeSnap, withdrawSnap, buysellSnap, loansSnap, swapSnap] =
+      await Promise.all([
+        db.ref('orders/recharge').once('value'),
+        db.ref('orders/withdraw').once('value'),
+        db.ref('orders/buysell').once('value'),
+        db.ref('orders/loans').once('value'),
+        db.ref('orders/swap').once('value')
+      ]);
+
+    const toList = (snap) => {
+      const val = snap.val();
+      if (!val) return [];
+      if (Array.isArray(val)) return val.filter(match);
+      return Object.keys(val).map(k => val[k]).filter(match);
+    };
+
+    const sortDesc = (list) => list.sort((a, b) => {
+      const ta = Number(a.timestamp || (a.time_us ? Date.parse(a.time_us) : 0)) || 0;
+      const tb = Number(b.timestamp || (b.time_us ? Date.parse(b.time_us) : 0)) || 0;
+      return tb - ta;
+    });
+
+    return res.json({
+      ok: true,
+      recharge: sortDesc(toList(rechargeSnap)),
+      withdraw: sortDesc(toList(withdrawSnap)),
+      buysell:  sortDesc(toList(buysellSnap)),
+      loans:    sortDesc(toList(loansSnap)),
+      swap:     sortDesc(toList(swapSnap))
+    });
+  } catch (e) {
+    console.error('/api/user/orders error', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // 同步币种持有接口
 app.post('/api/currency/sync', async (req, res) => {
   try {
